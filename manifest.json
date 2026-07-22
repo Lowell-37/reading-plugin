@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "静读 · 本地电子书阅读器",
+  "short_name": "静读",
+  "version": "0.1.0",
+  "description": "在浏览器中离线阅读 PDF、EPUB、MOBI 与 AZW3 电子书。",
+  "action": {
+    "default_title": "打开静读"
+  },
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "permissions": ["storage"],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; worker-src 'self'"
+  }
+}

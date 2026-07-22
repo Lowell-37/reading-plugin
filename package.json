@@ -1,0 +1,15 @@
+{
+  "name": "quiet-reader-extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A local-first browser reading extension for PDF, EPUB and MOBI books.",
+  "type": "module",
+  "scripts": {
+    "check": "node --check src/background.js && node --check src/reader.js && node --check src/storage.js",
+    "test": "node --test tests/*.test.js"
+  },
+  "dependencies": {
+    "foliate-js": "1.0.1",
+    "pdfjs-dist": "6.1.200"
+  }
+}
