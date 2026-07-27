@@ -93,6 +93,10 @@ const DEFAULT_SETTINGS = {
   fontSize: 20,
   lineHeight: 1.75,
   pageWidth: 760,
+  headerCollapsed: false,
+  aiEndpoint: 'https://api.openai.com/v1',
+  aiModel: '',
+  aiApiKey: '',
 }
 
 export function loadSettings() {

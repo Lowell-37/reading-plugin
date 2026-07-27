@@ -2,6 +2,7 @@ import '../node_modules/foliate-js/view.js'
 import * as pdfjsLib from '../node_modules/pdfjs-dist/build/pdf.mjs'
 import { Overlayer } from '../node_modules/foliate-js/overlayer.js'
 import { createAnnotation, excerpt, findTextMatches, normalizeAnnotations } from './annotations.js'
+import { buildAiMessages, CHAPTER_AI_ACTIONS, getAiPermissionOrigin, SELECTION_AI_ACTIONS, streamAiCompletion } from './ai.js'
 import { initializeEbookPosition } from './ebook-navigation.js'
 import { detectFormat, displayValue, formatBytes } from './formats.js'
 import { SectionBoundaryNavigator } from './section-navigation.js'
@@ -13,6 +14,7 @@ const elements = {
   openButton: $('#open-button'),
   heroOpenButton: $('#hero-open-button'),
   homeButton: $('#home-button'),
+  headerToggle: $('#header-toggle'),
   welcomeView: $('#welcome-view'),
   readerView: $('#reader-view'),
   dropZone: $('#drop-zone'),
@@ -34,6 +36,21 @@ const elements = {
   noteSelection: $('#note-selection'),
   annotationCount: $('#annotation-count'),
   annotationList: $('#annotation-list'),
+  aiSelectionPreview: $('#ai-selection-preview'),
+  aiSettingsToggle: $('#ai-settings-toggle'),
+  aiSettings: $('#ai-settings'),
+  aiEndpoint: $('#ai-endpoint'),
+  aiModel: $('#ai-model'),
+  aiApiKey: $('#ai-api-key'),
+  saveAiSettings: $('#save-ai-settings'),
+  aiResult: $('#ai-result'),
+  aiResultTitle: $('#ai-result-title'),
+  aiResultStatus: $('#ai-result-status'),
+  aiResultContent: $('#ai-result-content'),
+  aiStop: $('#ai-stop'),
+  aiActionButtons: [...document.querySelectorAll('[data-ai-scope][data-ai-action]')],
+  selectionAiMenu: $('#selection-ai-menu'),
+  closeSelectionAiMenu: $('#close-selection-ai-menu'),
   closeSettings: $('#close-settings'),
   readerStage: $('#reader-stage'),
   ebookHost: $('#ebook-host'),
@@ -94,6 +111,7 @@ let pdfTextCache = new Map()
 let pendingSelection = null
 let annotations = []
 let searchRun = 0
+let aiAbortController = null
 let progressSaveTimer = null
 let coverObjectUrl = null
 let libraryObjectUrls = []
@@ -135,19 +153,29 @@ function openPanel(panel) {
 
 function showReader() {
   document.body.classList.add('is-reading')
+  setHeaderCollapsed(Boolean(settings.headerCollapsed), false)
   elements.welcomeView.hidden = true
   elements.readerView.hidden = false
 }
 
 async function showLibrary() {
   closeReader()
-  document.body.classList.remove('is-reading', 'pdf-mode')
+  document.body.classList.remove('is-reading', 'pdf-mode', 'header-collapsed')
   elements.readerView.hidden = true
   elements.welcomeView.hidden = false
   document.title = '静读'
   await renderLibrary()
 }
 
+function setHeaderCollapsed(collapsed, persist = true) {
+  document.body.classList.toggle('header-collapsed', collapsed)
+  elements.headerToggle.ariaExpanded = String(!collapsed)
+  elements.headerToggle.ariaLabel = collapsed ? '展开顶部栏' : '收起顶部栏'
+  elements.headerToggle.title = elements.headerToggle.ariaLabel
+  if (!persist) return
+  settings.headerCollapsed = collapsed
+  saveSettings(settings)
+}
 function closeReader() {
   clearTimeout(progressSaveTimer)
   closePanels()
@@ -165,7 +193,12 @@ function closeReader() {
   pdfTextCache.clear()
   pdfSearchQuery = ''
   pendingSelection = null
+  aiAbortController?.abort()
+  aiAbortController = null
   annotations = []
+  elements.selectionAiMenu.hidden = true
+  elements.aiResult.hidden = true
+  elements.aiResultContent.textContent = ''
   elements.searchResults.replaceChildren()
   elements.searchStatus.textContent = '输入关键词搜索整本书'
   elements.pdfToolbar.hidden = true
@@ -188,6 +221,9 @@ function applySettingsToControls() {
   elements.lineHeightValue.value = Number(settings.lineHeight).toFixed(2)
   elements.pageWidth.value = settings.pageWidth
   elements.pageWidthValue.value = settings.pageWidth
+  elements.aiEndpoint.value = settings.aiEndpoint || 'https://api.openai.com/v1'
+  elements.aiModel.value = settings.aiModel || ''
+  elements.aiApiKey.value = settings.aiApiKey || ''
   document.querySelectorAll('[data-flow]').forEach(button => button.classList.toggle('active', button.dataset.flow === settings.flow))
   document.querySelectorAll('[data-theme]').forEach(button => button.classList.toggle('active', button.dataset.theme === settings.theme))
 }
@@ -462,12 +498,136 @@ function markPdfSearchMatches(textLayer) {
   })
 }
 
+function updateAiSelectionUi() {
+  const valid = pendingSelection && pendingSelection.kind === (currentFormat === 'pdf' ? 'pdf' : 'ebook')
+  elements.selectionAiMenu.hidden = !valid
+  elements.aiSelectionPreview.textContent = valid
+    ? `已选择 ${pendingSelection.text.length} 个字符：${excerpt(pendingSelection.text, '', 72)}`
+    : '选中文字后，可以解释、翻译或补充背景。'
+}
+
+function saveAiConfiguration() {
+  settings.aiEndpoint = elements.aiEndpoint.value.trim()
+  settings.aiModel = elements.aiModel.value.trim()
+  settings.aiApiKey = elements.aiApiKey.value.trim()
+  saveSettings(settings)
+  elements.aiSettings.hidden = true
+  showToast('AI 设置已保存在当前浏览器')
+}
+
+async function ensureAiPermission(endpoint) {
+  if (!globalThis.chrome?.permissions) return true
+  const origins = [getAiPermissionOrigin(endpoint)]
+  return chrome.permissions.request({ origins })
+}
+
+function setAiBusy(busy) {
+  elements.aiActionButtons.forEach(button => { button.disabled = busy })
+  elements.aiStop.hidden = !busy
+}
+
+async function getCurrentChapterContext() {
+  if (currentFormat === 'pdf') {
+    if (!pdfDocument) throw new Error('PDF 尚未加载完成')
+    const start = Math.max(1, currentPdfPage - 1)
+    const end = Math.min(pdfDocument.numPages, currentPdfPage + 1)
+    const pages = []
+    for (let page = start; page <= end; page += 1) {
+      const { text } = await getPdfPageText(page)
+      if (text.trim()) pages.push(`[第 ${page} 页]\n${text}`)
+    }
+    return {
+      text: pages.join('\n\n'),
+      chapter: start === end ? `PDF 第 ${start} 页` : `PDF 第 ${start}–${end} 页（当前页附近）`,
+    }
+  }
+  if (!ebookView?.book) throw new Error('电子书尚未加载完成')
+  const sectionIndex = ebookView.lastLocation?.section?.current ?? pendingSelection?.index ?? 0
+  const section = ebookView.book.sections?.[sectionIndex]
+  if (!section?.createDocument) throw new Error('无法读取当前章节')
+  const doc = await section.createDocument()
+  const text = doc.body?.textContent || doc.documentElement?.textContent || ''
+  return {
+    text,
+    chapter: displayValue(ebookView.lastLocation?.tocItem?.label) || elements.chapterLabel.textContent || `第 ${sectionIndex + 1} 节`,
+  }
+}
+
+async function runAiAction(scope, action) {
+  const selectionContext = scope === 'selection' ? pendingSelection?.text : ''
+  if (scope === 'selection' && !selectionContext) {
+    showToast('请先在正文中选中一段文字')
+    return
+  }
+  const config = {
+    endpoint: elements.aiEndpoint.value.trim(),
+    model: elements.aiModel.value.trim(),
+    apiKey: elements.aiApiKey.value.trim(),
+  }
+  if (!config.endpoint || !config.model) {
+    openPanel(elements.toolsPanel)
+    elements.aiSettings.hidden = false
+    showToast('请先填写 AI 接口地址和模型名称', 'error')
+    return
+  }
+
+  try {
+    const granted = await ensureAiPermission(config.endpoint)
+    if (!granted) {
+      showToast('需要允许访问所填写的 AI 接口', 'error')
+      return
+    }
+    openPanel(elements.toolsPanel)
+    elements.selectionAiMenu.hidden = true
+    const context = scope === 'selection'
+      ? { text: selectionContext, chapter: elements.chapterLabel.textContent }
+      : await getCurrentChapterContext()
+    const actionLabel = scope === 'selection' ? SELECTION_AI_ACTIONS[action] : CHAPTER_AI_ACTIONS[action]
+    const messages = buildAiMessages({
+      scope,
+      action,
+      text: context.text,
+      title: elements.sidebarTitle.textContent || elements.headerTitle.textContent,
+      chapter: context.chapter,
+    })
+    aiAbortController?.abort()
+    aiAbortController = new AbortController()
+    elements.aiResult.hidden = false
+    elements.aiResultTitle.textContent = actionLabel || 'AI 回答'
+    elements.aiResultStatus.textContent = scope === 'selection'
+      ? `本次发送选中文字，共 ${selectionContext.length} 个字符`
+      : `本次发送 ${context.chapter} 的文字，最多 24000 个字符`
+    elements.aiResultContent.textContent = ''
+    setAiBusy(true)
+    await streamAiCompletion({
+      ...config,
+      messages,
+      signal: aiAbortController.signal,
+      onChunk: chunk => {
+        elements.aiResultContent.textContent += chunk
+        elements.aiResultContent.scrollTop = elements.aiResultContent.scrollHeight
+      },
+    })
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      elements.aiResultStatus.textContent = '已停止生成'
+    } else {
+      console.error(error)
+      elements.aiResultStatus.textContent = error?.message || 'AI 请求失败，请检查接口设置'
+      showToast('AI 请求失败，请检查接口设置', 'error')
+    }
+  } finally {
+    aiAbortController = null
+    setAiBusy(false)
+  }
+}
 function captureEbookSelection(doc, index) {
   const selection = doc.defaultView.getSelection()
   if (!selection || selection.isCollapsed || !selection.rangeCount) return
   const text = selection.toString().trim()
   if (!text) return
   pendingSelection = { kind: 'ebook', index, range: selection.getRangeAt(0).cloneRange(), text }
+  updateAiSelectionUi()
 }
 
 function capturePdfSelection(wrapper) {
@@ -485,6 +645,7 @@ function capturePdfSelection(wrapper) {
   const text = selection.toString().trim()
   if (!text || !rects.length) return
   pendingSelection = { kind: 'pdf', page: Number(wrapper.dataset.page), text, rects }
+  updateAiSelectionUi()
 }
 
 async function annotateSelection(withNote) {
@@ -508,6 +669,7 @@ async function annotateSelection(withNote) {
     renderPdfAnnotationOverlays(annotation.page)
   }
   pendingSelection = null
+  updateAiSelectionUi()
   await saveAnnotations()
   showToast(withNote ? '批注已保存' : '高亮已保存')
 }
@@ -911,9 +1073,18 @@ function bindControls() {
     if (file) openBook(file)
   })
   elements.homeButton.addEventListener('click', showLibrary)
+  elements.headerToggle.addEventListener('click', () => setHeaderCollapsed(!document.body.classList.contains('header-collapsed')))
   elements.sidebarButton.addEventListener('click', () => openPanel(elements.sidebar))
   elements.settingsButton.addEventListener('click', () => openPanel(elements.settingsPanel))
   elements.toolsButton.addEventListener('click', () => openPanel(elements.toolsPanel))
+  elements.aiSettingsToggle.addEventListener('click', () => {
+    elements.aiSettings.hidden = !elements.aiSettings.hidden
+    if (!elements.aiSettings.hidden) elements.aiEndpoint.focus()
+  })
+  elements.saveAiSettings.addEventListener('click', saveAiConfiguration)
+  elements.aiStop.addEventListener('click', () => aiAbortController?.abort())
+  elements.closeSelectionAiMenu.addEventListener('click', () => { elements.selectionAiMenu.hidden = true })
+  elements.aiActionButtons.forEach(button => button.addEventListener('click', () => runAiAction(button.dataset.aiScope, button.dataset.aiAction)))
   elements.closeTools.addEventListener('click', closePanels)
   elements.searchForm.addEventListener('submit', runSearch)
   elements.highlightSelection.addEventListener('click', () => annotateSelection(false))
@@ -961,7 +1132,7 @@ function bindControls() {
     else showToast('没有找到支持的书籍文件', 'error')
   })
   window.addEventListener('keydown', event => {
-    if (event.key === 'Escape') { closePanels(); return }
+    if (event.key === 'Escape') { closePanels(); elements.selectionAiMenu.hidden = true; return }
     if (!document.body.classList.contains('is-reading') || elements.settingsPanel.classList.contains('open') || elements.toolsPanel.classList.contains('open')) return
     if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return
     if (event.key === 'ArrowLeft' || event.key === 'PageUp') { event.preventDefault(); navigate(-1) }

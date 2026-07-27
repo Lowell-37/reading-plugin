@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises'
 
 test('reader exposes search, annotation and PDF navigation controls', async () => {
   const html = await readFile(new URL('../reader.html', import.meta.url), 'utf8')
-  for (const id of ['tools-button', 'search-form', 'highlight-selection', 'note-selection', 'pdf-toolbar', 'pdf-page-input']) {
+  for (const id of ['header-toggle', 'tools-button', 'search-form', 'highlight-selection', 'note-selection', 'ai-settings', 'ai-result', 'selection-ai-menu', 'pdf-toolbar', 'pdf-page-input']) {
     assert.match(html, new RegExp(`id=["']${id}["']`))
   }
   const meta = html.match(/Content-Security-Policy[^>]+content="([^"]+)"/)?.[1] || ''
@@ -12,6 +12,12 @@ test('reader exposes search, annotation and PDF navigation controls', async () =
   assert.doesNotMatch(workerSource, /blob:/)
 })
 
+test('EPUB and PDF selections are connected to the AI selection menu', async () => {
+  const source = await readFile(new URL('../src/reader.js', import.meta.url), 'utf8')
+  assert.match(source, /pendingSelection = \{ kind: 'ebook'[\s\S]+?updateAiSelectionUi\(\)/)
+  assert.match(source, /pendingSelection = \{ kind: 'pdf'[\s\S]+?updateAiSelectionUi\(\)/)
+  assert.match(source, /getCurrentChapterContext[\s\S]+?section\.createDocument\(\)/)
+})
 test('manifest and package versions stay aligned', async () => {
   const manifest = JSON.parse(await readFile(new URL('../manifest.json', import.meta.url), 'utf8'))
   const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
