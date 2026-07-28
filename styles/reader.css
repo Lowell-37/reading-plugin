@@ -77,6 +77,10 @@ body.header-collapsed .settings-panel,body.header-collapsed .tools-panel { top:1
 .drop-hint { margin:14px 0 18px; color:var(--faint); font-size:11px; }
 .format-row { display:flex; gap:8px; }
 .format-row span { padding:5px 9px; border:1px solid var(--line); border-radius:7px; color:var(--muted); font-size:9px; font-weight:700; letter-spacing:.08em; background:color-mix(in srgb,var(--surface-solid) 70%,transparent); }
+.library-backup-actions { display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:9px; margin-top:22px; position:relative; z-index:1; }
+.library-backup-actions .soft-button { min-height:34px; padding:0 13px; background:color-mix(in srgb,var(--surface-solid) 82%,transparent); }
+.library-backup-actions span { flex-basis:100%; color:var(--faint); font-size:9px; line-height:1.5; }
+.library-backup-actions [disabled] { cursor:wait; opacity:.55; }
 
 .library-section { max-width:1160px; margin:72px auto 0; }
 .section-heading { display:flex; justify-content:space-between; align-items:end; margin-bottom:22px; }

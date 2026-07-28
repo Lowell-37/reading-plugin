@@ -55,6 +55,12 @@
       </button>
       <p class="drop-hint">也可以直接拖到这里</p>
       <div class="format-row"><span>PDF</span><span>EPUB</span><span>MOBI</span><span>AZW3</span></div>
+      <div class="library-backup-actions" aria-label="书库备份与恢复">
+        <button class="soft-button" id="backup-library" type="button">备份书库</button>
+        <button class="soft-button" id="restore-library" type="button">恢复备份</button>
+        <span id="backup-status" aria-live="polite">备份包含书籍、进度、高亮、批注和设置，不包含 API 密钥</span>
+      </div>
+      <input id="backup-file-input" type="file" accept=".quietreader,application/vnd.quiet-reader.backup" hidden>
     </section>
     <section class="library-section" id="library-section" hidden>
       <div class="section-heading"><div><p class="eyebrow">YOUR LIBRARY</p><h2>最近阅读</h2></div><p>点击书籍，继续上次的位置</p></div>

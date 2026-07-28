@@ -86,6 +86,17 @@ export async function deleteBook(id) {
   database.close()
 }
 
+export async function restoreBooks(records) {
+  if (!Array.isArray(records)) throw new TypeError('records must be an array')
+  const database = await openDatabase()
+  const transaction = database.transaction(BOOKS_STORE, 'readwrite')
+  const store = transaction.objectStore(BOOKS_STORE)
+  for (const record of records) store.put(record)
+  await transactionDone(transaction)
+  database.close()
+  return records.length
+}
+
 const DEFAULT_SETTINGS = {
   theme: 'paper',
   flow: 'paginated',

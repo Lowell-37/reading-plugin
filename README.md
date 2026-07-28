@@ -21,6 +21,12 @@
 
 The manifest pins a public key so moving the project or rebuilding `.output/chrome-mv3` keeps the same extension ID and browser storage origin. Development builds installed before this key was introduced use a different origin and cannot be read across extension IDs; those books must be imported once more.
 
+## 书库备份与恢复
+
+书架首页提供“备份书库”和“恢复备份”。备份文件扩展名为 `.quietreader`，包含书籍原文件、封面、阅读进度、高亮、批注和非敏感设置；恢复前会校验备份版本和每个二进制文件的 SHA-256。
+
+为避免泄露，AI API 密钥不会写入备份。恢复采用合并方式：相同书籍记录更新，其他现有书籍保留。
+
 ## AI 阅读助手（初版）
 
 当前支持：

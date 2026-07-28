@@ -7,6 +7,7 @@ import { bookRepository } from './book-repository.js'
 import { ContinuousEbookScroller } from './continuous-ebook.js'
 import { initializeEbookPosition } from './ebook-navigation.js'
 import { detectFormat, displayValue, formatBytes } from './formats.js'
+import { backupFileName, createLibraryBackup, parseLibraryBackup } from './library-backup.js'
 import { ProgressService } from './progress-service.js'
 import { createEbookReaderAdapter, createPdfReaderAdapter } from './reader-adapter.js'
 import { loadSettings, saveSettings } from './storage.js'
@@ -23,6 +24,10 @@ const elements = {
   dropZone: $('#drop-zone'),
   librarySection: $('#library-section'),
   bookGrid: $('#book-grid'),
+  backupLibrary: $('#backup-library'),
+  restoreLibrary: $('#restore-library'),
+  backupFileInput: $('#backup-file-input'),
+  backupStatus: $('#backup-status'),
   sidebar: $('#sidebar'),
   sidebarButton: $('#sidebar-button'),
   scrim: $('#scrim'),
@@ -1090,6 +1095,66 @@ async function renderLibrary() {
   }
 }
 
+function setBackupBusy(busy, message) {
+  elements.backupLibrary.disabled = busy
+  elements.restoreLibrary.disabled = busy
+  elements.backupStatus.textContent = message
+}
+
+async function exportLibraryBackup() {
+  setBackupBusy(true, '正在校验并打包本地书库…')
+  elements.backupStatus.dataset.state = 'working'
+  try {
+    await progressService.flush()
+    const records = await bookRepository.list()
+    const archive = await createLibraryBackup(records, settings)
+    const url = URL.createObjectURL(archive)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = backupFileName()
+    link.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+    const message = `备份完成：${records.length} 本书；API 密钥未写入备份`
+    setBackupBusy(false, message)
+    elements.backupStatus.dataset.state = 'exported'
+    showToast(message)
+  } catch (error) {
+    console.error(error)
+    setBackupBusy(false, '备份失败，原书库未被修改')
+    elements.backupStatus.dataset.state = 'error'
+    showToast('书库备份失败，请重试', 'error')
+  }
+}
+
+async function restoreLibraryBackup(file) {
+  setBackupBusy(true, '正在验证备份完整性…')
+  elements.backupStatus.dataset.state = 'working'
+  try {
+    const backup = await parseLibraryBackup(file)
+    const currentApiKey = settings.aiApiKey
+    await bookRepository.restore(backup.records)
+    settings = { ...settings, ...backup.settings, aiApiKey: currentApiKey }
+    applyReaderSettings()
+    await renderLibrary()
+    const message = `恢复完成：${backup.records.length} 本书；现有同名记录已更新`
+    setBackupBusy(false, message)
+    elements.backupStatus.dataset.state = 'restored'
+    showToast(message)
+  } catch (error) {
+    console.error(error)
+    setBackupBusy(false, '恢复失败，未写入未经验证的数据')
+    elements.backupStatus.dataset.state = 'error'
+    showToast('备份文件无效或已损坏', 'error')
+  } finally {
+    elements.backupFileInput.value = ''
+  }
+}
+
+function openBackupPicker() {
+  elements.backupFileInput.value = ''
+  elements.backupFileInput.click()
+}
+
 function navigate(direction) {
   readerAdapter?.navigate(direction)
 }
@@ -1105,6 +1170,13 @@ function bindControls() {
   elements.headerToggle.addEventListener('click', () => setHeaderCollapsed(!document.body.classList.contains('header-collapsed')))
   elements.sidebarButton.addEventListener('click', () => openPanel(elements.sidebar))
   elements.settingsButton.addEventListener('click', () => openPanel(elements.settingsPanel))
+  elements.backupLibrary.addEventListener('click', exportLibraryBackup)
+  elements.restoreLibrary.addEventListener('click', openBackupPicker)
+  elements.backupFileInput.addEventListener('change', event => {
+    const [file] = event.target.files
+    if (file) restoreLibraryBackup(file)
+  })
+
   elements.toolsButton.addEventListener('click', () => openPanel(elements.toolsPanel))
   elements.aiSettingsToggle.addEventListener('click', () => {
     elements.aiSettings.hidden = !elements.aiSettings.hidden

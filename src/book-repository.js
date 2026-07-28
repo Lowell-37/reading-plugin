@@ -1,7 +1,7 @@
-import { deleteBook, listBooks, saveBook, updateBook } from './storage.js'
+import { deleteBook, listBooks, restoreBooks, saveBook, updateBook } from './storage.js'
 
 export class BookRepository {
-  constructor(storage = { deleteBook, listBooks, saveBook, updateBook }) {
+  constructor(storage = { deleteBook, listBooks, restoreBooks, saveBook, updateBook }) {
     this.storage = storage
   }
 
@@ -15,6 +15,10 @@ export class BookRepository {
 
   list() {
     return this.storage.listBooks()
+  }
+
+  restore(records) {
+    return this.storage.restoreBooks(records)
   }
 
   delete(id) {

@@ -34,3 +34,15 @@ test('manifest and package versions stay aligned', async () => {
   const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
   assert.equal(manifest.version, pkg.version)
 })
+test('root and Vue library shells expose versioned backup and restore controls', async () => {
+  const html = await readFile(new URL('../reader.html', import.meta.url), 'utf8')
+  const vue = await readFile(new URL('../entrypoints/reader/components/WelcomeLibrary.vue', import.meta.url), 'utf8')
+  const source = await readFile(new URL('../src/reader.js', import.meta.url), 'utf8')
+  for (const id of ['backup-library', 'restore-library', 'backup-file-input', 'backup-status']) {
+    const pattern = new RegExp(`id=["']${id}["']`)
+    assert.match(html, pattern)
+    assert.match(vue, pattern)
+  }
+  assert.match(source, /createLibraryBackup/)
+  assert.match(source, /parseLibraryBackup/)
+})
