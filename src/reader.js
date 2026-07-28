@@ -3,9 +3,9 @@ import * as pdfjsLib from '../node_modules/pdfjs-dist/build/pdf.mjs'
 import { Overlayer } from '../node_modules/foliate-js/overlayer.js'
 import { createAnnotation, excerpt, findTextMatches, normalizeAnnotations } from './annotations.js'
 import { buildAiMessages, CHAPTER_AI_ACTIONS, getAiPermissionOrigin, SELECTION_AI_ACTIONS, streamAiCompletion } from './ai.js'
+import { ContinuousEbookScroller } from './continuous-ebook.js'
 import { initializeEbookPosition } from './ebook-navigation.js'
 import { detectFormat, displayValue, formatBytes } from './formats.js'
-import { SectionBoundaryNavigator } from './section-navigation.js'
 import { deleteBook, listBooks, loadSettings, saveBook, saveSettings, updateBook } from './storage.js'
 
 const $ = selector => document.querySelector(selector)
@@ -99,7 +99,7 @@ let settings = loadSettings()
 let currentRecord = null
 let currentFormat = null
 let ebookView = null
-let ebookWheelAbort = null
+let continuousEbook = null
 let pdfDocument = null
 let pdfLoadingTask = null
 let pdfObserver = null
@@ -179,8 +179,8 @@ function setHeaderCollapsed(collapsed, persist = true) {
 function closeReader() {
   clearTimeout(progressSaveTimer)
   closePanels()
-  ebookWheelAbort?.abort()
-  ebookWheelAbort = null
+  continuousEbook?.destroy()
+  continuousEbook = null
   ebookView?.close?.()
   ebookView?.remove()
   ebookView = null
@@ -255,17 +255,77 @@ function getBookStyles() {
   `
 }
 
+function getContinuousBookStyles() {
+  return `${getBookStyles()}
+    body { width:min(calc(100% - 48px), ${settings.pageWidth}px) !important; max-width:${settings.pageWidth}px !important; }
+  `
+}
+
 function applyReaderSettings() {
   applySettingsToControls()
   saveSettings(settings)
   if (!ebookView?.renderer) return
-  ebookView.renderer.setAttribute('flow', settings.flow)
+  ebookView.renderer.setAttribute('flow', 'paginated')
   ebookView.renderer.setAttribute('animated', '')
   ebookView.renderer.setAttribute('margin', '64px')
   ebookView.renderer.setAttribute('gap', '7%')
   ebookView.renderer.setAttribute('max-inline-size', `${settings.pageWidth}px`)
   ebookView.renderer.setAttribute('max-column-count', '2')
   ebookView.renderer.setStyles?.(getBookStyles())
+  continuousEbook?.setStyles(getContinuousBookStyles())
+}
+
+function handleEbookRelocate(detail) {
+  const chapter = displayValue(detail.tocItem?.label) || '正文'
+  updateProgress(detail.fraction, chapter)
+  if (detail.tocItem?.href) markCurrentToc(detail.tocItem.href)
+  scheduleProgressSave({ kind: 'ebook', cfi: detail.cfi || null, fraction: detail.fraction })
+}
+
+async function navigateEbookTo(target) {
+  if (continuousEbook) return continuousEbook.goTo(target)
+  return ebookView?.goTo(target)
+}
+
+async function setEbookFlow(flow, target = null) {
+  if (!ebookView) return
+  if (flow === 'scrolled') {
+    if (continuousEbook) return
+    ebookView.style.display = 'none'
+    elements.panelTip.textContent = '滚轮连续阅读，章节会自然衔接'
+    continuousEbook = new ContinuousEbookScroller({
+      host: elements.ebookHost,
+      view: ebookView,
+      styles: getContinuousBookStyles(),
+      annotations,
+      onSelection: captureEbookSelection,
+      onExternalLink: href => {
+        if (confirm('这本书想要打开一个外部链接，是否继续？')) globalThis.open(href, '_blank')
+      },
+      onAnnotation: annotation => {
+        if (annotation?.note) showToast(annotation.note)
+      },
+    })
+    continuousEbook.addEventListener('relocate', ({ detail }) => handleEbookRelocate(detail))
+    try {
+      await continuousEbook.mount(target || ebookView.lastLocation)
+    } catch (error) {
+      continuousEbook.destroy()
+      continuousEbook = null
+      ebookView.style.removeProperty('display')
+      elements.panelTip.textContent = '方向键翻页，Esc 收起面板'
+      throw error
+    }
+    return
+  }
+
+  const location = continuousEbook?.currentLocation()
+  continuousEbook?.destroy()
+  continuousEbook = null
+  ebookView.style.removeProperty('display')
+  elements.panelTip.textContent = '方向键翻页，Esc 收起面板'
+  if (location?.cfi) await ebookView.goTo(location.cfi)
+  else if (typeof location?.fraction === 'number') await ebookView.goToFraction(location.fraction)
 }
 
 function scheduleProgressSave(progress) {
@@ -356,6 +416,7 @@ function loadAnnotations() {
 async function saveAnnotations() {
   if (!currentRecord) return
   currentRecord = { ...currentRecord, annotations }
+  continuousEbook?.setAnnotations(annotations)
   renderAnnotationList()
   if (currentRecord.id) await updateBook(currentRecord.id, { annotations }).catch(console.error)
 }
@@ -384,6 +445,7 @@ function renderAnnotationList() {
     jump.addEventListener('click', () => {
       closePanels()
       if (annotation.kind === 'pdf') goToPdfPage(annotation.page)
+      else if (continuousEbook) continuousEbook.goTo(annotation.locator)
       else ebookView?.showAnnotation({ value: annotation.locator })
     })
     const remove = document.createElement('button')
@@ -391,7 +453,7 @@ function renderAnnotationList() {
     remove.className = 'annotation-delete'
     remove.textContent = '删除'
     remove.addEventListener('click', async () => {
-      if (annotation.kind === 'ebook') await ebookView?.deleteAnnotation({ value: annotation.locator })
+      if (annotation.kind === 'ebook' && !continuousEbook) await ebookView?.deleteAnnotation({ value: annotation.locator })
       annotations = annotations.filter(item => item.id !== annotation.id)
       renderPdfAnnotationOverlays()
       await saveAnnotations()
@@ -428,7 +490,7 @@ async function searchEbook(query, run) {
       if (count <= 300) addSearchResult({
         label: displayValue(result.label) || `结果 ${count}`,
         text: item.excerpt || query,
-        onSelect: () => ebookView.goTo(item.cfi),
+        onSelect: () => navigateEbookTo(item.cfi),
       })
     }
   }
@@ -542,14 +604,17 @@ async function getCurrentChapterContext() {
     }
   }
   if (!ebookView?.book) throw new Error('电子书尚未加载完成')
-  const sectionIndex = ebookView.lastLocation?.section?.current ?? pendingSelection?.index ?? 0
+  const continuousContext = continuousEbook?.getCurrentDocument()
+  const sectionIndex = continuousContext?.index ?? ebookView.lastLocation?.section?.current ?? pendingSelection?.index ?? 0
   const section = ebookView.book.sections?.[sectionIndex]
-  if (!section?.createDocument) throw new Error('无法读取当前章节')
-  const doc = await section.createDocument()
+  if (!continuousContext?.doc && !section?.createDocument) throw new Error('无法读取当前章节')
+  const doc = continuousContext?.doc || await section.createDocument()
   const text = doc.body?.textContent || doc.documentElement?.textContent || ''
   return {
     text,
-    chapter: displayValue(ebookView.lastLocation?.tocItem?.label) || elements.chapterLabel.textContent || `第 ${sectionIndex + 1} 节`,
+    chapter: displayValue(continuousEbook?.currentLocation()?.tocItem?.label)
+      || displayValue(ebookView.lastLocation?.tocItem?.label)
+      || elements.chapterLabel.textContent || `第 ${sectionIndex + 1} 节`,
   }
 }
 
@@ -660,8 +725,13 @@ async function annotateSelection(withNote) {
     const locator = ebookView.getCFI(pendingSelection.index, pendingSelection.range)
     annotation = createAnnotation({ kind: 'ebook', locator, text: pendingSelection.text, note, section: pendingSelection.index })
     annotations.push(annotation)
-    await ebookView.addAnnotation({ value: locator, color: annotation.color, note })
-    ebookView.deselect()
+    if (continuousEbook) {
+      continuousEbook.setAnnotations(annotations)
+      continuousEbook.deselect()
+    } else {
+      await ebookView.addAnnotation({ value: locator, color: annotation.color, note })
+      ebookView.deselect()
+    }
   } else {
     annotation = createAnnotation({ kind: 'pdf', page: pendingSelection.page, locator: `page:${pendingSelection.page}`, text: pendingSelection.text, note, rects: pendingSelection.rects })
     annotations.push(annotation)
@@ -711,10 +781,7 @@ async function openEbook(file) {
   ebookView = document.createElement('foliate-view')
   elements.ebookHost.append(ebookView)
   ebookView.addEventListener('relocate', ({ detail }) => {
-    const chapter = displayValue(detail.tocItem?.label) || '正文'
-    updateProgress(detail.fraction, chapter)
-    if (detail.tocItem?.href) markCurrentToc(detail.tocItem.href)
-    scheduleProgressSave({ kind: 'ebook', cfi: detail.cfi || null, fraction: detail.fraction })
+    if (!continuousEbook) handleEbookRelocate(detail)
   })
   ebookView.addEventListener('draw-annotation', ({ detail: { draw, annotation } }) => draw(Overlayer.highlight, { color: annotation.color || '#f4c95d' }))
   ebookView.addEventListener('create-overlay', ({ detail: { index } }) => {
@@ -727,61 +794,7 @@ async function openEbook(file) {
   ebookView.addEventListener('external-link', event => {
     if (!confirm('这本书想要打开一个外部链接，是否继续？')) event.preventDefault()
   })
-  const wheelNavigator = new SectionBoundaryNavigator()
-  let sectionTransitioning = false
-  const navigateSectionSmoothly = async direction => {
-    if (sectionTransitioning) return
-    sectionTransitioning = true
-    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    const navigate = () => direction > 0 ? ebookView.next() : ebookView.prev()
-    if (reducedMotion) {
-      try { await navigate() } finally { sectionTransitioning = false }
-      return
-    }
-
-    const host = elements.ebookHost
-    host.dataset.sectionDirection = direction > 0 ? 'next' : 'previous'
-    host.dataset.sectionCue = direction > 0 ? '继续阅读 · 下一章' : '继续阅读 · 上一章'
-    host.classList.add('section-leaving')
-    try {
-      await new Promise(resolve => setTimeout(resolve, 140))
-      await navigate()
-      host.classList.remove('section-leaving')
-      host.classList.add('section-entering')
-      await new Promise(resolve => setTimeout(resolve, 280))
-    } finally {
-      host.classList.remove('section-leaving', 'section-entering')
-      delete host.dataset.sectionDirection
-      delete host.dataset.sectionCue
-      sectionTransitioning = false
-    }
-  }
-  const handleSectionWheel = event => {
-    const renderer = ebookView?.renderer
-    if (!renderer?.scrolled || event.ctrlKey || sectionTransitioning) return
-
-    const scale = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? renderer.size : 1
-    const direction = wheelNavigator.push({
-      delta: event.deltaY * scale,
-      atStart: renderer.start <= 3,
-      atEnd: renderer.viewSize - renderer.end <= 3,
-    })
-    if (!direction) return
-
-    event.preventDefault()
-    navigateSectionSmoothly(direction).catch(error => {
-      console.error(error)
-      showToast('章节切换失败，请使用目录继续阅读', 'error')
-    })
-  }
-  ebookWheelAbort = new AbortController()
-  elements.readerStage.addEventListener('wheel', handleSectionWheel, {
-    passive: false,
-    signal: ebookWheelAbort.signal,
-  })
   ebookView.addEventListener('load', ({ detail: { doc, index } }) => {
-    doc.addEventListener('wheel', handleSectionWheel, { passive: false })
-
     doc.addEventListener('mouseup', () => captureEbookSelection(doc, index))
     doc.addEventListener('selectionchange', () => captureEbookSelection(doc, index))
   })
@@ -791,10 +804,11 @@ async function openEbook(file) {
   const metadata = ebookView.book.metadata || {}
   const cover = await Promise.resolve(ebookView.book.getCover?.()).catch(() => null)
   await setMetadata({ title: metadata.title, author: metadata.author, cover })
-  renderToc(ebookView.book.toc, item => ebookView.goTo(item.href).catch(error => showToast(error.message, 'error')))
+  renderToc(ebookView.book.toc, item => navigateEbookTo(item.href).catch(error => showToast(error.message, 'error')))
 
   const rendered = await initializeEbookPosition(ebookView, currentRecord?.progress)
   if (!rendered) throw new Error('No readable EPUB section could be rendered')
+  if (settings.flow === 'scrolled') await setEbookFlow('scrolled', ebookView.lastLocation || currentRecord?.progress)
   hideLoading()
 }
 
@@ -1061,6 +1075,7 @@ async function renderLibrary() {
 
 function navigate(direction) {
   if (currentFormat === 'pdf') goToPdfPage(currentPdfPage + direction)
+  else if (continuousEbook) continuousEbook.scrollByPage(direction)
   else if (direction < 0) ebookView?.goLeft()
   else ebookView?.goRight()
 }
@@ -1104,12 +1119,19 @@ function bindControls() {
   elements.progressSlider.addEventListener('input', event => {
     const fraction = Number(event.target.value)
     if (currentFormat === 'pdf') goToPdfPage(1 + fraction * (pdfDocument.numPages - 1))
+    else if (continuousEbook) continuousEbook.goToFraction(fraction)
     else ebookView?.goToFraction(fraction)
   })
 
-  document.querySelectorAll('[data-flow]').forEach(button => button.addEventListener('click', () => {
+  document.querySelectorAll('[data-flow]').forEach(button => button.addEventListener('click', async () => {
     settings.flow = button.dataset.flow
     applyReaderSettings()
+    try {
+      await setEbookFlow(settings.flow)
+    } catch (error) {
+      console.error(error)
+      showToast('阅读模式切换失败', 'error')
+    }
   }))
   document.querySelectorAll('[data-theme]').forEach(button => button.addEventListener('click', () => {
     settings.theme = button.dataset.theme

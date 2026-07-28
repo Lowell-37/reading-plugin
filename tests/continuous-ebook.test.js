@@ -1,0 +1,41 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+
+import {
+  activeSectionIndex,
+  interpolateSectionProgress,
+} from '../src/continuous-layout.js'
+
+test('maps a local chapter position into whole-book progress', () => {
+  const starts = [0, .1, .35, .8]
+  assert.equal(interpolateSectionProgress(starts, 1, 0), .1)
+  assert.ok(Math.abs(interpolateSectionProgress(starts, 1, .5) - .225) < Number.EPSILON)
+  assert.equal(interpolateSectionProgress(starts, 1, 1), .35)
+  assert.equal(interpolateSectionProgress(starts, 3, 1), 1)
+})
+
+test('clamps invalid local progress values', () => {
+  assert.equal(interpolateSectionProgress([0, .5], 0, -2), 0)
+  assert.equal(interpolateSectionProgress([0, .5], 1, 8), 1)
+})
+
+test('finds the chapter occupying the middle of the viewport', () => {
+  const layout = [
+    { index: 4, top: 0, bottom: 700 },
+    { index: 5, top: 700, bottom: 1500 },
+    { index: 6, top: 1500, bottom: 2300 },
+  ]
+  assert.equal(activeSectionIndex(layout, 690), 4)
+  assert.equal(activeSectionIndex(layout, 940), 5)
+  assert.equal(activeSectionIndex(layout, 1900), 6)
+})
+
+test('uses the nearest section outside the rendered bounds', () => {
+  const layout = [
+    { index: 2, top: 300, bottom: 900 },
+    { index: 3, top: 900, bottom: 1500 },
+  ]
+  assert.equal(activeSectionIndex(layout, 0), 2)
+  assert.equal(activeSectionIndex(layout, 1800), 3)
+  assert.equal(activeSectionIndex([], 400), -1)
+})
