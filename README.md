@@ -8,15 +8,16 @@
 
 书籍原文件、封面和阅读进度保存在浏览器的 IndexedDB 中，不会上传到服务器。
 
-## 本地加载
+## 构建并加载
 
 1. 安装依赖：`npm install`
-2. 打开 Edge 的 `edge://extensions` 或 Chrome 的 `chrome://extensions`
-3. 开启“开发人员模式”
-4. 选择“加载解压缩的扩展”，指向本项目目录
-5. 点击工具栏中的“静读”图标
+2. 生成 Edge / Chrome 扩展：`npm run build`
+3. 打开 Edge 的 `edge://extensions` 或 Chrome 的 `chrome://extensions`
+4. 开启“开发人员模式”
+5. 选择“加载解压缩的扩展”，指向 `.output/chrome-mv3`
+6. 点击工具栏中的“静读”图标
 
-更新代码后，请在扩展管理页面点击“重新加载”，已保存的书籍和阅读进度不会丢失。
+开发时可运行 `npm run dev` 使用 WXT 热更新。旧版直接加载项目根目录的方式暂时保留兼容，但后续发布与测试均以 WXT 生成目录为准。扩展升级继续使用原来的 IndexedDB 数据库与对象仓库，不会主动清除已保存书籍和阅读进度。
 
 ## AI 阅读助手（初版）
 

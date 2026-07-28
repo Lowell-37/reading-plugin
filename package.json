@@ -5,11 +5,16 @@
   "description": "A local-first browser reading extension for PDF, EPUB and MOBI books.",
   "type": "module",
   "scripts": {
-    "postinstall": "node scripts/patch-foliate.mjs",
+    "postinstall": "node scripts/patch-foliate.mjs && wxt prepare",
     "check": "npm run build:core && npm run typecheck && node --check src/background.js && node --check src/reader.js && node --check src/storage.js && node --check src/book-repository.js && node --check src/progress-service.js && node --check src/reader-adapter.js && node --check src/continuous-layout.js && node --check src/continuous-ebook.js && node --check scripts/patch-foliate.mjs",
     "test": "vitest run",
     "build:core": "tsc -p tsconfig.runtime.json",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json",
+    "sync:assets": "node scripts/sync-public-assets.mjs",
+    "dev": "npm run sync:assets && wxt",
+    "build": "npm run sync:assets && wxt build",
+    "build:firefox": "npm run sync:assets && wxt build -b firefox",
+    "zip": "npm run sync:assets && wxt zip"
   },
   "dependencies": {
     "foliate-js": "1.0.1",
@@ -17,6 +22,7 @@
   },
   "devDependencies": {
     "typescript": "^7.0.2",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "wxt": "^0.21.1"
   }
 }

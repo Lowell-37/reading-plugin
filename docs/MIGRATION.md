@@ -1,6 +1,6 @@
 # 渐进式架构迁移
 
-当前扩展继续保持“加载解压缩目录即可运行”，避免在阅读稳定性尚未完成前一次性重写。新功能必须先通过独立模块与 `reader.js` 解耦，再迁入 WXT/Vue。
+当前扩展已经由 WXT 生成发布包，旧版项目根目录加载方式仅作为过渡兼容。核心阅读能力继续通过独立模块演进，再逐步迁入 Vue。
 
 ## 目标技术栈
 
@@ -17,25 +17,23 @@
 
 ### 阶段 1：建立模块边界（已完成）
 
-- AI Provider、提示词与请求流位于独立模块
-- 阅读引擎导航通过统一 `ReaderAdapter` 接口接入
-- 阅读进度的规范化、节流和落盘由 `ProgressService` 管理
-- IndexedDB 图书操作由 `BookRepository` 封装，数据库名称、对象仓库和记录结构保持兼容
+- AI、阅读引擎导航、进度和图书持久化均有独立模块边界
+- IndexedDB 数据库名称、对象仓库和记录结构保持兼容
 
 ### 阶段 2：TypeScript 与 Vitest（已完成）
 
-- `formats`、`annotations`、`ai`、电子书位置恢复已迁入 `src/core/*.ts`
-- `src/core/types.ts` 定义图书、位置、目录、批注和 AI 请求共享类型
-- TypeScript 严格类型检查与浏览器兼容产物构建已加入 `npm run check`
-- 原有 33 项 Node 测试全部由 Vitest 执行，并直接测试 TypeScript 核心源码
+- 无 DOM 核心逻辑已迁入 TypeScript
+- 已建立图书、位置、目录、批注和 AI 请求共享类型
+- 现有单元测试均由 Vitest 执行
 
-### 阶段 3：WXT 外壳（下一阶段）
+### 阶段 3：WXT 外壳（已完成）
 
-- 建立 `entrypoints/background.ts` 与 `entrypoints/reader/`
-- 由 WXT 生成 Manifest V3 和发布包
-- 保留 IndexedDB 名称和对象仓库，确保升级不丢书
+- `entrypoints/background.ts` 与 `entrypoints/reader/` 已接管扩展入口
+- Manifest V3、Edge/Chrome 构建包和压缩包由 WXT 生成
+- PDF.js worker、CMap、标准字体与 WASM 资源在构建前同步到发布目录
+- 发布包仍使用 `quiet-reader` IndexedDB 与 `books` 对象仓库，升级不迁移、不清空本地书籍
 
-### 阶段 4：Vue 3 + Pinia
+### 阶段 4：Vue 3 + Pinia（下一阶段）
 
 - 按顶部栏、工具面板、设置面板、目录、书架顺序迁移
 - 阅读引擎通过 Adapter 接口挂载，不在 Vue 组件中直接操作内部实现
