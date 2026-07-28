@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="color-scheme" content="light dark">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' blob: data:; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' blob:; img-src 'self' data: blob:; font-src 'self' data: blob:; worker-src 'self'; connect-src 'self' blob: data:; frame-src blob: data:; object-src 'self' blob:; form-action 'none';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' blob: data:; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' blob:; img-src 'self' data: blob:; font-src 'self' data: blob:; worker-src 'self'; connect-src 'self' blob: data: https: http:; frame-src blob: data:; object-src 'self' blob:; form-action 'none';">
   <title>静读</title>
   <link rel="stylesheet" href="styles/reader.css">
 </head>
@@ -29,12 +29,17 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v12m-5-5 5 5 5-5M5 20h14"/></svg>
         打开书籍
       </button>
-      <button class="icon-button reader-only" id="tools-button" aria-label="搜索与批注" title="搜索与批注">⌕</button>
-      <button class="icon-button reader-only" id="settings-button" aria-label="阅读设置" title="阅读设置">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.37a1.7 1.7 0 0 0-1 .63 1.7 1.7 0 0 0-.37 1.08V21h-4v-.09A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.23 15a1.7 1.7 0 0 0-.63-1A1.7 1.7 0 0 0 2.52 13H2V9h.52A1.7 1.7 0 0 0 4.23 8a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 8.6 3.6a1.7 1.7 0 0 0 1-.63A1.7 1.7 0 0 0 10 1.9V2h4v-.09A1.7 1.7 0 0 0 15 3.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.37 8a1.7 1.7 0 0 0 .63 1 1.7 1.7 0 0 0 1.08.37H21v4h.09a1.7 1.7 0 0 0-1.69 1.63Z"/></svg>
+      <button class="icon-button header-icon-button reader-only" id="tools-button" aria-label="搜索、AI与批注" title="搜索、AI与批注">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+      </button>
+      <button class="icon-button header-icon-button reader-only" id="settings-button" aria-label="阅读设置" title="阅读设置">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>
       </button>
     </div>
   </header>
+  <button class="header-toggle reader-only" id="header-toggle" type="button" aria-expanded="true" aria-label="收起顶部栏" title="收起顶部栏">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 14 5-5 5 5"/></svg>
+  </button>
 
   <main id="welcome-view" class="welcome-view">
     <section class="hero" id="drop-zone">
@@ -98,17 +103,61 @@
     <div class="setting-group"><label>页面主题</label><div class="theme-options"><button data-theme="paper" title="纸张" class="paper active"></button><button data-theme="light" title="明亮" class="light"></button><button data-theme="sepia" title="暖黄" class="sepia"></button><button data-theme="dark" title="深色" class="dark"></button></div></div>
     <p class="panel-tip" id="panel-tip">方向键翻页，Esc 收起面板</p>
   </aside>
-  <aside class="tools-panel" id="tools-panel" aria-label="搜索与批注">
-    <div class="panel-header"><div><p class="eyebrow">TOOLS</p><h2>搜索与批注</h2></div><button class="icon-button" id="close-tools" aria-label="关闭工具">×</button></div>
+  <aside class="tools-panel" id="tools-panel" aria-label="搜索、AI与批注">
+    <div class="panel-header"><div><p class="eyebrow">TOOLS</p><h2>搜索、AI与批注</h2></div><button class="icon-button" id="close-tools" aria-label="关闭工具">×</button></div>
     <form class="search-form" id="search-form"><input id="search-input" type="search" placeholder="搜索书中内容" autocomplete="off"><button type="submit">搜索</button></form>
     <div class="search-status" id="search-status">输入关键词搜索整本书</div>
     <div class="search-results" id="search-results"></div>
+    <div class="tool-divider"></div>
+    <section class="ai-section" aria-labelledby="ai-heading">
+      <div class="annotation-heading"><strong id="ai-heading">AI 阅读助手</strong><button class="text-button" id="ai-settings-toggle" type="button">接口设置</button></div>
+      <p class="selection-hint" id="ai-selection-preview">选中文字后，可以解释、翻译或补充背景。</p>
+      <div class="ai-actions" aria-label="划词 AI">
+        <button type="button" data-ai-scope="selection" data-ai-action="explain">解释这段话</button>
+        <button type="button" data-ai-scope="selection" data-ai-action="translate">翻译</button>
+        <button type="button" data-ai-scope="selection" data-ai-action="simplify">简化表达</button>
+        <button type="button" data-ai-scope="selection" data-ai-action="terms">分析术语</button>
+        <button type="button" data-ai-scope="selection" data-ai-action="background">补充背景</button>
+      </div>
+      <div class="ai-subheading">当前章节</div>
+      <div class="ai-actions" aria-label="章节助手">
+        <button type="button" data-ai-scope="chapter" data-ai-action="summary">章节摘要</button>
+        <button type="button" data-ai-scope="chapter" data-ai-action="keyPoints">核心观点</button>
+        <button type="button" data-ai-scope="chapter" data-ai-action="characters">人物和事件</button>
+        <button type="button" data-ai-scope="chapter" data-ai-action="timeline">时间线</button>
+        <button type="button" data-ai-scope="chapter" data-ai-action="concepts">重要概念</button>
+      </div>
+      <div class="ai-result" id="ai-result" hidden>
+        <div class="ai-result-heading"><strong id="ai-result-title">AI 回答</strong><button class="text-button" id="ai-stop" type="button" hidden>停止</button></div>
+        <div class="ai-result-status" id="ai-result-status"></div>
+        <div class="ai-result-content" id="ai-result-content"></div>
+      </div>
+      <div class="ai-settings" id="ai-settings" hidden>
+        <label for="ai-endpoint">OpenAI 兼容接口地址</label>
+        <input id="ai-endpoint" type="url" placeholder="https://api.openai.com/v1" spellcheck="false">
+        <label for="ai-model">模型名称</label>
+        <input id="ai-model" type="text" placeholder="填写接口支持的模型" spellcheck="false">
+        <label for="ai-api-key">API 密钥</label>
+        <input id="ai-api-key" type="password" placeholder="仅保存在当前浏览器" autocomplete="off" spellcheck="false">
+        <button class="soft-button ai-save-button" id="save-ai-settings" type="button">保存设置</button>
+        <p>默认不会发送图书内容。点击某项 AI 功能时，仅发送选中文字或当前章节；密钥保存在本机扩展数据中。</p>
+      </div>
+    </section>
     <div class="tool-divider"></div>
     <div class="annotation-heading"><strong>高亮与批注</strong><span id="annotation-count">0 条</span></div>
     <p class="selection-hint">在正文中选中文字，然后高亮或添加批注。</p>
     <div class="selection-actions"><button id="highlight-selection" type="button">高亮选中</button><button id="note-selection" type="button">添加批注</button></div>
     <div class="annotation-list" id="annotation-list"></div>
   </aside>
+  <div class="selection-ai-menu" id="selection-ai-menu" role="toolbar" aria-label="划词 AI" hidden>
+    <span>AI</span>
+    <button type="button" data-ai-scope="selection" data-ai-action="explain">解释</button>
+    <button type="button" data-ai-scope="selection" data-ai-action="translate">翻译</button>
+    <button type="button" data-ai-scope="selection" data-ai-action="simplify">简化</button>
+    <button type="button" data-ai-scope="selection" data-ai-action="terms">术语</button>
+    <button type="button" data-ai-scope="selection" data-ai-action="background">背景</button>
+    <button class="selection-ai-close" id="close-selection-ai-menu" type="button" aria-label="关闭划词 AI">×</button>
+  </div>
   <div class="pdf-toolbar" id="pdf-toolbar" hidden>
     <button id="pdf-zoom-out" type="button" aria-label="缩小">−</button><span id="pdf-zoom-label">100%</span><button id="pdf-zoom-in" type="button" aria-label="放大">＋</button><button id="pdf-fit-width" type="button">适合宽度</button>
   </div>
