@@ -1,6 +1,6 @@
 # 渐进式架构迁移
 
-当前扩展已经由 WXT 生成发布包，旧版项目根目录加载方式仅作为过渡兼容。核心阅读能力继续通过独立模块演进，再逐步迁入 Vue。
+扩展现由 WXT 构建，阅读界面由 Vue 3 组件组成，运行时界面状态进入 Pinia。Foliate.js、PDF.js、IndexedDB Repository 和阅读进度服务继续保持独立边界。
 
 ## 目标技术栈
 
@@ -18,28 +18,26 @@
 ### 阶段 1：建立模块边界（已完成）
 
 - AI、阅读引擎导航、进度和图书持久化均有独立模块边界
-- IndexedDB 数据库名称、对象仓库和记录结构保持兼容
 
 ### 阶段 2：TypeScript 与 Vitest（已完成）
 
-- 无 DOM 核心逻辑已迁入 TypeScript
-- 已建立图书、位置、目录、批注和 AI 请求共享类型
-- 现有单元测试均由 Vitest 执行
+- 无 DOM 核心逻辑和共享领域类型已迁入 TypeScript
+- 单元测试由 Vitest 执行
 
 ### 阶段 3：WXT 外壳（已完成）
 
-- `entrypoints/background.ts` 与 `entrypoints/reader/` 已接管扩展入口
-- Manifest V3、Edge/Chrome 构建包和压缩包由 WXT 生成
-- PDF.js worker、CMap、标准字体与 WASM 资源在构建前同步到发布目录
-- 发布包仍使用 `quiet-reader` IndexedDB 与 `books` 对象仓库，升级不迁移、不清空本地书籍
+- Manifest、后台和阅读页入口由 WXT 生成
+- PDF.js 运行时资源随发布包生成
+- IndexedDB 名称与对象仓库保持不变
 
-### 阶段 4：Vue 3 + Pinia（下一阶段）
+### 阶段 4：Vue 3 + Pinia（已完成）
 
-- 按顶部栏、工具面板、设置面板、目录、书架顺序迁移
-- 阅读引擎通过 Adapter 接口挂载，不在 Vue 组件中直接操作内部实现
-- Pinia 只保存运行时状态，图书与批注仍由 Repository 持久化
+- 顶部栏、书架、目录、阅读区、设置面板、工具面板和浮层已拆为 Vue 单文件组件
+- Pinia 保存标题、章节、进度、阅读状态和当前面板等运行时状态，不持久化图书与批注
+- 兼容桥把现有阅读控制层状态同步到 Pinia，后续可逐项移除命令式 DOM 控制
+- Vue 组件不导入 Foliate.js、PDF.js 或连续滚动引擎，阅读引擎仍通过 Adapter 边界挂载
 
-### 阶段 5：端到端验证
+### 阶段 5：端到端验证（下一阶段）
 
 - Playwright 加载构建后的 Edge/Chromium 扩展
 - 使用真实 EPUB、MOBI、AZW3、PDF 验证目录、翻页、恢复、AI 选区和章节提取

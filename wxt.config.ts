@@ -1,3 +1,4 @@
+import vue from '@vitejs/plugin-vue'
 import { defineConfig } from 'wxt'
 
 export default defineConfig({
@@ -19,6 +20,7 @@ export default defineConfig({
     },
   },
   vite: () => ({
+    plugins: [vue()],
     build: {
       target: 'es2022',
     },
