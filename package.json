@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "postinstall": "node scripts/patch-foliate.mjs",
-    "check": "node --check src/background.js && node --check src/reader.js && node --check src/storage.js && node --check src/ebook-navigation.js && node --check src/annotations.js && node --check src/ai.js && node --check src/continuous-layout.js && node --check src/continuous-ebook.js && node --check scripts/patch-foliate.mjs",
+    "check": "node --check src/background.js && node --check src/reader.js && node --check src/storage.js && node --check src/book-repository.js && node --check src/progress-service.js && node --check src/reader-adapter.js && node --check src/ebook-navigation.js && node --check src/annotations.js && node --check src/ai.js && node --check src/continuous-layout.js && node --check src/continuous-ebook.js && node --check scripts/patch-foliate.mjs",
     "test": "node --test tests/*.test.js"
   },
   "dependencies": {

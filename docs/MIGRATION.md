@@ -15,13 +15,14 @@
 
 ## 迁移阶段
 
-### 阶段 1：建立模块边界（进行中）
+### 阶段 1：建立模块边界（已完成）
 
-- 将 AI Provider、提示词与请求流从 `reader.js` 拆到 `src/ai.js`
-- 后续拆出 `ReaderAdapter`、`ProgressService` 和 `BookRepository`
-- 保持现有原生界面和数据结构兼容
+- AI Provider、提示词与请求流位于 `src/ai.js`
+- 阅读引擎导航通过 `src/reader-adapter.js` 的统一接口接入
+- 阅读进度的规范化、节流和落盘由 `src/progress-service.js` 管理
+- IndexedDB 图书操作由 `src/book-repository.js` 封装，数据库名称、对象仓库和记录结构保持兼容
 
-### 阶段 2：TypeScript 与 Vitest
+### 阶段 2：TypeScript 与 Vitest（下一阶段）
 
 - 优先迁移无 DOM 的 `formats`、`annotations`、`ai`、导航模块
 - 为图书、位置、目录、批注、AI 请求建立共享类型

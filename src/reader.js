@@ -3,10 +3,13 @@ import * as pdfjsLib from '../node_modules/pdfjs-dist/build/pdf.mjs'
 import { Overlayer } from '../node_modules/foliate-js/overlayer.js'
 import { createAnnotation, excerpt, findTextMatches, normalizeAnnotations } from './annotations.js'
 import { buildAiMessages, CHAPTER_AI_ACTIONS, getAiPermissionOrigin, SELECTION_AI_ACTIONS, streamAiCompletion } from './ai.js'
+import { bookRepository } from './book-repository.js'
 import { ContinuousEbookScroller } from './continuous-ebook.js'
 import { initializeEbookPosition } from './ebook-navigation.js'
 import { detectFormat, displayValue, formatBytes } from './formats.js'
-import { deleteBook, listBooks, loadSettings, saveBook, saveSettings, updateBook } from './storage.js'
+import { ProgressService } from './progress-service.js'
+import { createEbookReaderAdapter, createPdfReaderAdapter } from './reader-adapter.js'
+import { loadSettings, saveSettings } from './storage.js'
 
 const $ = selector => document.querySelector(selector)
 const elements = {
@@ -112,10 +115,11 @@ let pendingSelection = null
 let annotations = []
 let searchRun = 0
 let aiAbortController = null
-let progressSaveTimer = null
+let readerAdapter = null
 let coverObjectUrl = null
 let libraryObjectUrls = []
 const tocButtons = new Map()
+const progressService = new ProgressService(bookRepository)
 
 function showToast(message, type = '') {
   elements.toast.textContent = message
@@ -177,7 +181,9 @@ function setHeaderCollapsed(collapsed, persist = true) {
   saveSettings(settings)
 }
 function closeReader() {
-  clearTimeout(progressSaveTimer)
+  progressService.flush().catch(console.error)
+  readerAdapter?.destroy?.()
+  readerAdapter = null
   closePanels()
   continuousEbook?.destroy()
   continuousEbook = null
@@ -329,9 +335,7 @@ async function setEbookFlow(flow, target = null) {
 }
 
 function scheduleProgressSave(progress) {
-  if (!currentRecord?.id) return
-  clearTimeout(progressSaveTimer)
-  progressSaveTimer = setTimeout(() => updateBook(currentRecord.id, { progress, openedAt: Date.now() }).catch(console.error), 350)
+  progressService.schedule(currentRecord?.id, progress)
 }
 
 function updateProgress(fraction, chapter = '') {
@@ -368,7 +372,7 @@ async function setMetadata({ title, author, cover }) {
   setCover(cover, resolvedTitle)
   if (currentRecord?.id) {
     currentRecord = { ...currentRecord, metadata: { title: resolvedTitle, author: resolvedAuthor }, cover }
-    await updateBook(currentRecord.id, { metadata: currentRecord.metadata, cover }).catch(console.error)
+    await bookRepository.update(currentRecord.id, { metadata: currentRecord.metadata, cover }).catch(console.error)
   }
 }
 
@@ -418,7 +422,7 @@ async function saveAnnotations() {
   currentRecord = { ...currentRecord, annotations }
   continuousEbook?.setAnnotations(annotations)
   renderAnnotationList()
-  if (currentRecord.id) await updateBook(currentRecord.id, { annotations }).catch(console.error)
+  if (currentRecord.id) await bookRepository.update(currentRecord.id, { annotations }).catch(console.error)
 }
 
 function renderAnnotationList() {
@@ -804,6 +808,14 @@ async function openEbook(file) {
   const metadata = ebookView.book.metadata || {}
   const cover = await Promise.resolve(ebookView.book.getCover?.()).catch(() => null)
   await setMetadata({ title: metadata.title, author: metadata.author, cover })
+  readerAdapter = createEbookReaderAdapter({
+    format: currentFormat,
+    goTo: target => navigateEbookTo(target),
+    goToFraction: fraction => continuousEbook ? continuousEbook.goToFraction(fraction) : ebookView?.goToFraction(fraction),
+    goLeft: () => continuousEbook ? continuousEbook.scrollByPage(-1) : ebookView?.goLeft(),
+    goRight: () => continuousEbook ? continuousEbook.scrollByPage(1) : ebookView?.goRight(),
+    getLocation: () => continuousEbook?.currentLocation() || ebookView?.lastLocation || null,
+  })
   renderToc(ebookView.book.toc, item => navigateEbookTo(item.href).catch(error => showToast(error.message, 'error')))
 
   const rendered = await initializeEbookPosition(ebookView, currentRecord?.progress)
@@ -939,6 +951,11 @@ async function openPdf(file) {
     wasmUrl: `${baseUrl}wasm/`,
   })
   pdfDocument = await pdfLoadingTask.promise
+  readerAdapter = createPdfReaderAdapter({
+    goToPage: page => goToPdfPage(page),
+    getPage: () => currentPdfPage,
+    getPageCount: () => pdfDocument?.numPages || 1,
+  })
   elements.pdfPageInput.max = pdfDocument.numPages
   elements.pdfPageTotal.textContent = `/ ${pdfDocument.numPages}`
   const metadataResult = await pdfDocument.getMetadata().catch(() => null)
@@ -993,7 +1010,7 @@ async function openBook(file, existingRecord = null) {
   elements.headerTitle.textContent = file.name
   elements.sidebarFormat.textContent = format.toUpperCase()
   try {
-    currentRecord = existingRecord || await saveBook(file, format)
+    currentRecord = existingRecord || await bookRepository.save(file, format)
     loadAnnotations()
   } catch (error) {
     console.warn('The book could not be persisted locally.', error)
@@ -1016,14 +1033,14 @@ async function openStoredBook(record) {
   const file = record.blob instanceof File
     ? record.blob
     : new File([record.blob], record.name, { type: record.type, lastModified: record.lastModified })
-  await updateBook(record.id, { openedAt: Date.now() }).catch(console.error)
+  await bookRepository.update(record.id, { openedAt: Date.now() }).catch(console.error)
   await openBook(file, record)
 }
 
 async function renderLibrary() {
   libraryObjectUrls.forEach(URL.revokeObjectURL)
   libraryObjectUrls = []
-  const books = await listBooks().catch(() => [])
+  const books = await bookRepository.list().catch(() => [])
   elements.bookGrid.replaceChildren()
   elements.librarySection.hidden = books.length === 0
   for (const record of books) {
@@ -1061,7 +1078,7 @@ async function renderLibrary() {
     remove.textContent = '×'
     remove.addEventListener('click', async event => {
       event.stopPropagation()
-      await deleteBook(record.id)
+      await bookRepository.delete(record.id)
       card.remove()
       if (!elements.bookGrid.children.length) elements.librarySection.hidden = true
     })
@@ -1074,10 +1091,7 @@ async function renderLibrary() {
 }
 
 function navigate(direction) {
-  if (currentFormat === 'pdf') goToPdfPage(currentPdfPage + direction)
-  else if (continuousEbook) continuousEbook.scrollByPage(direction)
-  else if (direction < 0) ebookView?.goLeft()
-  else ebookView?.goRight()
+  readerAdapter?.navigate(direction)
 }
 
 function bindControls() {
@@ -1118,9 +1132,7 @@ function bindControls() {
   })
   elements.progressSlider.addEventListener('input', event => {
     const fraction = Number(event.target.value)
-    if (currentFormat === 'pdf') goToPdfPage(1 + fraction * (pdfDocument.numPages - 1))
-    else if (continuousEbook) continuousEbook.goToFraction(fraction)
-    else ebookView?.goToFraction(fraction)
+    readerAdapter?.goToFraction(fraction)
   })
 
   document.querySelectorAll('[data-flow]').forEach(button => button.addEventListener('click', async () => {
