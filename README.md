@@ -19,6 +19,8 @@
 
 开发时可运行 `npm run dev` 使用 WXT 热更新。旧版直接加载项目根目录的方式暂时保留兼容，但后续发布与测试均以 WXT 生成目录为准。扩展升级继续使用原来的 IndexedDB 数据库与对象仓库，不会主动清除已保存书籍和阅读进度。
 
+The manifest pins a public key so moving the project or rebuilding `.output/chrome-mv3` keeps the same extension ID and browser storage origin. Development builds installed before this key was introduced use a different origin and cannot be read across extension IDs; those books must be imported once more.
+
 ## AI 阅读助手（初版）
 
 当前支持：
