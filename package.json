@@ -15,7 +15,10 @@
     "build": "npm run sync:assets && wxt build",
     "build:firefox": "npm run sync:assets && wxt build -b firefox",
     "zip": "npm run sync:assets && wxt zip",
-    "typecheck:vue": "vue-tsc --noEmit -p .wxt/tsconfig.json"
+    "typecheck:vue": "vue-tsc --noEmit -p .wxt/tsconfig.json",
+    "fetch:test-books": "node scripts/fetch-test-books.mjs",
+    "e2e:prepare": "npm run build && npm run fetch:test-books",
+    "test:e2e": "npm run e2e:prepare && playwright test"
   },
   "dependencies": {
     "foliate-js": "1.0.1",
@@ -24,6 +27,7 @@
     "vue": "^3.5.40"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.0",
     "@vitejs/plugin-vue": "^6.0.8",
     "@vue/test-utils": "^2.4.11",
     "jsdom": "^30.0.0",

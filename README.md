@@ -38,7 +38,15 @@ npm run check
 npm test
 ```
 
-项目不需要打包构建，浏览器会直接加载原生 ES Modules。依赖必须保留在 `node_modules` 中，因此首次安装后再加载扩展。
+WXT 会生成可发布的 Manifest V3 扩展；日常加载与测试均使用 `.output/chrome-mv3`。兼容用的项目根目录入口暂时保留。
+
+真实扩展端到端测试：
+
+```bash
+npm run test:e2e
+```
+
+该命令会构建扩展，下载 Project Gutenberg 的 EPUB/MOBI/AZW3 与 Mozilla PDF.js 的测试 PDF，然后使用本机 Microsoft Edge 验证目录、导航、进度恢复、PDF 文本层/缩放/跳页，以及 EPUB 文字选区与 AI 控件联动。测试书籍不会提交到 Git。
 
 ## 当前边界
 
