@@ -1,6 +1,6 @@
-import test from 'node:test'
+import { test } from 'vitest'
 import assert from 'node:assert/strict'
-import { initializeEbookPosition } from '../src/ebook-navigation.js'
+import { initializeEbookPosition } from '../src/core/ebook-navigation.ts'
 
 class FakeView extends EventTarget {
   constructor({ successful }) {

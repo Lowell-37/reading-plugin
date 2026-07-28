@@ -17,18 +17,19 @@
 
 ### 阶段 1：建立模块边界（已完成）
 
-- AI Provider、提示词与请求流位于 `src/ai.js`
-- 阅读引擎导航通过 `src/reader-adapter.js` 的统一接口接入
-- 阅读进度的规范化、节流和落盘由 `src/progress-service.js` 管理
-- IndexedDB 图书操作由 `src/book-repository.js` 封装，数据库名称、对象仓库和记录结构保持兼容
+- AI Provider、提示词与请求流位于独立模块
+- 阅读引擎导航通过统一 `ReaderAdapter` 接口接入
+- 阅读进度的规范化、节流和落盘由 `ProgressService` 管理
+- IndexedDB 图书操作由 `BookRepository` 封装，数据库名称、对象仓库和记录结构保持兼容
 
-### 阶段 2：TypeScript 与 Vitest（下一阶段）
+### 阶段 2：TypeScript 与 Vitest（已完成）
 
-- 优先迁移无 DOM 的 `formats`、`annotations`、`ai`、导航模块
-- 为图书、位置、目录、批注、AI 请求建立共享类型
-- 将现有 Node 单元测试迁入 Vitest
+- `formats`、`annotations`、`ai`、电子书位置恢复已迁入 `src/core/*.ts`
+- `src/core/types.ts` 定义图书、位置、目录、批注和 AI 请求共享类型
+- TypeScript 严格类型检查与浏览器兼容产物构建已加入 `npm run check`
+- 原有 33 项 Node 测试全部由 Vitest 执行，并直接测试 TypeScript 核心源码
 
-### 阶段 3：WXT 外壳
+### 阶段 3：WXT 外壳（下一阶段）
 
 - 建立 `entrypoints/background.ts` 与 `entrypoints/reader/`
 - 由 WXT 生成 Manifest V3 和发布包

@@ -1,6 +1,6 @@
-import test from 'node:test'
+import { test } from 'vitest'
 import assert from 'node:assert/strict'
-import { createAnnotation, excerpt, findTextMatches, normalizeAnnotations } from '../src/annotations.js'
+import { createAnnotation, excerpt, findTextMatches, normalizeAnnotations } from '../src/core/annotations.ts'
 
 test('creates bounded, persistable annotations', () => {
   const annotation = createAnnotation({ kind: 'ebook', locator: 'epubcfi(/6/2)', text: ' selected text ', note: ' note ' })
