@@ -32,7 +32,8 @@ The manifest pins a public key so moving the project or rebuilding `.output/chro
 
 首次使用时，在“搜索、AI与批注”面板中填写接口地址、模型名称和 API 密钥。扩展默认不会发送图书内容；只有点击某个 AI 功能时，才会请求对应接口权限并发送选中文字或当前章节。API 密钥保存在当前浏览器的扩展数据中，不会写入项目文件。公共或多人使用的设备不建议保存个人密钥。
 
-完整迁移计划见 [`docs/MIGRATION.md`](docs/MIGRATION.md)。
+总体产品与工程路线图见 [`docs/ROADMAP.md`](docs/ROADMAP.md)。
+架构迁移细节见 [`docs/MIGRATION.md`](docs/MIGRATION.md)。
 ## 开发检查
 
 ```bash

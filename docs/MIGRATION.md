@@ -1,6 +1,8 @@
 # 渐进式架构迁移
 
-既定的五个架构迁移阶段已经完成。扩展由 WXT 构建，界面使用 Vue 3 + Pinia，核心类型与测试使用 TypeScript + Vitest，真实扩展和书籍验证使用 Playwright。
+本文档记录架构迁移的代码实现情况。阶段 1、2 已完成；阶段 3、4、5 已有实现和自动化测试，但 WXT 构建版尚未通过用户实际 Edge 验收，因此仍处于进行中。
+
+当前稳定版本仍是在 Edge 中直接加载项目根目录的原生 JavaScript 阅读器。总体进度、产品阶段与最终验收标准统一以 [ROADMAP.md](ROADMAP.md) 为准。
 
 ## 当前技术栈
 
@@ -13,30 +15,30 @@
 - Vitest：核心模块与 Vue 组件测试
 - Playwright：真实 Edge 扩展和真实书籍端到端测试
 
-## 已完成阶段
+## 阶段实现状态
 
-### 阶段 1：建立模块边界
+### 阶段 1：建立模块边界（✅ 已完成）
 
 - AI、ReaderAdapter、ProgressService 和 BookRepository 已解耦
 
-### 阶段 2：TypeScript 与 Vitest
+### 阶段 2：TypeScript 与 Vitest（✅ 已完成）
 
 - 无 DOM 核心逻辑和共享领域类型已迁入 TypeScript
 - 核心与 UI 单元测试由 Vitest 执行
 
-### 阶段 3：WXT 外壳
+### 阶段 3：WXT 外壳（🟡 代码已实现，实际验收未完成）
 
 - Manifest、后台与阅读页由 WXT 构建
 - PDF.js 运行资源进入发布包
 - IndexedDB 名称 `quiet-reader` 与对象仓库 `books` 保持兼容
 
-### 阶段 4：Vue 3 + Pinia
+### 阶段 4：Vue 3 + Pinia（🟡 代码已实现，实际验收未完成）
 
 - 顶部栏、书架、目录、阅读区、设置、工具和浮层已组件化
 - Pinia 只保存运行时 UI 状态，持久化仍由 Repository 负责
 - Vue 组件不直接依赖 Foliate.js 或 PDF.js 内部实现
 
-### 阶段 5：真实扩展端到端验证
+### 阶段 5：真实扩展端到端验证（🟡 自动化通过，实际验收未完成）
 
 - Playwright 在 Microsoft Edge 中加载 `.output/chrome-mv3`
 - Project Gutenberg 的真实 EPUB、MOBI、AZW3 已验证目录、跳转和进度恢复
