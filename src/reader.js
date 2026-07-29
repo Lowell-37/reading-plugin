@@ -8,6 +8,7 @@ import { ContinuousEbookScroller } from './continuous-ebook.js'
 import { initializeEbookPosition } from './ebook-navigation.js'
 import { detectFormat, displayValue, formatBytes } from './formats.js'
 import { backupFileName, createLibraryBackup, parseLibraryBackup } from './library-backup.js'
+import { describeOpenError } from './open-errors.js'
 import { ProgressService } from './progress-service.js'
 import { createEbookReaderAdapter, createPdfReaderAdapter } from './reader-adapter.js'
 import { loadSettings, saveSettings } from './storage.js'
@@ -65,7 +66,12 @@ const elements = {
   pdfViewport: $('#pdf-viewport'),
   pdfPages: $('#pdf-pages'),
   loadingView: $('#loading-view'),
+  loadingSpinner: $('#loading-spinner'),
+  loadingTitle: $('#loading-title'),
   loadingDetail: $('#loading-detail'),
+  loadingActions: $('#loading-actions'),
+  loadingLibraryButton: $('#loading-library-button'),
+  loadingRetryButton: $('#loading-retry-button'),
   headerTitle: $('#header-title'),
   sidebarTitle: $('#sidebar-title'),
   sidebarAuthor: $('#sidebar-author'),
@@ -134,7 +140,19 @@ function showToast(message, type = '') {
 }
 
 function setLoading(detail = '解析内容与目录…') {
+  elements.loadingView.dataset.state = 'loading'
+  elements.loadingTitle.textContent = '正在打开书籍'
   elements.loadingDetail.textContent = detail
+  elements.loadingActions.hidden = true
+  elements.loadingView.hidden = false
+}
+
+function showOpenError(description) {
+  document.body.classList.remove('pdf-mode')
+  elements.loadingView.dataset.state = 'error'
+  elements.loadingTitle.textContent = description.code === 'unsupported' ? '不支持这个文件' : '无法打开这本书'
+  elements.loadingDetail.textContent = description.message
+  elements.loadingActions.hidden = false
   elements.loadingView.hidden = false
 }
 
@@ -996,26 +1014,23 @@ async function openPdf(file) {
   requestAnimationFrame(() => goToPdfPage(restoredPage || 1))
 }
 
-function friendlyOpenError(error, format) {
-  console.error(error)
-  if (/password/i.test(error?.name || '') || /password/i.test(error?.message || '')) return '这本书受密码保护，暂时无法打开'
-  if (format === 'mobi' || format === 'azw3') return '无法解析这本 Kindle 书籍；它可能带有 DRM，或使用了暂不支持的压缩方式'
-  if (format === 'epub') return '无法解析 EPUB；文件可能损坏或带有 DRM'
-  if (format === 'pdf') return '无法解析 PDF；文件可能损坏或受保护'
-  return '无法打开这本书'
-}
-
 async function openBook(file, existingRecord = null) {
   const format = detectFormat(file.name, file.type)
-  if (!format) { showToast('请选择 PDF、EPUB、MOBI 或 AZW3 文件', 'error'); return }
   closeReader()
-  currentFormat = format
   showReader()
-  setLoading()
   elements.headerTitle.textContent = file.name
+  if (!format) {
+    showOpenError(describeOpenError(null, null))
+    return
+  }
+
+  currentFormat = format
+  setLoading()
   elements.sidebarFormat.textContent = format.toUpperCase()
+  let savedNewBook = false
   try {
     currentRecord = existingRecord || await bookRepository.save(file, format)
+    savedNewBook = !existingRecord && Boolean(currentRecord?.id)
     loadAnnotations()
   } catch (error) {
     console.warn('The book could not be persisted locally.', error)
@@ -1027,9 +1042,13 @@ async function openBook(file, existingRecord = null) {
     if (format === 'pdf') await openPdf(file)
     else await openEbook(file)
   } catch (error) {
-    hideLoading()
-    showToast(friendlyOpenError(error, format), 'error')
-    setTimeout(showLibrary, 2200)
+    console.error(error)
+    const description = describeOpenError(error, format)
+    if (savedNewBook && currentRecord?.id) {
+      await bookRepository.delete(currentRecord.id).catch(cleanupError => console.error('Failed to remove invalid book.', cleanupError))
+    }
+    closeReader()
+    showOpenError(description)
   }
 }
 
@@ -1167,6 +1186,8 @@ function bindControls() {
     if (file) openBook(file)
   })
   elements.homeButton.addEventListener('click', showLibrary)
+  elements.loadingLibraryButton.addEventListener('click', showLibrary)
+  elements.loadingRetryButton.addEventListener('click', openPicker)
   elements.headerToggle.addEventListener('click', () => setHeaderCollapsed(!document.body.classList.contains('header-collapsed')))
   elements.sidebarButton.addEventListener('click', () => openPanel(elements.sidebar))
   elements.settingsButton.addEventListener('click', () => openPanel(elements.settingsPanel))
@@ -1233,9 +1254,9 @@ function bindControls() {
     window.addEventListener(eventName, event => { event.preventDefault(); elements.dropZone.classList.remove('dragging') })
   }
   window.addEventListener('drop', event => {
-    const file = [...event.dataTransfer.files].find(candidate => detectFormat(candidate.name, candidate.type))
+    const [file] = event.dataTransfer.files
     if (file) openBook(file)
-    else showToast('没有找到支持的书籍文件', 'error')
+    else showToast('没有找到可打开的文件', 'error')
   })
   window.addEventListener('keydown', event => {
     if (event.key === 'Escape') { closePanels(); elements.selectionAiMenu.hidden = true; return }

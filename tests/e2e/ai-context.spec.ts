@@ -2,7 +2,7 @@ import { test, expect, chromium, type Frame } from '@playwright/test'
 import { resolve } from 'node:path'
 
 test('real EPUB exposes chapter text and selection to the AI controls', async () => {
-  const extensionPath = resolve('.output/chrome-mv3')
+  const extensionPath = resolve('.')
   const context = await chromium.launchPersistentContext('', {
     executablePath: 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
     headless: true,

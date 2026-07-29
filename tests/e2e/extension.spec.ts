@@ -2,7 +2,7 @@ import { test, expect, chromium, type BrowserContext, type Page } from '@playwri
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-const extensionPath = resolve('.output/chrome-mv3')
+const extensionPath = resolve('.')
 const booksPath = resolve('tests/fixtures/books')
 const edgePath = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'
 

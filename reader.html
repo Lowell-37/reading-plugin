@@ -78,8 +78,14 @@
       <nav class="toc" id="toc"></nav>
     </aside>
     <div class="reader-stage" id="reader-stage">
-      <div class="loading-view" id="loading-view">
-        <div class="spinner"></div><strong>正在打开书籍</strong><span id="loading-detail">解析内容与目录…</span>
+      <div class="loading-view" id="loading-view" aria-live="polite">
+        <div class="spinner" id="loading-spinner"></div>
+        <strong id="loading-title">正在打开书籍</strong>
+        <span id="loading-detail">解析内容与目录…</span>
+        <div class="loading-actions" id="loading-actions" hidden>
+          <button class="soft-button" id="loading-library-button" type="button">返回书架</button>
+          <button class="primary-button" id="loading-retry-button" type="button">重新选择文件</button>
+        </div>
       </div>
       <div class="ebook-host" id="ebook-host"></div>
       <div class="pdf-viewport" id="pdf-viewport"><div class="pdf-pages" id="pdf-pages"></div></div>
