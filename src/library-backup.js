@@ -1,3 +1,5 @@
+import { DB_VERSION } from './storage-schema.js'
+
 const MAGIC = new TextEncoder().encode('QUIETREADER-BACKUP\n')
 const FORMAT = 'quiet-reader-backup'
 const VERSION = 1
@@ -91,6 +93,7 @@ export async function createLibraryBackup(records, settings, { createdAt = new D
   const manifest = {
     format: FORMAT,
     version: VERSION,
+    databaseSchemaVersion: DB_VERSION,
     createdAt,
     secretsExcluded: ['settings.aiApiKey'],
     settings: sanitizeSettings(settings),
@@ -127,6 +130,9 @@ export async function parseLibraryBackup(archive) {
   }
   if (manifest.format !== FORMAT) fail('format does not match')
   if (manifest.version !== VERSION) fail(`unsupported version: ${manifest.version}`)
+  const databaseSchemaVersion = manifest.databaseSchemaVersion ?? 1
+  if (!Number.isSafeInteger(databaseSchemaVersion) || databaseSchemaVersion < 1) fail('database schema version is invalid')
+  if (databaseSchemaVersion > DB_VERSION) fail(`database schema version ${databaseSchemaVersion} requires a newer extension`)
   if (!Array.isArray(manifest.books) || manifest.books.length > MAX_BOOK_COUNT) fail('book list is invalid')
 
   const payloadSize = archive.size - payloadStart
@@ -164,6 +170,7 @@ export async function parseLibraryBackup(archive) {
 
   return {
     version: manifest.version,
+    databaseSchemaVersion,
     createdAt: manifest.createdAt,
     settings: manifest.settings && typeof manifest.settings === 'object' ? manifest.settings : {},
     secretsExcluded: Array.isArray(manifest.secretsExcluded) ? manifest.secretsExcluded : [],

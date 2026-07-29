@@ -1,6 +1,10 @@
-const DB_NAME = 'quiet-reader'
-const DB_VERSION = 1
-const BOOKS_STORE = 'books'
+import {
+  applySchemaMigrations,
+  BOOKS_STORE,
+  DB_NAME,
+  DB_VERSION,
+  META_STORE,
+} from './storage-schema.js'
 
 function requestToPromise(request) {
   return new Promise((resolve, reject) => {
@@ -19,14 +23,24 @@ function transactionDone(transaction) {
 
 async function openDatabase() {
   const request = indexedDB.open(DB_NAME, DB_VERSION)
-  request.onupgradeneeded = () => {
-    const database = request.result
-    if (!database.objectStoreNames.contains(BOOKS_STORE)) {
-      const store = database.createObjectStore(BOOKS_STORE, { keyPath: 'id' })
-      store.createIndex('openedAt', 'openedAt')
-    }
+  request.onupgradeneeded = event => {
+    applySchemaMigrations(
+      request.result,
+      request.transaction,
+      event.oldVersion,
+      event.newVersion ?? DB_VERSION,
+    )
   }
   return requestToPromise(request)
+}
+
+export async function getSchemaInfo() {
+  const database = await openDatabase()
+  const transaction = database.transaction(META_STORE, 'readonly')
+  const record = await requestToPromise(transaction.objectStore(META_STORE).get('schema'))
+  await transactionDone(transaction)
+  database.close()
+  return record
 }
 
 export async function makeBookId(file) {
