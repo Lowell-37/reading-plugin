@@ -29,6 +29,7 @@ for (const book of TEST_BOOKS) {
   book.sha256 = createHash('sha256').update(bytes).digest('hex')
 }
 
+await import('./create-boundary-epub.mjs')
 await writeFile(new URL('manifest.json', directory), `${JSON.stringify(TEST_BOOKS, null, 2)}\n`)
 
 async function downloadWithRetry(url, attempts = 4) {
