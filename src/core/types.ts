@@ -59,6 +59,7 @@ export interface Annotation {
   color: string
   rects: AnnotationRect[]
   createdAt: number
+  updatedAt?: number
 }
 
 export type AiScope = 'selection' | 'chapter'

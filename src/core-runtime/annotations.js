@@ -21,6 +21,36 @@ export function normalizeAnnotations(value) {
         && 'kind' in item && item.kind
         && (('locator' in item && item.locator) || ('page' in item && item.page))));
 }
+export function updateAnnotation(value, id, changes, now = Date.now()) {
+    return value.map(annotation => annotation.id === id
+        ? {
+            ...annotation,
+            note: changes.note === undefined
+                ? annotation.note
+                : String(changes.note || '').trim().slice(0, 2000),
+            updatedAt: now,
+        }
+        : annotation);
+}
+export function filterAnnotations(value, { query = '', type = 'all' } = {}) {
+    const term = String(query).trim().toLocaleLowerCase();
+    return value.filter(annotation => {
+        const hasNote = Boolean(String(annotation.note || '').trim());
+        if (type === 'notes' && !hasNote)
+            return false;
+        if (type === 'highlights' && hasNote)
+            return false;
+        if (type === 'pdf' && annotation.kind !== 'pdf')
+            return false;
+        if (type === 'ebook' && annotation.kind !== 'ebook')
+            return false;
+        if (!term)
+            return true;
+        const location = annotation.kind === 'pdf' ? `第 ${annotation.page || ''} 页` : '电子书';
+        return [annotation.text, annotation.note, location]
+            .some(field => String(field || '').toLocaleLowerCase().includes(term));
+    });
+}
 export function excerpt(text, query, radius = 42) {
     const source = String(text || '').replace(/\s+/g, ' ').trim();
     const term = String(query || '').trim();

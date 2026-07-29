@@ -216,15 +216,20 @@ body.is-reading .welcome-only { display:none; }
 .selection-hint { margin:7px 0 12px; line-height:1.6; }
 .selection-actions { display:flex; gap:8px; margin-bottom:14px; }
 .selection-actions button { flex:1; font-size:11px; }
+.annotation-filters { display:grid; grid-template-columns:minmax(0,1fr) 88px; gap:7px; margin-bottom:7px; }
+.annotation-filters input,.annotation-filters select { min-width:0; border:1px solid var(--line); border-radius:8px; padding:7px 8px; background:var(--surface); color:var(--text); font-size:10px; }
+.annotation-export-actions { display:flex; justify-content:flex-end; gap:10px; margin-bottom:10px; }
+.annotation-export-actions button { padding:2px 0; font-size:9px; }
 .annotation-list { display:flex; flex-direction:column; gap:8px; }
 .annotation-item { position:relative; border:1px solid var(--line); border-radius:11px; background:var(--surface); overflow:hidden; }
-.annotation-jump { width:100%; border:0; padding:10px 48px 10px 11px; background:transparent; color:var(--text); text-align:left; cursor:pointer; }
+.annotation-jump { width:100%; border:0; padding:10px 82px 10px 11px; background:transparent; color:var(--text); text-align:left; cursor:pointer; }
 .annotation-jump small,.annotation-jump q,.annotation-jump p { display:block; }
 .annotation-jump small { margin-bottom:5px; color:var(--accent); font-size:9px; }
 .annotation-jump q { color:var(--muted); font:11px/1.5 ui-serif,serif; quotes:'“' '”'; }
 .annotation-jump p { margin:7px 0 0; font-size:11px; line-height:1.5; }
-.annotation-delete { position:absolute; right:7px; top:8px; border:0; background:transparent; color:var(--faint); cursor:pointer; font-size:9px; }
-.annotation-delete:hover { color:var(--accent); }
+.annotation-item-actions { position:absolute; right:7px; top:8px; display:flex; gap:7px; }
+.annotation-item-actions button { border:0; padding:0; background:transparent; color:var(--faint); cursor:pointer; font-size:9px; }
+.annotation-item-actions button:hover { color:var(--accent); }
 .tool-empty { padding:12px 0; text-align:center; }
 .footer-status { display:flex; align-items:center; justify-content:flex-end; gap:14px; }
 .pdf-page-jump[hidden] { display:none; }

@@ -13,21 +13,31 @@
 ## 构建并加载
 
 1. 安装依赖：`npm install`
-2. 生成 Edge / Chrome 扩展：`npm run build`
-3. 打开 Edge 的 `edge://extensions` 或 Chrome 的 `chrome://extensions`
-4. 开启“开发人员模式”
-5. 选择“加载解压缩的扩展”，指向 `.output/chrome-mv3`
-6. 点击工具栏中的“静读”图标
+2. 打开 Edge 的 `edge://extensions` 或 Chrome 的 `chrome://extensions`
+3. 开启“开发人员模式”
+4. 选择“加载解压缩的扩展”，指向项目根目录 `D:\projects\reading-plugin`
+5. 点击工具栏中的“静读”图标
 
-开发时可运行 `npm run dev` 使用 WXT 热更新。旧版直接加载项目根目录的方式暂时保留兼容，但后续发布与测试均以 WXT 生成目录为准。扩展升级继续使用原来的 IndexedDB 数据库与对象仓库，不会主动清除已保存书籍和阅读进度。
+当前开发、日常使用和自动化验收均以项目根目录版本为准；`.output/chrome-mv3` / WXT 迁移暂不进入当前执行序列。扩展升级继续使用原来的 IndexedDB 数据库与对象仓库，不会主动清除已保存书籍和阅读进度。
 
-The manifest pins a public key so moving the project or rebuilding `.output/chrome-mv3` keeps the same extension ID and browser storage origin. Development builds installed before this key was introduced use a different origin and cannot be read across extension IDs; those books must be imported once more.
+Manifest 使用固定公钥，使项目移动或重新加载后仍保持相同扩展 ID 和浏览器存储来源。引入固定公钥之前安装的开发版本属于不同来源，需要重新导入一次书籍。
 
 ## 书库备份与恢复
 
 书架首页提供“备份书库”和“恢复备份”。备份文件扩展名为 `.quietreader`，包含书籍原文件、封面、阅读进度、高亮、批注和非敏感设置；恢复前会校验备份格式版本、数据库 schema 兼容性和每个二进制文件的 SHA-256。
 
 为避免泄露，AI API 密钥不会写入备份。恢复采用合并方式：相同书籍记录更新，其他现有书籍保留。
+
+## 高亮与批注
+
+在 PDF、EPUB、MOBI 和 AZW3 正文中选择文字后，可以创建高亮或带备注的批注。工具面板支持：
+
+- 编辑批注内容，并在重新打开书籍后恢复。
+- 按有批注、仅高亮、PDF、电子书和关键词筛选。
+- 删除前确认，避免误操作。
+- 将当前书籍的全部高亮与批注导出为 Markdown 或版本化 JSON；导出包含书籍信息、位置、原文、备注和记录时间。
+
+当前只支持导出，批注 JSON 导入、标签、排序和批量操作仍在后续计划中。
 
 ## AI 阅读助手（初版）
 
@@ -49,7 +59,7 @@ npm run check
 npm test
 ```
 
-WXT 会生成可发布的 Manifest V3 扩展；日常加载与测试均使用 `.output/chrome-mv3`。兼容用的项目根目录入口暂时保留。
+当前日常加载与测试均使用项目根目录版本。WXT 仍保留在代码中，但暂不作为稳定运行入口。
 
 真实扩展端到端测试：
 
@@ -57,10 +67,10 @@ WXT 会生成可发布的 Manifest V3 扩展；日常加载与测试均使用 `.
 npm run test:e2e
 ```
 
-该命令会构建扩展，下载 Project Gutenberg 的 EPUB/MOBI/AZW3 与 Mozilla PDF.js 的测试 PDF，然后使用本机 Microsoft Edge 验证目录、导航、进度恢复、PDF 文本层/缩放/跳页，以及 EPUB 文字选区与 AI 控件联动。测试书籍不会提交到 Git。
+该命令会构建共享核心、准备测试书，然后加载项目根目录扩展，使用本机 Microsoft Edge 验证多格式阅读、连续滚动、异常文件、批注编辑与导出、备份恢复和数据库升级。测试书籍不会提交到 Git。
 
 ## 当前边界
 
 - PDF 保持原版页面布局，不提供文字重排；扫描版 PDF 没有原生文本层，需要后续加入 OCR 才能搜索和选择。
-- 高亮与批注保存在当前浏览器的本地数据库中，暂未提供跨设备同步或导出。
+- 高亮与批注保存在当前浏览器的本地数据库中，并可导出 Markdown/JSON；暂未提供导入和跨设备同步。
 - DRM 加密的 EPUB、MOBI、AZW3 无法读取。

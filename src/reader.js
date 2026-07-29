@@ -1,7 +1,20 @@
 import '../node_modules/foliate-js/view.js'
 import * as pdfjsLib from '../node_modules/pdfjs-dist/build/pdf.mjs'
 import { Overlayer } from '../node_modules/foliate-js/overlayer.js'
-import { createAnnotation, excerpt, findTextMatches, normalizeAnnotations } from './annotations.js'
+import {
+  createAnnotation,
+  excerpt,
+  filterAnnotations,
+  findTextMatches,
+  normalizeAnnotations,
+  updateAnnotation,
+} from './annotations.js'
+import {
+  annotationExportFileName,
+  createAnnotationExport,
+  serializeAnnotationsJson,
+  serializeAnnotationsMarkdown,
+} from './annotation-export.js'
 import { buildAiMessages, CHAPTER_AI_ACTIONS, getAiPermissionOrigin, SELECTION_AI_ACTIONS, streamAiCompletion } from './ai.js'
 import { bookRepository } from './book-repository.js'
 import { ContinuousEbookScroller } from './continuous-ebook.js'
@@ -44,6 +57,10 @@ const elements = {
   highlightSelection: $('#highlight-selection'),
   noteSelection: $('#note-selection'),
   annotationCount: $('#annotation-count'),
+  annotationFilterQuery: $('#annotation-filter-query'),
+  annotationFilterType: $('#annotation-filter-type'),
+  exportAnnotationsMarkdown: $('#export-annotations-markdown'),
+  exportAnnotationsJson: $('#export-annotations-json'),
   annotationList: $('#annotation-list'),
   aiSelectionPreview: $('#ai-selection-preview'),
   aiSettingsToggle: $('#ai-settings-toggle'),
@@ -124,6 +141,8 @@ let pdfSearchQuery = ''
 let pdfTextCache = new Map()
 let pendingSelection = null
 let annotations = []
+let annotationFilterQuery = ''
+let annotationFilterType = 'all'
 let searchRun = 0
 let aiAbortController = null
 let readerAdapter = null
@@ -437,6 +456,10 @@ function markCurrentToc(href) {
 
 function loadAnnotations() {
   annotations = normalizeAnnotations(currentRecord?.annotations)
+  annotationFilterQuery = ''
+  annotationFilterType = 'all'
+  elements.annotationFilterQuery.value = ''
+  elements.annotationFilterType.value = 'all'
   renderAnnotationList()
 }
 
@@ -450,15 +473,21 @@ async function saveAnnotations() {
 
 function renderAnnotationList() {
   elements.annotationList.replaceChildren()
-  elements.annotationCount.textContent = `${annotations.length} 条`
-  if (!annotations.length) {
+  const filtered = filterAnnotations(annotations, {
+    query: annotationFilterQuery,
+    type: annotationFilterType,
+  })
+  elements.annotationCount.textContent = filtered.length === annotations.length
+    ? `${annotations.length} 条`
+    : `${filtered.length} / ${annotations.length} 条`
+  if (!filtered.length) {
     const empty = document.createElement('p')
     empty.className = 'tool-empty'
-    empty.textContent = '还没有高亮或批注'
+    empty.textContent = annotations.length ? '没有符合筛选条件的批注' : '还没有高亮或批注'
     elements.annotationList.append(empty)
     return
   }
-  for (const annotation of [...annotations].reverse()) {
+  for (const annotation of [...filtered].reverse()) {
     const item = document.createElement('article')
     item.className = 'annotation-item'
     const jump = document.createElement('button')
@@ -475,19 +504,54 @@ function renderAnnotationList() {
       else if (continuousEbook) continuousEbook.goTo(annotation.locator)
       else ebookView?.showAnnotation({ value: annotation.locator })
     })
+    const actions = document.createElement('div')
+    actions.className = 'annotation-item-actions'
+    const edit = document.createElement('button')
+    edit.type = 'button'
+    edit.className = 'annotation-edit'
+    edit.textContent = '编辑'
+    edit.addEventListener('click', async () => {
+      const note = prompt('编辑批注（留空则仅保留高亮）', annotation.note || '')
+      if (note === null) return
+      annotations = updateAnnotation(annotations, annotation.id, { note })
+      await saveAnnotations()
+      renderPdfAnnotationOverlays()
+      showToast('批注已更新')
+    })
     const remove = document.createElement('button')
     remove.type = 'button'
     remove.className = 'annotation-delete'
     remove.textContent = '删除'
     remove.addEventListener('click', async () => {
+      if (!confirm('确定删除这条高亮或批注吗？')) return
       if (annotation.kind === 'ebook' && !continuousEbook) await ebookView?.deleteAnnotation({ value: annotation.locator })
       annotations = annotations.filter(item => item.id !== annotation.id)
       renderPdfAnnotationOverlays()
       await saveAnnotations()
     })
-    item.append(jump, remove)
+    actions.append(edit, remove)
+    item.append(jump, actions)
     elements.annotationList.append(item)
   }
+}
+
+function exportAnnotations(extension) {
+  if (!annotations.length || !currentRecord) {
+    showToast('当前书籍还没有可导出的高亮或批注')
+    return
+  }
+  const exportDocument = createAnnotationExport(currentRecord, annotations)
+  const text = extension === 'json'
+    ? serializeAnnotationsJson(exportDocument)
+    : serializeAnnotationsMarkdown(exportDocument)
+  const type = extension === 'json' ? 'application/json' : 'text/markdown'
+  const url = URL.createObjectURL(new Blob([text], { type: `${type};charset=utf-8` }))
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = annotationExportFileName(exportDocument, extension)
+  anchor.click()
+  setTimeout(() => URL.revokeObjectURL(url), 0)
+  showToast(`已导出 ${annotations.length} 条高亮与批注`)
 }
 
 function addSearchResult({ label, text, onSelect }) {
@@ -1211,6 +1275,16 @@ function bindControls() {
   elements.searchForm.addEventListener('submit', runSearch)
   elements.highlightSelection.addEventListener('click', () => annotateSelection(false))
   elements.noteSelection.addEventListener('click', () => annotateSelection(true))
+  elements.annotationFilterQuery.addEventListener('input', event => {
+    annotationFilterQuery = event.target.value
+    renderAnnotationList()
+  })
+  elements.annotationFilterType.addEventListener('change', event => {
+    annotationFilterType = event.target.value
+    renderAnnotationList()
+  })
+  elements.exportAnnotationsMarkdown.addEventListener('click', () => exportAnnotations('md'))
+  elements.exportAnnotationsJson.addEventListener('click', () => exportAnnotations('json'))
   elements.closeSettings.addEventListener('click', closePanels)
   elements.scrim.addEventListener('click', closePanels)
   elements.prevButton.addEventListener('click', () => navigate(-1))
