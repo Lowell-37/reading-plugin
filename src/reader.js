@@ -7,6 +7,7 @@ import {
   filterAnnotations,
   findTextMatches,
   normalizeAnnotations,
+  sortAnnotations,
   updateAnnotation,
 } from './annotations.js'
 import {
@@ -15,6 +16,7 @@ import {
   serializeAnnotationsJson,
   serializeAnnotationsMarkdown,
 } from './annotation-export.js'
+import { annotationImportMatchesBook, mergeAnnotationImports, parseAnnotationImport } from './annotation-import.js'
 import { buildAiMessages, CHAPTER_AI_ACTIONS, getAiPermissionOrigin, SELECTION_AI_ACTIONS, streamAiCompletion } from './ai.js'
 import { bookRepository } from './book-repository.js'
 import { ContinuousEbookScroller } from './continuous-ebook.js'
@@ -59,6 +61,11 @@ const elements = {
   annotationCount: $('#annotation-count'),
   annotationFilterQuery: $('#annotation-filter-query'),
   annotationFilterType: $('#annotation-filter-type'),
+  annotationSort: $('#annotation-sort'),
+  annotationSelectAll: $('#annotation-select-all'),
+  annotationDeleteSelected: $('#annotation-delete-selected'),
+  importAnnotationsJson: $('#import-annotations-json'),
+  annotationImportInput: $('#annotation-import-input'),
   exportAnnotationsMarkdown: $('#export-annotations-markdown'),
   exportAnnotationsJson: $('#export-annotations-json'),
   annotationList: $('#annotation-list'),
@@ -143,6 +150,8 @@ let pendingSelection = null
 let annotations = []
 let annotationFilterQuery = ''
 let annotationFilterType = 'all'
+let annotationSort = 'newest'
+const selectedAnnotationIds = new Set()
 let searchRun = 0
 let aiAbortController = null
 let readerAdapter = null
@@ -458,8 +467,11 @@ function loadAnnotations() {
   annotations = normalizeAnnotations(currentRecord?.annotations)
   annotationFilterQuery = ''
   annotationFilterType = 'all'
+  annotationSort = 'newest'
+  selectedAnnotationIds.clear()
   elements.annotationFilterQuery.value = ''
   elements.annotationFilterType.value = 'all'
+  elements.annotationSort.value = 'newest'
   renderAnnotationList()
 }
 
@@ -473,13 +485,18 @@ async function saveAnnotations() {
 
 function renderAnnotationList() {
   elements.annotationList.replaceChildren()
-  const filtered = filterAnnotations(annotations, {
+  const existingIds = new Set(annotations.map(annotation => annotation.id))
+  for (const id of selectedAnnotationIds) {
+    if (!existingIds.has(id)) selectedAnnotationIds.delete(id)
+  }
+  const filtered = sortAnnotations(filterAnnotations(annotations, {
     query: annotationFilterQuery,
     type: annotationFilterType,
-  })
+  }), annotationSort)
   elements.annotationCount.textContent = filtered.length === annotations.length
     ? `${annotations.length} 条`
     : `${filtered.length} / ${annotations.length} 条`
+  updateBulkAnnotationControls(filtered)
   if (!filtered.length) {
     const empty = document.createElement('p')
     empty.className = 'tool-empty'
@@ -487,9 +504,19 @@ function renderAnnotationList() {
     elements.annotationList.append(empty)
     return
   }
-  for (const annotation of [...filtered].reverse()) {
+  for (const annotation of filtered) {
     const item = document.createElement('article')
     item.className = 'annotation-item'
+    const selection = document.createElement('input')
+    selection.type = 'checkbox'
+    selection.className = 'annotation-select'
+    selection.setAttribute('aria-label', '选择这条批注')
+    selection.checked = selectedAnnotationIds.has(annotation.id)
+    selection.addEventListener('change', () => {
+      if (selection.checked) selectedAnnotationIds.add(annotation.id)
+      else selectedAnnotationIds.delete(annotation.id)
+      updateBulkAnnotationControls(filtered)
+    })
     const jump = document.createElement('button')
     jump.type = 'button'
     jump.className = 'annotation-jump'
@@ -498,6 +525,16 @@ function renderAnnotationList() {
     jump.querySelector('q').textContent = annotation.text || '无文本高亮'
     const note = jump.querySelector('p')
     if (note) note.textContent = annotation.note
+    if (annotation.tags?.length) {
+      const tags = document.createElement('div')
+      tags.className = 'annotation-tags'
+      for (const value of annotation.tags) {
+        const tag = document.createElement('span')
+        tag.textContent = value
+        tags.append(tag)
+      }
+      jump.append(tags)
+    }
     jump.addEventListener('click', () => {
       closePanels()
       if (annotation.kind === 'pdf') goToPdfPage(annotation.page)
@@ -511,9 +548,11 @@ function renderAnnotationList() {
     edit.className = 'annotation-edit'
     edit.textContent = '编辑'
     edit.addEventListener('click', async () => {
-      const note = prompt('编辑批注（留空则仅保留高亮）', annotation.note || '')
-      if (note === null) return
-      annotations = updateAnnotation(annotations, annotation.id, { note })
+      const noteValue = prompt('编辑批注（留空则仅保留高亮）', annotation.note || '')
+      if (noteValue === null) return
+      const tagsValue = prompt('编辑标签（使用逗号分隔，最多 10 个）', annotation.tags?.join(', ') || '')
+      if (tagsValue === null) return
+      annotations = updateAnnotation(annotations, annotation.id, { note: noteValue, tags: tagsValue })
       await saveAnnotations()
       renderPdfAnnotationOverlays()
       showToast('批注已更新')
@@ -524,14 +563,92 @@ function renderAnnotationList() {
     remove.textContent = '删除'
     remove.addEventListener('click', async () => {
       if (!confirm('确定删除这条高亮或批注吗？')) return
-      if (annotation.kind === 'ebook' && !continuousEbook) await ebookView?.deleteAnnotation({ value: annotation.locator })
-      annotations = annotations.filter(item => item.id !== annotation.id)
-      renderPdfAnnotationOverlays()
-      await saveAnnotations()
+      await removeAnnotations([annotation])
     })
     actions.append(edit, remove)
-    item.append(jump, actions)
+    item.append(selection, jump, actions)
     elements.annotationList.append(item)
+  }
+}
+
+function updateBulkAnnotationControls(filtered) {
+  const visibleIds = filtered.map(annotation => annotation.id)
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selectedAnnotationIds.has(id))
+  elements.annotationSelectAll.textContent = allVisibleSelected ? '取消全选' : '全选当前'
+  elements.annotationSelectAll.disabled = visibleIds.length === 0
+  elements.annotationDeleteSelected.disabled = selectedAnnotationIds.size === 0
+  elements.annotationDeleteSelected.textContent = selectedAnnotationIds.size
+    ? `删除所选（${selectedAnnotationIds.size}）`
+    : '删除所选'
+}
+
+function toggleSelectVisibleAnnotations() {
+  const filtered = sortAnnotations(filterAnnotations(annotations, {
+    query: annotationFilterQuery,
+    type: annotationFilterType,
+  }), annotationSort)
+  const allSelected = filtered.length > 0 && filtered.every(annotation => selectedAnnotationIds.has(annotation.id))
+  for (const annotation of filtered) {
+    if (allSelected) selectedAnnotationIds.delete(annotation.id)
+    else selectedAnnotationIds.add(annotation.id)
+  }
+  renderAnnotationList()
+}
+
+async function removeAnnotations(items) {
+  const ids = new Set(items.map(annotation => annotation.id))
+  if (!continuousEbook) {
+    for (const annotation of items) {
+      if (annotation.kind === 'ebook') await ebookView?.deleteAnnotation({ value: annotation.locator })
+    }
+  }
+  annotations = annotations.filter(annotation => !ids.has(annotation.id))
+  for (const id of ids) selectedAnnotationIds.delete(id)
+  renderPdfAnnotationOverlays()
+  await saveAnnotations()
+}
+
+async function deleteSelectedAnnotations() {
+  const items = annotations.filter(annotation => selectedAnnotationIds.has(annotation.id))
+  if (!items.length) return
+  if (!confirm(`确定删除所选的 ${items.length} 条高亮或批注吗？`)) return
+  await removeAnnotations(items)
+  showToast(`已删除 ${items.length} 条批注`)
+}
+
+async function importAnnotationsFile(file) {
+  if (!file || !currentRecord) return
+  try {
+    if (file.size > 10 * 1024 * 1024) throw new Error('批注文件不能超过 10 MB')
+    const document = parseAnnotationImport(await file.text())
+    const matches = annotationImportMatchesBook(document.book, {
+      fileName: currentRecord.name,
+      format: currentRecord.format,
+    })
+    if (!matches && !confirm('导入文件属于另一本书，仍要合并到当前书籍吗？')) return
+    const previousById = new Map(annotations.map(annotation => [annotation.id, annotation]))
+    const result = mergeAnnotationImports(annotations, document.annotations)
+    annotations = result.annotations
+    if (!continuousEbook) {
+      const importedIds = new Set(document.annotations.map(annotation => annotation.id))
+      for (const annotation of annotations.filter(item => importedIds.has(item.id))) {
+        if (annotation.kind !== 'ebook') continue
+        const previous = previousById.get(annotation.id)
+        if (previous?.kind === 'ebook') {
+          await ebookView?.deleteAnnotation({ value: previous.locator }).catch(() => {})
+        }
+        await ebookView?.deleteAnnotation({ value: annotation.locator }).catch(() => {})
+        await ebookView?.addAnnotation({ value: annotation.locator, color: annotation.color }).catch(() => {})
+      }
+    }
+    renderPdfAnnotationOverlays()
+    await saveAnnotations()
+    showToast(`导入完成：新增 ${result.added}，更新 ${result.updated}，跳过 ${result.skipped}`)
+  } catch (error) {
+    console.error(error)
+    showToast(error?.message || '无法导入批注文件', 'error')
+  } finally {
+    elements.annotationImportInput.value = ''
   }
 }
 
@@ -1282,6 +1399,20 @@ function bindControls() {
   elements.annotationFilterType.addEventListener('change', event => {
     annotationFilterType = event.target.value
     renderAnnotationList()
+  })
+  elements.annotationSort.addEventListener('change', event => {
+    annotationSort = event.target.value
+    renderAnnotationList()
+  })
+  elements.annotationSelectAll.addEventListener('click', toggleSelectVisibleAnnotations)
+  elements.annotationDeleteSelected.addEventListener('click', deleteSelectedAnnotations)
+  elements.importAnnotationsJson.addEventListener('click', () => {
+    elements.annotationImportInput.value = ''
+    elements.annotationImportInput.click()
+  })
+  elements.annotationImportInput.addEventListener('change', event => {
+    const [file] = event.target.files
+    if (file) importAnnotationsFile(file)
   })
   elements.exportAnnotationsMarkdown.addEventListener('click', () => exportAnnotations('md'))
   elements.exportAnnotationsJson.addEventListener('click', () => exportAnnotations('json'))

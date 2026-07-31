@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises'
 
 test('reader exposes search, annotation and PDF navigation controls', async () => {
   const html = await readFile(new URL('../reader.html', import.meta.url), 'utf8')
-  for (const id of ['header-toggle', 'tools-button', 'search-form', 'highlight-selection', 'note-selection', 'annotation-filter-query', 'annotation-filter-type', 'export-annotations-markdown', 'export-annotations-json', 'ai-settings', 'ai-result', 'selection-ai-menu', 'pdf-toolbar', 'pdf-page-input']) {
+  for (const id of ['header-toggle', 'tools-button', 'search-form', 'highlight-selection', 'note-selection', 'annotation-filter-query', 'annotation-filter-type', 'annotation-sort', 'annotation-select-all', 'annotation-delete-selected', 'import-annotations-json', 'annotation-import-input', 'export-annotations-markdown', 'export-annotations-json', 'ai-settings', 'ai-result', 'selection-ai-menu', 'pdf-toolbar', 'pdf-page-input']) {
     assert.match(html, new RegExp(`id=["']${id}["']`))
   }
   const meta = html.match(/Content-Security-Policy[^>]+content="([^"]+)"/)?.[1] || ''

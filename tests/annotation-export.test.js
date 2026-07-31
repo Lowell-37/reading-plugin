@@ -32,6 +32,7 @@ const annotations = [
     rects: [],
     createdAt: Date.parse('2026-07-29T02:00:00.000Z'),
     updatedAt: Date.parse('2026-07-29T03:00:00.000Z'),
+    tags: ['reference'],
   },
 ]
 
@@ -46,6 +47,7 @@ test('creates a versioned annotation export with book metadata', () => {
   assert.equal(document.book.title, 'Alice / Wonderland')
   assert.equal(document.annotations.length, 2)
   assert.equal(JSON.parse(serializeAnnotationsJson(document)).annotations[0].note, 'Remember this')
+  assert.deepEqual(JSON.parse(serializeAnnotationsJson(document)).annotations[1].tags, ['reference'])
 })
 
 test('serializes readable Markdown with locations, quotes and notes', () => {
@@ -60,6 +62,7 @@ test('serializes readable Markdown with locations, quotes and notes', () => {
   assert.match(markdown, /> Selected\n> text/)
   assert.match(markdown, /\*\*批注：\*\* Remember this/)
   assert.match(markdown, /第 3 页/)
+  assert.match(markdown, /\*\*标签：\*\* reference/)
   assert.equal(annotationExportFileName(document, 'md'), 'Example-annotations.md')
 })
 

@@ -1,4 +1,4 @@
-import { test, expect, chromium, type BrowserContext, type Download, type Frame, type Page } from '@playwright/test'
+import { test, expect, chromium, type BrowserContext, type Dialog, type Download, type Frame, type Page } from '@playwright/test'
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
@@ -7,7 +7,7 @@ const extensionPath = resolve('.')
 const edgePath = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'
 const bookPath = resolve('tests/fixtures/books/alice.epub')
 
-test('edits, filters and exports EPUB highlights and notes', async () => {
+test('organizes, exports, deletes and imports EPUB annotations', async () => {
   const { context, page } = await launchRootExtension()
   try {
     await page.locator('#file-input').setInputFiles(bookPath)
@@ -23,9 +23,17 @@ test('edits, filters and exports EPUB highlights and notes', async () => {
     await expect(page.locator('.annotation-item')).toHaveCount(1)
     await expect(page.locator('.annotation-item')).toContainText('Original note')
 
-    page.once('dialog', dialog => dialog.accept('Updated note'))
+    const editReplies = ['Updated note', 'classic, key']
+    const editDialog = (dialog: Dialog) => dialog.accept(editReplies.shift() || '')
+    page.on('dialog', editDialog)
     await page.locator('.annotation-edit').click()
     await expect(page.locator('.annotation-item')).toContainText('Updated note')
+    await expect(page.locator('.annotation-tags')).toContainText('classic')
+    page.off('dialog', editDialog)
+
+    await page.locator('#annotation-filter-query').fill('classic')
+    await expect(page.locator('.annotation-item')).toHaveCount(1)
+    await page.locator('#annotation-filter-query').fill('')
 
     await page.locator('#close-tools').click()
     await selectText(frame, 1)
@@ -43,6 +51,8 @@ test('edits, filters and exports EPUB highlights and notes', async () => {
     await expect(page.locator('.annotation-list')).toContainText('没有符合筛选条件')
     await page.locator('#annotation-filter-query').fill('')
     await page.locator('#annotation-filter-type').selectOption('all')
+    await page.locator('#annotation-sort').selectOption('oldest')
+    await expect(page.locator('#annotation-sort')).toHaveValue('oldest')
 
     await page.locator('#home-button').evaluate((button: HTMLElement) => button.click())
     await expect(page.locator('#welcome-view')).toBeVisible()
@@ -52,15 +62,19 @@ test('edits, filters and exports EPUB highlights and notes', async () => {
     await page.locator('#tools-button').evaluate((button: HTMLElement) => button.click())
     await expect(page.locator('.annotation-item')).toHaveCount(2)
     await expect(page.locator('.annotation-list')).toContainText('Updated note')
+    await expect(page.locator('.annotation-tags')).toContainText('classic')
 
     const jsonDownload = page.waitForEvent('download')
     await page.locator('#export-annotations-json').click()
-    const json = await readDownload(await jsonDownload)
-    const archive = JSON.parse(json)
+    const downloadedJson = await jsonDownload
+    const jsonPath = await downloadedJson.path()
+    if (!jsonPath) throw new Error('JSON download path is unavailable')
+    const archive = JSON.parse(await readFile(jsonPath, 'utf8'))
     expect(archive.format).toBe('quiet-reader-annotations')
     expect(archive.book.title).toMatch(/Alice/i)
     expect(archive.annotations).toHaveLength(2)
     expect(archive.annotations.some((item: any) => item.note === 'Updated note')).toBe(true)
+    expect(archive.annotations.some((item: any) => item.tags?.includes('classic'))).toBe(true)
 
     const markdownDownload = page.waitForEvent('download')
     await page.locator('#export-annotations-markdown').click()
@@ -69,10 +83,19 @@ test('edits, filters and exports EPUB highlights and notes', async () => {
     expect(markdown).toContain('Updated note')
     expect(markdown).toContain('> ')
 
+    await page.locator('#annotation-select-all').click()
+    await expect(page.locator('.annotation-select:checked')).toHaveCount(2)
+    await expect(page.locator('#annotation-delete-selected')).toContainText('2')
     page.once('dialog', dialog => dialog.accept())
-    await page.locator('.annotation-item').filter({ hasText: 'Updated note' }).locator('.annotation-delete').click()
-    await expect(page.locator('.annotation-item')).toHaveCount(1)
-    await expect(page.locator('#annotation-count')).toHaveText('1 条')
+    await page.locator('#annotation-delete-selected').click()
+    await expect(page.locator('.annotation-item')).toHaveCount(0)
+    await expect(page.locator('#annotation-count')).toHaveText('0 条')
+
+    await page.locator('#annotation-import-input').setInputFiles(jsonPath)
+    await expect(page.locator('.annotation-item')).toHaveCount(2)
+    await expect(page.locator('.annotation-list')).toContainText('Updated note')
+    await expect(page.locator('.annotation-tags')).toContainText('classic')
+    await expect(page.locator('#toast')).toContainText('新增 2')
   } finally {
     await context.close()
   }

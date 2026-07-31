@@ -68,6 +68,7 @@ export function serializeAnnotationsMarkdown(document: AnnotationExportDocument)
     lines.push(`## ${index + 1}. ${location}`, '')
     if (annotation.text) lines.push(quote(annotation.text), '')
     if (annotation.note) lines.push(`**批注：** ${annotation.note}`, '')
+    if (annotation.tags?.length) lines.push(`**标签：** ${annotation.tags.join('、')}`, '')
     if (timestamp) lines.push(`_记录时间：${new Date(timestamp).toISOString()}_`, '')
   })
   return `${lines.join('\n').trimEnd()}\n`

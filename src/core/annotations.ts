@@ -9,6 +9,18 @@ export interface CreateAnnotationInput {
   rects?: AnnotationRect[]
   page?: number | null
   section?: number | null
+  tags?: unknown
+}
+
+export type AnnotationFilterType = 'all' | 'notes' | 'highlights' | 'pdf' | 'ebook'
+export type AnnotationSort = 'newest' | 'oldest' | 'location'
+
+export function normalizeAnnotationTags(value: unknown): string[] {
+  const source = Array.isArray(value) ? value : String(value || '').split(/[,，]/)
+  const tags = source
+    .map(tag => String(tag || '').trim().slice(0, 30))
+    .filter(Boolean)
+  return [...new Set(tags)].slice(0, 10)
 }
 
 export function createAnnotation({
@@ -20,6 +32,7 @@ export function createAnnotation({
   rects = [],
   page = null,
   section = null,
+  tags = [],
 }: CreateAnnotationInput): Annotation {
   const createdAt = Date.now()
   return {
@@ -33,25 +46,45 @@ export function createAnnotation({
     color,
     rects,
     createdAt,
+    tags: normalizeAnnotationTags(tags),
   }
 }
 
 export function normalizeAnnotations(value: unknown): Annotation[] {
   if (!Array.isArray(value)) return []
-  return value.filter((item): item is Annotation => Boolean(
-    item && typeof item === 'object'
-    && 'id' in item && item.id
-    && 'kind' in item && item.kind
-    && (('locator' in item && item.locator) || ('page' in item && item.page)),
-  ))
+  const result: Annotation[] = []
+  for (const valueItem of value) {
+    if (!valueItem || typeof valueItem !== 'object') continue
+    const item = valueItem as Record<string, unknown>
+    const kind = item.kind === 'pdf' || item.kind === 'ebook' ? item.kind : null
+    const id = String(item.id || '').trim()
+    const page = finiteNumber(item.page)
+    const locator = typeof item.locator === 'string' && item.locator ? item.locator : null
+    if (!id || !kind || (kind === 'pdf' ? page == null || page < 1 : !locator)) continue
+    const createdAt = finiteNumber(item.createdAt) ?? 0
+    const updatedAt = finiteNumber(item.updatedAt)
+    result.push({
+      id,
+      kind,
+      locator,
+      page,
+      section: finiteNumber(item.section),
+      text: String(item.text || '').trim().slice(0, 500),
+      note: String(item.note || '').trim().slice(0, 2000),
+      color: String(item.color || '#f4c95d'),
+      rects: normalizeRects(item.rects),
+      createdAt,
+      ...(updatedAt == null ? {} : { updatedAt }),
+      tags: normalizeAnnotationTags(item.tags),
+    })
+  }
+  return result
 }
-
-export type AnnotationFilterType = 'all' | 'notes' | 'highlights' | 'pdf' | 'ebook'
 
 export function updateAnnotation(
   value: Annotation[],
   id: string,
-  changes: { note?: unknown },
+  changes: { note?: unknown, tags?: unknown },
   now = Date.now(),
 ): Annotation[] {
   return value.map(annotation => annotation.id === id
@@ -60,6 +93,9 @@ export function updateAnnotation(
         note: changes.note === undefined
           ? annotation.note
           : String(changes.note || '').trim().slice(0, 2000),
+        tags: changes.tags === undefined
+          ? normalizeAnnotationTags(annotation.tags)
+          : normalizeAnnotationTags(changes.tags),
         updatedAt: now,
       }
     : annotation)
@@ -78,8 +114,21 @@ export function filterAnnotations(
     if (type === 'ebook' && annotation.kind !== 'ebook') return false
     if (!term) return true
     const location = annotation.kind === 'pdf' ? `第 ${annotation.page || ''} 页` : '电子书'
-    return [annotation.text, annotation.note, location]
+    return [annotation.text, annotation.note, annotation.tags?.join(' '), location]
       .some(field => String(field || '').toLocaleLowerCase().includes(term))
+  })
+}
+
+export function sortAnnotations(value: Annotation[], sort: AnnotationSort = 'newest'): Annotation[] {
+  return [...value].sort((left, right) => {
+    if (sort === 'location') {
+      const leftLocation = left.kind === 'pdf' ? left.page ?? Number.MAX_SAFE_INTEGER : left.section ?? Number.MAX_SAFE_INTEGER
+      const rightLocation = right.kind === 'pdf' ? right.page ?? Number.MAX_SAFE_INTEGER : right.section ?? Number.MAX_SAFE_INTEGER
+      return leftLocation - rightLocation || left.createdAt - right.createdAt
+    }
+    const leftTime = left.updatedAt ?? left.createdAt
+    const rightTime = right.updatedAt ?? right.createdAt
+    return sort === 'oldest' ? leftTime - rightTime : rightTime - leftTime
   })
 }
 
@@ -109,4 +158,25 @@ export function findTextMatches(text: unknown, query: unknown): number[] {
     offset = index + Math.max(needle.length, 1)
   }
   return matches
+}
+
+function finiteNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null
+  const number = Number(value)
+  return Number.isFinite(number) ? number : null
+}
+
+function normalizeRects(value: unknown): AnnotationRect[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap(rect => {
+    if (!rect || typeof rect !== 'object') return []
+    const source = rect as Record<string, unknown>
+    const left = finiteNumber(source.left)
+    const top = finiteNumber(source.top)
+    const width = finiteNumber(source.width)
+    const height = finiteNumber(source.height)
+    return left == null || top == null || width == null || height == null
+      ? []
+      : [{ left, top, width, height }]
+  })
 }

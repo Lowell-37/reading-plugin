@@ -218,15 +218,22 @@ body.is-reading .welcome-only { display:none; }
 .selection-actions button { flex:1; font-size:11px; }
 .annotation-filters { display:grid; grid-template-columns:minmax(0,1fr) 88px; gap:7px; margin-bottom:7px; }
 .annotation-filters input,.annotation-filters select { min-width:0; border:1px solid var(--line); border-radius:8px; padding:7px 8px; background:var(--surface); color:var(--text); font-size:10px; }
+.annotation-organize-actions { display:grid; grid-template-columns:minmax(0,1fr) auto auto; align-items:center; gap:8px; margin-bottom:7px; }
+.annotation-organize-actions select { min-width:0; border:1px solid var(--line); border-radius:8px; padding:6px 7px; background:var(--surface); color:var(--text); font-size:9px; }
+.annotation-organize-actions button { padding:2px 0; font-size:9px; white-space:nowrap; }
+.annotation-organize-actions .danger:not(:disabled) { color:#b84a42; }
 .annotation-export-actions { display:flex; justify-content:flex-end; gap:10px; margin-bottom:10px; }
 .annotation-export-actions button { padding:2px 0; font-size:9px; }
 .annotation-list { display:flex; flex-direction:column; gap:8px; }
 .annotation-item { position:relative; border:1px solid var(--line); border-radius:11px; background:var(--surface); overflow:hidden; }
-.annotation-jump { width:100%; border:0; padding:10px 82px 10px 11px; background:transparent; color:var(--text); text-align:left; cursor:pointer; }
+.annotation-select { position:absolute; z-index:2; left:10px; top:12px; width:13px; height:13px; accent-color:var(--accent); }
+.annotation-jump { width:100%; border:0; padding:10px 82px 10px 32px; background:transparent; color:var(--text); text-align:left; cursor:pointer; }
 .annotation-jump small,.annotation-jump q,.annotation-jump p { display:block; }
 .annotation-jump small { margin-bottom:5px; color:var(--accent); font-size:9px; }
 .annotation-jump q { color:var(--muted); font:11px/1.5 ui-serif,serif; quotes:'“' '”'; }
 .annotation-jump p { margin:7px 0 0; font-size:11px; line-height:1.5; }
+.annotation-tags { display:flex; flex-wrap:wrap; gap:4px; margin-top:7px; }
+.annotation-tags span { border-radius:999px; padding:2px 6px; background:var(--accent-soft); color:var(--accent); font-size:9px; }
 .annotation-item-actions { position:absolute; right:7px; top:8px; display:flex; gap:7px; }
 .annotation-item-actions button { border:0; padding:0; background:transparent; color:var(--faint); cursor:pointer; font-size:9px; }
 .annotation-item-actions button:hover { color:var(--accent); }

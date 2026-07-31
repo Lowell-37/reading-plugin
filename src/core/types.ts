@@ -60,6 +60,7 @@ export interface Annotation {
   rects: AnnotationRect[]
   createdAt: number
   updatedAt?: number
+  tags?: string[]
 }
 
 export type AiScope = 'selection' | 'chapter'
