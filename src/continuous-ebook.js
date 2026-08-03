@@ -5,6 +5,8 @@ import {
   interpolateSectionProgress,
   retainedSectionIndices,
 } from './continuous-layout.js'
+import { normalizeAnchorText } from './text-anchor.js'
+import { resolveRangeAnchor } from './text-range.js'
 
 export class ContinuousEbookScroller extends EventTarget {
   #host
@@ -21,6 +23,7 @@ export class ContinuousEbookScroller extends EventTarget {
   #onSelection
   #onExternalLink
   #onAnnotation
+  #onAnchorRepair
 
   constructor({
     host,
@@ -31,6 +34,7 @@ export class ContinuousEbookScroller extends EventTarget {
     onSelection,
     onExternalLink,
     onAnnotation,
+    onAnchorRepair,
   }) {
     super()
     this.#host = host
@@ -42,6 +46,7 @@ export class ContinuousEbookScroller extends EventTarget {
     this.#onSelection = onSelection
     this.#onExternalLink = onExternalLink
     this.#onAnnotation = onAnnotation
+    this.#onAnchorRepair = onAnchorRepair
 
     this.#container = document.createElement('div')
     this.#container.className = 'continuous-ebook'
@@ -246,7 +251,7 @@ export class ContinuousEbookScroller extends EventTarget {
     doc.addEventListener('click', event => {
       const [value] = item.overlayer.hitTest({ x: event.clientX, y: event.clientY })
       if (value) {
-        const annotation = this.#annotations.find(entry => entry.locator === value)
+        const annotation = this.#annotations.find(entry => entry.id === value || entry.locator === value)
         this.#onAnnotation?.(annotation)
         return
       }
@@ -268,18 +273,35 @@ export class ContinuousEbookScroller extends EventTarget {
     item.annotationKeys.clear()
     for (const annotation of this.#annotations.filter(entry =>
       entry.kind === 'ebook' && (entry.section == null || entry.section === item.index))) {
+      let range = null
       try {
         const resolved = this.#view.resolveNavigation(annotation.locator)
-        if (resolved?.index !== item.index) continue
-        const range = resolved.anchor?.(item.doc)
-        if (range) {
-          item.overlayer.add(annotation.locator, range,
-            Overlayer.highlight, { color: annotation.color || '#f4c95d' })
-          item.annotationKeys.add(annotation.locator)
-        }
+        if (resolved?.index === item.index) range = resolved.anchor?.(item.doc) || null
       } catch (error) {
-        console.warn(error)
+        console.warn('Stored ebook CFI could not be resolved.', error)
       }
+      const quote = annotation.anchor?.kind === 'ebook' ? annotation.anchor.quote : null
+      const cfiMatches = range && (!quote
+        || normalizeAnchorText(range.toString()).text === quote.normalizedExact)
+      if (!cfiMatches && quote && item.doc.body) {
+        const fallback = resolveRangeAnchor(item.doc.body, quote, annotation.anchor.textOffset)
+        if (fallback) {
+          range = fallback.range
+          try {
+            const locator = this.#view.getCFI(item.index, range)
+            annotation.locator = locator
+            annotation.anchor = { ...annotation.anchor, cfi: locator, textOffset: fallback.textOffset }
+            annotation.anchorStatus = 'resolved'
+            this.#onAnchorRepair?.(annotation)
+          } catch (error) {
+            console.warn('Repaired ebook range could not be converted to CFI.', error)
+          }
+        } else range = null
+      }
+      if (!range) continue
+      item.overlayer.add(annotation.id, range,
+        Overlayer.highlight, { color: annotation.color || '#f4c95d' })
+      item.annotationKeys.add(annotation.id)
     }
   }
 

@@ -27,6 +27,8 @@ import { describeOpenError } from './open-errors.js'
 import { ProgressService } from './progress-service.js'
 import { createEbookReaderAdapter, createPdfReaderAdapter } from './reader-adapter.js'
 import { loadSettings, saveSettings } from './storage.js'
+import { normalizeAnchorText } from './text-anchor.js'
+import { createRangeAnchor, resolveRangeAnchor } from './text-range.js'
 
 const $ = selector => document.querySelector(selector)
 const elements = {
@@ -151,6 +153,7 @@ let annotations = []
 let annotationFilterQuery = ''
 let annotationFilterType = 'all'
 let annotationSort = 'newest'
+let annotationRepairSave = null
 const selectedAnnotationIds = new Set()
 let searchRun = 0
 let aiAbortController = null
@@ -362,6 +365,7 @@ async function setEbookFlow(flow, target = null) {
       onAnnotation: annotation => {
         if (annotation?.note) showToast(annotation.note)
       },
+      onAnchorRepair: scheduleAnnotationRepairSave,
     })
     continuousEbook.addEventListener('relocate', ({ detail }) => handleEbookRelocate(detail))
     try {
@@ -896,10 +900,10 @@ async function runAiAction(scope, action) {
 }
 function captureEbookSelection(doc, index) {
   const selection = doc.defaultView.getSelection()
-  if (!selection || selection.isCollapsed || !selection.rangeCount) return
+  if (!selection || selection.isCollapsed || !selection.rangeCount || !doc.body) return
   const text = selection.toString().trim()
   if (!text) return
-  pendingSelection = { kind: 'ebook', index, range: selection.getRangeAt(0).cloneRange(), text }
+  pendingSelection = { kind: 'ebook', index, root: doc.body, range: selection.getRangeAt(0).cloneRange(), text }
   updateAiSelectionUi()
 }
 
@@ -931,7 +935,24 @@ async function annotateSelection(withNote) {
   let annotation
   if (pendingSelection.kind === 'ebook') {
     const locator = ebookView.getCFI(pendingSelection.index, pendingSelection.range)
-    annotation = createAnnotation({ kind: 'ebook', locator, text: pendingSelection.text, note, section: pendingSelection.index })
+    const rangeAnchor = createRangeAnchor(pendingSelection.root, pendingSelection.range)
+    const anchor = rangeAnchor ? {
+      version: 1,
+      kind: 'ebook',
+      section: pendingSelection.index,
+      cfi: locator,
+      textOffset: rangeAnchor.textOffset,
+      quote: rangeAnchor.quote,
+    } : undefined
+    annotation = createAnnotation({
+      kind: 'ebook',
+      locator,
+      text: pendingSelection.text,
+      note,
+      section: pendingSelection.index,
+      anchor,
+      anchorStatus: anchor ? 'resolved' : undefined,
+    })
     annotations.push(annotation)
     if (continuousEbook) {
       continuousEbook.setAnnotations(annotations)
@@ -950,6 +971,51 @@ async function annotateSelection(withNote) {
   updateAiSelectionUi()
   await saveAnnotations()
   showToast(withNote ? '批注已保存' : '高亮已保存')
+}
+
+function scheduleAnnotationRepairSave() {
+  if (annotationRepairSave != null) return
+  annotationRepairSave = setTimeout(() => {
+    annotationRepairSave = null
+    saveAnnotations().catch(console.error)
+  }, 0)
+}
+
+function validEbookAnnotationRange(range, annotation) {
+  if (!range || range.collapsed) return false
+  if (!annotation.anchor?.quote?.normalizedExact) return true
+  return normalizeAnchorText(range.toString()).text === annotation.anchor.quote.normalizedExact
+}
+
+function resolveEbookAnnotationRange(doc, index, annotation) {
+  try {
+    const resolved = ebookView.resolveNavigation(annotation.locator)
+    if (resolved?.index === index) {
+      const range = resolved.anchor?.(doc)
+      if (validEbookAnnotationRange(range, annotation)) return { range, repaired: false }
+    }
+  } catch (error) {
+    console.warn('Stored ebook CFI could not be resolved.', error)
+  }
+  if (annotation.anchor?.kind !== 'ebook' || !doc.body) return null
+  const fallback = resolveRangeAnchor(doc.body, annotation.anchor.quote, annotation.anchor.textOffset)
+  if (!fallback) return null
+  return { range: fallback.range, textOffset: fallback.textOffset, repaired: true }
+}
+
+async function repairEbookAnnotationAnchors(doc, index) {
+  let changed = false
+  for (const annotation of annotations.filter(item => item.kind === 'ebook' && item.section === index && item.anchor?.kind === 'ebook')) {
+    const resolved = resolveEbookAnnotationRange(doc, index, annotation)
+    if (!resolved?.repaired) continue
+    const locator = ebookView.getCFI(index, resolved.range)
+    annotation.locator = locator
+    annotation.anchor = { ...annotation.anchor, cfi: locator, textOffset: resolved.textOffset }
+    annotation.anchorStatus = 'resolved'
+    await ebookView.addAnnotation({ value: locator, color: annotation.color, note: annotation.note }).catch(console.error)
+    changed = true
+  }
+  if (changed) scheduleAnnotationRepairSave()
 }
 
 function renderPdfAnnotationOverlays(pageNumber = null) {
@@ -1005,6 +1071,7 @@ async function openEbook(file) {
   ebookView.addEventListener('load', ({ detail: { doc, index } }) => {
     doc.addEventListener('mouseup', () => captureEbookSelection(doc, index))
     doc.addEventListener('selectionchange', () => captureEbookSelection(doc, index))
+    repairEbookAnnotationAnchors(doc, index).catch(console.error)
   })
 
   await ebookView.open(file)
