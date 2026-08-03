@@ -227,22 +227,15 @@ git commit -m "feat: map annotation anchors to DOM ranges"
 - Consumes: `createRangeAnchor()` and `resolveRangeAnchor()` from Task 2.
 - Produces: ebook annotations with `anchor.kind === 'ebook'`; repaired CFI is written back through existing `saveAnnotations()`.
 
-- [ ] **Step 1: Add a failing source-contract test**
+- [ ] **Step 1: Write the failing EPUB Edge behavior test**
 
-```js
-test('ebook annotations capture text anchors and continuous mode resolves fallback ranges', async () => {
-  const reader = await readFile(new URL('../src/reader.js', import.meta.url), 'utf8')
-  const continuous = await readFile(new URL('../src/continuous-ebook.js', import.meta.url), 'utf8')
-  assert.match(reader, /createRangeAnchor\(pendingSelection\.doc, pendingSelection\.range\)/)
-  assert.match(continuous, /resolveRangeAnchor\(item\.doc, annotation\.anchor\.quote/)
-})
-```
+Create the EPUB case in `tests/e2e/annotation-anchor-stability.spec.ts`. It must create a highlight on a distinctive sentence, change font size, line height and page width, switch between paginated and continuous flow, reopen the stored book, and assert that the visible highlight and annotation list still refer to the same selected text.
 
-- [ ] **Step 2: Run the contract test and verify RED**
+- [ ] **Step 2: Run the EPUB scenario and verify RED**
 
-Run: `npx vitest run tests/reader-ui.test.js`
+Run: `npx playwright test tests/e2e/annotation-anchor-stability.spec.ts --grep EPUB`
 
-Expected: FAIL because the reader does not create or resolve text anchors.
+Expected: FAIL because saved annotations do not contain a text quote anchor and the test cannot verify a reconstructed highlight after all layout transitions.
 
 - [ ] **Step 3: Capture the ebook anchor**
 
@@ -267,21 +260,9 @@ Add a reader helper that, when a section document loads, resolves anchored annot
 
 Pass `resolveRangeAnchor` into `ContinuousEbookScroller`; in `#drawAnnotations()` use CFI first and verify `range.toString()`. If verification fails, resolve the quote in `item.doc.body`. Use a stable annotation ID as the overlayer key so repairing a locator does not leave duplicate marks.
 
-- [ ] **Step 5: Write the Edge E2E before completing behavior**
+- [ ] **Step 5: Complete EPUB behavior with the test kept red-green**
 
-The test must:
-
-1. Open `alice.epub` from the root extension.
-2. Select a distinctive sentence and create a highlight.
-3. Record the highlighted text.
-4. Change font size, line height and page width.
-5. Switch to continuous flow and back to paginated flow.
-6. Return to the library and reopen the book.
-7. Assert one visible highlight resolves to the same text and the annotation list retains the same quote.
-
-Run: `npx playwright test tests/e2e/annotation-anchor-stability.spec.ts --grep EPUB`
-
-Expected before final integration: FAIL at the new anchor or restored highlight assertion.
+Run the focused EPUB scenario after each minimal integration change. Do not weaken its assertions: the test must still prove the stored quote, rendered mark and reopened annotation all name the same text.
 
 - [ ] **Step 6: Finish integration and verify EPUB-family regression**
 
@@ -311,21 +292,15 @@ git commit -m "feat: stabilize ebook annotation anchors"
 - Consumes: Task 2 DOM range APIs.
 - Produces: PDF annotations with `anchor.kind === 'pdf'`; every rendered PDF page derives overlay rectangles from the current text layer.
 
-- [ ] **Step 1: Add a failing source-contract test**
+- [ ] **Step 1: Add the failing PDF Edge behavior test**
 
-```js
-test('PDF annotations rebuild rectangles from their text anchors', async () => {
-  const source = await readFile(new URL('../src/reader.js', import.meta.url), 'utf8')
-  assert.match(source, /resolvePdfAnnotationRects/)
-  assert.match(source, /createRangeAnchor\(textLayer, range\)/)
-})
-```
+Extend `tests/e2e/annotation-anchor-stability.spec.ts` to select text on page 1, create a highlight, zoom to 130%, force rerender, and assert that the overlay title and rectangle correspond to the same text-layer range. Reopen the stored PDF and repeat the assertions.
 
-- [ ] **Step 2: Run the test and verify RED**
+- [ ] **Step 2: Run the PDF scenario and verify RED**
 
-Run: `npx vitest run tests/reader-ui.test.js`
+Run: `npx playwright test tests/e2e/annotation-anchor-stability.spec.ts --grep PDF`
 
-Expected: FAIL because PDF annotations only retain old normalized rectangles.
+Expected: FAIL because the annotation has no text anchor and PDF overlays only reuse the previously stored rectangle.
 
 - [ ] **Step 3: Capture PDF quote and offset**
 
@@ -345,20 +320,9 @@ anchor: {
 
 Implement `resolvePdfAnnotationRects(wrapper, annotation)`. It resolves a range in the current `.textLayer`, converts its client rectangles to wrapper-relative ratios, and returns `null` when the quote is unresolved. `renderPdfAnnotationOverlays()` uses the fresh rectangles for anchored annotations and legacy `rects` only for annotations without anchors. When fresh rectangles differ, update `annotation.rects` in memory and persist after the render cycle without recursively invalidating pages.
 
-- [ ] **Step 5: Add the failing PDF Edge scenario**
+- [ ] **Step 5: Complete PDF behavior with the test kept red-green**
 
-Extend `annotation-anchor-stability.spec.ts` to:
-
-1. Open the real PDF fixture.
-2. Select text on page 1 and create a highlight.
-3. Capture the highlighted quote and first overlay rectangle.
-4. Zoom to 130%, forcing page invalidation and rerender.
-5. Assert the overlay exists, its title contains the same quote, and its rectangle remains aligned with the selected text-layer range.
-6. Reopen the stored PDF and repeat the same assertions.
-
-Run: `npx playwright test tests/e2e/annotation-anchor-stability.spec.ts --grep PDF`
-
-Expected before Step 4 is complete: FAIL after zoom because no text-derived rectangle is available.
+Run the focused PDF scenario after each minimal integration change. Keep the text identity and geometric alignment assertions intact so the test catches stale-coordinate rendering.
 
 - [ ] **Step 6: Verify PDF and full regression**
 
