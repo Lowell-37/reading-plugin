@@ -3,6 +3,7 @@ import { test } from 'vitest'
 import {
   createTextQuoteAnchor,
   normalizeAnchorText,
+  resolveChangedTextQuoteAnchor,
   resolveTextQuoteAnchor,
 } from '../src/core/text-anchor.ts'
 
@@ -75,4 +76,60 @@ test('scores frequent short quotes without slicing unbounded chapter context', (
   } finally {
     String.prototype.slice = originalSlice
   }
+})
+
+
+test('fuzzily resolves a quote after a small word insertion', () => {
+  const oldSource = 'Before. The silver compass pointed north at dawn. After.'
+  const phrase = 'The silver compass pointed north at dawn'
+  const start = oldSource.indexOf(phrase)
+  const anchor = createTextQuoteAnchor(oldSource, start, start + phrase.length)
+  const changed = 'Before. The old silver compass pointed north at dawn. After.'
+  const changedStart = changed.indexOf('The old silver compass')
+  const result = resolveChangedTextQuoteAnchor(changed, anchor, start)
+  assert.equal(result?.method, 'fuzzy')
+  assert.equal(changed.slice(result.start, result.end), 'The old silver compass pointed north at dawn')
+  assert.ok(result.confidence >= 0.86)
+})
+
+test('fuzzily resolves a quote after a small deletion and nearby move', () => {
+  const oldSource = 'Opening context. The bright silver compass pointed north at dawn. Closing context.'
+  const phrase = 'The bright silver compass pointed north at dawn'
+  const start = oldSource.indexOf(phrase)
+  const anchor = createTextQuoteAnchor(oldSource, start, start + phrase.length)
+  const changed = 'New preface. Opening context. The silver compass pointed north at dawn. Closing context.'
+  const result = resolveChangedTextQuoteAnchor(changed, anchor, start)
+  assert.equal(result?.method, 'fuzzy')
+  assert.match(changed.slice(result.start, result.end), /silver compass pointed north at dawn/)
+})
+
+test('rejects tied fuzzy candidates', () => {
+  const anchor = {
+    exact: 'silver compass pointed north',
+    normalizedExact: 'silver compass pointed north',
+    prefix: '',
+    suffix: '',
+  }
+  const source = 'old silver compass pointed north. Gap. old silver compass pointed north.'
+  assert.equal(resolveChangedTextQuoteAnchor(source, anchor, null), null)
+})
+
+test('rejects a fuzzy candidate below the confidence threshold', () => {
+  const anchor = {
+    exact: 'silver compass pointed north',
+    normalizedExact: 'silver compass pointed north',
+    prefix: 'before ',
+    suffix: ' after',
+  }
+  assert.equal(resolveChangedTextQuoteAnchor('before unrelated lantern story after', anchor, 7), null)
+})
+
+test('rejects a fuzzy winner without the required lead', () => {
+  const exact = 'abcdefghijabcdefghijabcdefghij'
+  const anchor = { exact, normalizedExact: exact, prefix: '', suffix: '' }
+  const source = 'abcxefghijabcdefghijabcdefghij -- abcxefghijabcdefyhijabcdefghij'
+  assert.equal(resolveChangedTextQuoteAnchor(source, anchor, null, {
+    minimumConfidence: 0.8,
+    minimumLead: 0.08,
+  }), null)
 })
