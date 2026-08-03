@@ -17,6 +17,7 @@ import {
   serializeAnnotationsMarkdown,
 } from './annotation-export.js'
 import { annotationImportMatchesBook, mergeAnnotationImports, parseAnnotationImport } from './annotation-import.js'
+import { recoverTextAnchor } from './anchor-recovery.js'
 import { buildAiMessages, CHAPTER_AI_ACTIONS, getAiPermissionOrigin, SELECTION_AI_ACTIONS, streamAiCompletion } from './ai.js'
 import { bookRepository } from './book-repository.js'
 import { ContinuousEbookScroller } from './continuous-ebook.js'
@@ -28,7 +29,7 @@ import { ProgressService } from './progress-service.js'
 import { createEbookReaderAdapter, createPdfReaderAdapter } from './reader-adapter.js'
 import { loadSettings, saveSettings } from './storage.js'
 import { normalizeAnchorText } from './text-anchor.js'
-import { createRangeAnchor, resolveRangeAnchor } from './text-range.js'
+import { createRangeAnchor, rangeFromTextOffsets, resolveRangeAnchor } from './text-range.js'
 
 const $ = selector => document.querySelector(selector)
 const elements = {
@@ -527,6 +528,13 @@ function renderAnnotationList() {
     const location = annotation.kind === 'pdf' ? `第 ${annotation.page} 页` : '电子书高亮'
     jump.innerHTML = `<small>${location}</small><q></q>${annotation.note ? '<p></p>' : ''}`
     jump.querySelector('q').textContent = annotation.text || '无文本高亮'
+    if (annotation.anchorStatus === 'unresolved') {
+      item.classList.add('is-unresolved')
+      const status = document.createElement('span')
+      status.className = 'annotation-anchor-status'
+      status.textContent = '需要重新定位'
+      jump.append(status)
+    }
     const note = jump.querySelector('p')
     if (note) note.textContent = annotation.note
     if (annotation.tags?.length) {
@@ -620,6 +628,99 @@ async function deleteSelectedAnnotations() {
   showToast(`已删除 ${items.length} 条批注`)
 }
 
+async function recoverImportedAnnotations(values, importedIds) {
+  const recovered = []
+  const ebookDocuments = new Map()
+  for (const annotation of values) {
+    if (!importedIds.has(annotation.id) || !annotation.anchor) {
+      recovered.push(annotation)
+      continue
+    }
+    try {
+      recovered.push(annotation.kind === 'ebook'
+        ? await recoverImportedEbookAnnotation(annotation, ebookDocuments)
+        : await recoverImportedPdfAnnotation(annotation))
+    } catch (error) {
+      console.warn('Imported annotation recovery failed.', error)
+      recovered.push({ ...annotation, anchorStatus: 'unresolved' })
+    }
+  }
+  return recovered
+}
+
+async function recoverImportedEbookAnnotation(annotation, documents) {
+  const origin = annotation.anchor.section ?? annotation.section
+  if (!Number.isInteger(origin) || !ebookView?.book?.sections) {
+    return { ...annotation, anchorStatus: 'unresolved' }
+  }
+  const candidates = []
+  for (const index of nearbyLocations(origin, 1, ebookView.book.sections.length - 1)) {
+    const section = ebookView.book.sections[index]
+    if (!section?.createDocument) continue
+    if (!documents.has(index)) documents.set(index, Promise.resolve(section.createDocument()))
+    const doc = await documents.get(index)
+    const text = doc.body?.textContent || doc.documentElement?.textContent || ''
+    documents.set(index, doc)
+    candidates.push({ location: index, text, preferredOffset: index === origin ? annotation.anchor.textOffset : null })
+  }
+  const match = recoverTextAnchor(annotation.anchor.quote, candidates)
+  const doc = match ? documents.get(match.location) : null
+  const range = doc?.body ? rangeFromTextOffsets(doc.body, match.start, match.end) : null
+  if (!match || !range) return { ...annotation, anchorStatus: 'unresolved' }
+  const locator = ebookView.getCFI(match.location, range)
+  return {
+    ...annotation,
+    locator,
+    section: match.location,
+    anchorStatus: 'resolved',
+    anchor: {
+      ...annotation.anchor,
+      section: match.location,
+      cfi: locator,
+      textOffset: match.start,
+      quote: match.quote,
+    },
+  }
+}
+
+async function recoverImportedPdfAnnotation(annotation) {
+  const origin = annotation.anchor.page ?? annotation.page
+  if (!Number.isInteger(origin) || !pdfDocument) return { ...annotation, anchorStatus: 'unresolved' }
+  const candidates = []
+  for (const page of nearbyLocations(origin, 2, pdfDocument.numPages, 1)) {
+    const { content } = await getPdfPageText(page)
+    candidates.push({
+      location: page,
+      text: content.items.map(item => item.str || '').join(''),
+      preferredOffset: page === origin ? annotation.anchor.textOffset : null,
+    })
+  }
+  const match = recoverTextAnchor(annotation.anchor.quote, candidates)
+  if (!match) return { ...annotation, anchorStatus: 'unresolved' }
+  return {
+    ...annotation,
+    page: match.location,
+    locator: `page:${match.location}`,
+    rects: [],
+    anchorStatus: 'resolved',
+    anchor: {
+      ...annotation.anchor,
+      page: match.location,
+      textOffset: match.start,
+      quote: match.quote,
+    },
+  }
+}
+
+function nearbyLocations(origin, distance, maximum, minimum = 0) {
+  const result = [origin]
+  for (let offset = 1; offset <= distance; offset += 1) {
+    if (origin - offset >= minimum) result.push(origin - offset)
+    if (origin + offset <= maximum) result.push(origin + offset)
+  }
+  return result
+}
+
 async function importAnnotationsFile(file) {
   if (!file || !currentRecord) return
   try {
@@ -631,11 +732,18 @@ async function importAnnotationsFile(file) {
     })
     if (!matches && !confirm('导入文件属于另一本书，仍要合并到当前书籍吗？')) return
     const previousById = new Map(annotations.map(annotation => [annotation.id, annotation]))
+    const recoverableIds = new Set(document.annotations.flatMap(annotation => {
+      const local = previousById.get(annotation.id)
+      if (!local) return [annotation.id]
+      const localTime = local.updatedAt ?? local.createdAt
+      const importedTime = annotation.updatedAt ?? annotation.createdAt
+      return importedTime > localTime ? [annotation.id] : []
+    }))
     const result = mergeAnnotationImports(annotations, document.annotations)
-    annotations = result.annotations
+    annotations = await recoverImportedAnnotations(result.annotations, recoverableIds)
     if (!continuousEbook) {
       const importedIds = new Set(document.annotations.map(annotation => annotation.id))
-      for (const annotation of annotations.filter(item => importedIds.has(item.id))) {
+      for (const annotation of annotations.filter(item => importedIds.has(item.id) && item.anchorStatus !== 'unresolved')) {
         if (annotation.kind !== 'ebook') continue
         const previous = previousById.get(annotation.id)
         if (previous?.kind === 'ebook') {
@@ -1057,6 +1165,7 @@ function sameAnnotationRects(left, right) {
 }
 
 function resolvePdfAnnotationRects(wrapper, annotation) {
+  if (annotation.anchorStatus === 'unresolved') return []
   if (annotation.anchor?.kind !== 'pdf') return annotation.rects || []
   const textLayer = wrapper.querySelector('.textLayer')
   if (!textLayer) return []
@@ -1115,7 +1224,7 @@ async function openEbook(file) {
   })
   ebookView.addEventListener('draw-annotation', ({ detail: { draw, annotation } }) => draw(Overlayer.highlight, { color: annotation.color || '#f4c95d' }))
   ebookView.addEventListener('create-overlay', ({ detail: { index } }) => {
-    for (const annotation of annotations.filter(item => item.kind === 'ebook' && (item.section == null || item.section === index))) ebookView.addAnnotation({ value: annotation.locator, color: annotation.color, note: annotation.note })
+    for (const annotation of annotations.filter(item => item.kind === 'ebook' && item.anchorStatus !== 'unresolved' && (item.section == null || item.section === index))) ebookView.addAnnotation({ value: annotation.locator, color: annotation.color, note: annotation.note })
   })
   ebookView.addEventListener('show-annotation', ({ detail }) => {
     const annotation = annotations.find(item => item.locator === detail.value)

@@ -66,8 +66,8 @@ function containsBoundary(root, node) {
 
 function textNodes(root) {
   const document = root.ownerDocument || root
-  const view = document.defaultView
-  const walker = document.createTreeWalker(root, view.NodeFilter.SHOW_TEXT)
+  const showText = document.defaultView?.NodeFilter?.SHOW_TEXT ?? 4
+  const walker = document.createTreeWalker(root, showText)
   const nodes = []
   let node = walker.nextNode()
   while (node) {

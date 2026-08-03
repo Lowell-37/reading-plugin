@@ -272,7 +272,8 @@ export class ContinuousEbookScroller extends EventTarget {
     for (const key of item.annotationKeys) item.overlayer.remove(key)
     item.annotationKeys.clear()
     for (const annotation of this.#annotations.filter(entry =>
-      entry.kind === 'ebook' && (entry.section == null || entry.section === item.index))) {
+      entry.kind === 'ebook' && entry.anchorStatus !== 'unresolved'
+      && (entry.section == null || entry.section === item.index))) {
       let range = null
       try {
         const resolved = this.#view.resolveNavigation(annotation.locator)

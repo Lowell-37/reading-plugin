@@ -55,3 +55,12 @@ test('rejects a range outside the supplied root', () => {
   range.selectNodeContents(dom.window.document.querySelector('aside'))
   assert.equal(rangeTextOffsets(dom.window.document.querySelector('main'), range), null)
 })
+
+
+test('rebuilds a range in a detached section document without defaultView', () => {
+  const host = new JSDOM('<body></body>')
+  const document = host.window.document.implementation.createHTMLDocument('Detached')
+  document.body.innerHTML = 'before <b>selected</b> after'
+  assert.equal(document.defaultView, null)
+  assert.equal(rangeFromTextOffsets(document.body, 7, 15).toString(), 'selected')
+})

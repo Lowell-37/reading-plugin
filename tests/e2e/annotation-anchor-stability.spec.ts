@@ -100,6 +100,23 @@ test('PDF highlight rebuilds its rectangle after zoom, stale geometry and reopen
     const repaired = await firstStoredAnnotation(page)
     expect(repaired.anchor.quote.exact).toBe(selectedText)
     expect(repaired.rects[0].left).toBeLessThan(0.8)
+
+    await page.locator('#tools-button').evaluate((button: HTMLElement) => button.click())
+    const downloadPromise = page.waitForEvent('download')
+    await page.locator('#export-annotations-json').click()
+    const archive = await downloadPromise
+    const archivePath = await archive.path()
+    if (!archivePath) throw new Error('PDF annotation archive path unavailable')
+    await page.locator('#annotation-select-all').click()
+    page.once('dialog', dialog => dialog.accept())
+    await page.locator('#annotation-delete-selected').click()
+    await expect(page.locator('.annotation-item')).toHaveCount(0)
+    await page.locator('#annotation-import-input').setInputFiles(archivePath)
+    await expect(page.locator('.annotation-item')).toHaveCount(1)
+    await expect(page.locator('.annotation-anchor-status')).toHaveCount(0)
+    await page.locator('#close-tools').click()
+    await expect.poll(() => page.locator('.pdf-page[data-page="1"] .pdf-annotation-layer span').count()).toBeGreaterThan(0)
+    await expectPdfHighlightAligned(page, selectedText)
   } finally {
     await context.close()
   }
@@ -314,6 +331,7 @@ async function launchRootExtension(): Promise<{ context: BrowserContext, page: P
     executablePath: existsSync(edgePath) ? edgePath : undefined,
     channel: existsSync(edgePath) ? undefined : 'chromium',
     headless: true,
+    acceptDownloads: true,
     args: [
       `--disable-extensions-except=${extensionPath}`,
       `--load-extension=${extensionPath}`,

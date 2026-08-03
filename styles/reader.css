@@ -234,6 +234,8 @@ body.is-reading .welcome-only { display:none; }
 .annotation-jump p { margin:7px 0 0; font-size:11px; line-height:1.5; }
 .annotation-tags { display:flex; flex-wrap:wrap; gap:4px; margin-top:7px; }
 .annotation-tags span { border-radius:999px; padding:2px 6px; background:var(--accent-soft); color:var(--accent); font-size:9px; }
+.annotation-anchor-status { display:inline-block; margin-top:7px; border-radius:999px; padding:2px 7px; background:#f7e7dc; color:#9a4f32; font-size:9px; }
+.annotation-item.is-unresolved { border-color:#d9a98f; }
 .annotation-item-actions { position:absolute; right:7px; top:8px; display:flex; gap:7px; }
 .annotation-item-actions button { border:0; padding:0; background:transparent; color:var(--faint); cursor:pointer; font-size:9px; }
 .annotation-item-actions button:hover { color:var(--accent); }
