@@ -5,7 +5,7 @@ export function normalizeAnnotationTags(value) {
         .filter(Boolean);
     return [...new Set(tags)].slice(0, 10);
 }
-export function createAnnotation({ kind, locator = null, text, note = '', color = '#f4c95d', rects = [], page = null, section = null, tags = [], }) {
+export function createAnnotation({ kind, locator = null, text, note = '', color = '#f4c95d', rects = [], page = null, section = null, tags = [], anchor, anchorStatus, }) {
     const createdAt = Date.now();
     return {
         id: `${createdAt}-${Math.random().toString(36).slice(2, 9)}`,
@@ -19,6 +19,8 @@ export function createAnnotation({ kind, locator = null, text, note = '', color 
         rects,
         createdAt,
         tags: normalizeAnnotationTags(tags),
+        ...(anchor ? { anchor } : {}),
+        ...(anchor && anchorStatus ? { anchorStatus } : {}),
     };
 }
 export function normalizeAnnotations(value) {
@@ -37,6 +39,10 @@ export function normalizeAnnotations(value) {
             continue;
         const createdAt = finiteNumber(item.createdAt) ?? 0;
         const updatedAt = finiteNumber(item.updatedAt);
+        const anchor = normalizeAnnotationAnchor(item.anchor, kind);
+        const anchorStatus = anchor && (item.anchorStatus === 'resolved' || item.anchorStatus === 'unresolved')
+            ? item.anchorStatus
+            : null;
         result.push({
             id,
             kind,
@@ -50,6 +56,8 @@ export function normalizeAnnotations(value) {
             createdAt,
             ...(updatedAt == null ? {} : { updatedAt }),
             tags: normalizeAnnotationTags(item.tags),
+            ...(anchor ? { anchor } : {}),
+            ...(anchorStatus ? { anchorStatus } : {}),
         });
     }
     return result;
@@ -128,6 +136,41 @@ export function findTextMatches(text, query) {
         offset = index + Math.max(needle.length, 1);
     }
     return matches;
+}
+function normalizeAnnotationAnchor(value, kind) {
+    if (!value || typeof value !== 'object')
+        return null;
+    const source = value;
+    if (source.version !== 1 || source.kind !== kind)
+        return null;
+    const quote = normalizeTextQuote(source.quote);
+    if (!quote)
+        return null;
+    const textOffset = finiteNumber(source.textOffset);
+    if (kind === 'ebook') {
+        const section = finiteNumber(source.section);
+        const cfi = typeof source.cfi === 'string' && source.cfi ? source.cfi : null;
+        return { version: 1, kind, section, cfi, textOffset, quote };
+    }
+    const page = finiteNumber(source.page);
+    if (page == null || page < 1)
+        return null;
+    return { version: 1, kind, page, textOffset, quote };
+}
+function normalizeTextQuote(value) {
+    if (!value || typeof value !== 'object')
+        return null;
+    const source = value;
+    const exact = String(source.exact || '').trim().slice(0, 500);
+    const normalizedExact = String(source.normalizedExact || '').trim().slice(0, 500);
+    if (!exact || !normalizedExact)
+        return null;
+    return {
+        exact,
+        normalizedExact,
+        prefix: String(source.prefix || '').slice(-96),
+        suffix: String(source.suffix || '').slice(0, 96),
+    };
 }
 function finiteNumber(value) {
     if (value === null || value === undefined || value === '')

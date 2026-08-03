@@ -82,3 +82,40 @@ test('sorts annotations without mutating the source', () => {
   assert.deepEqual(sortAnnotations(source, 'location').map(item => item.id), ['early', 'edited', 'late'])
   assert.equal(source[0].id, 'late')
 })
+
+test('preserves valid text anchors while normalizing stored annotations', () => {
+  const anchor = {
+    version: 1,
+    kind: 'ebook',
+    section: 2,
+    cfi: 'epubcfi(/6/4)',
+    textOffset: 42,
+    quote: { exact: 'Rabbit', normalizedExact: 'Rabbit', prefix: 'the ', suffix: ' hole' },
+  }
+  const [annotation] = normalizeAnnotations([{
+    id: 'anchored',
+    kind: 'ebook',
+    locator: 'epubcfi(/6/4)',
+    text: 'Rabbit',
+    createdAt: 1,
+    anchor,
+    anchorStatus: 'resolved',
+  }])
+  assert.deepEqual(annotation.anchor, anchor)
+  assert.equal(annotation.anchorStatus, 'resolved')
+})
+
+test('drops a malformed anchor without dropping the legacy annotation', () => {
+  const [annotation] = normalizeAnnotations([{
+    id: 'legacy',
+    kind: 'pdf',
+    page: 1,
+    text: 'Text',
+    createdAt: 1,
+    anchor: { version: 2, kind: 'pdf' },
+    anchorStatus: 'broken',
+  }])
+  assert.equal(annotation.id, 'legacy')
+  assert.equal(annotation.anchor, undefined)
+  assert.equal(annotation.anchorStatus, undefined)
+})

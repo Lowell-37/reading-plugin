@@ -1,4 +1,4 @@
-import type { Annotation, AnnotationRect } from './types'
+import type { Annotation, AnnotationAnchor, AnnotationRect, TextQuoteAnchor } from './types'
 
 export interface CreateAnnotationInput {
   kind: Annotation['kind']
@@ -10,6 +10,8 @@ export interface CreateAnnotationInput {
   page?: number | null
   section?: number | null
   tags?: unknown
+  anchor?: AnnotationAnchor
+  anchorStatus?: Annotation['anchorStatus']
 }
 
 export type AnnotationFilterType = 'all' | 'notes' | 'highlights' | 'pdf' | 'ebook'
@@ -33,6 +35,8 @@ export function createAnnotation({
   page = null,
   section = null,
   tags = [],
+  anchor,
+  anchorStatus,
 }: CreateAnnotationInput): Annotation {
   const createdAt = Date.now()
   return {
@@ -47,6 +51,8 @@ export function createAnnotation({
     rects,
     createdAt,
     tags: normalizeAnnotationTags(tags),
+    ...(anchor ? { anchor } : {}),
+    ...(anchor && anchorStatus ? { anchorStatus } : {}),
   }
 }
 
@@ -63,6 +69,10 @@ export function normalizeAnnotations(value: unknown): Annotation[] {
     if (!id || !kind || (kind === 'pdf' ? page == null || page < 1 : !locator)) continue
     const createdAt = finiteNumber(item.createdAt) ?? 0
     const updatedAt = finiteNumber(item.updatedAt)
+    const anchor = normalizeAnnotationAnchor(item.anchor, kind)
+    const anchorStatus = anchor && (item.anchorStatus === 'resolved' || item.anchorStatus === 'unresolved')
+      ? item.anchorStatus
+      : null
     result.push({
       id,
       kind,
@@ -76,6 +86,8 @@ export function normalizeAnnotations(value: unknown): Annotation[] {
       createdAt,
       ...(updatedAt == null ? {} : { updatedAt }),
       tags: normalizeAnnotationTags(item.tags),
+      ...(anchor ? { anchor } : {}),
+      ...(anchorStatus ? { anchorStatus } : {}),
     })
   }
   return result
@@ -158,6 +170,37 @@ export function findTextMatches(text: unknown, query: unknown): number[] {
     offset = index + Math.max(needle.length, 1)
   }
   return matches
+}
+
+function normalizeAnnotationAnchor(value: unknown, kind: Annotation['kind']): AnnotationAnchor | null {
+  if (!value || typeof value !== 'object') return null
+  const source = value as Record<string, unknown>
+  if (source.version !== 1 || source.kind !== kind) return null
+  const quote = normalizeTextQuote(source.quote)
+  if (!quote) return null
+  const textOffset = finiteNumber(source.textOffset)
+  if (kind === 'ebook') {
+    const section = finiteNumber(source.section)
+    const cfi = typeof source.cfi === 'string' && source.cfi ? source.cfi : null
+    return { version: 1, kind, section, cfi, textOffset, quote }
+  }
+  const page = finiteNumber(source.page)
+  if (page == null || page < 1) return null
+  return { version: 1, kind, page, textOffset, quote }
+}
+
+function normalizeTextQuote(value: unknown): TextQuoteAnchor | null {
+  if (!value || typeof value !== 'object') return null
+  const source = value as Record<string, unknown>
+  const exact = String(source.exact || '').trim().slice(0, 500)
+  const normalizedExact = String(source.normalizedExact || '').trim().slice(0, 500)
+  if (!exact || !normalizedExact) return null
+  return {
+    exact,
+    normalizedExact,
+    prefix: String(source.prefix || '').slice(-96),
+    suffix: String(source.suffix || '').slice(0, 96),
+  }
 }
 
 function finiteNumber(value: unknown): number | null {

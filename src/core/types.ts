@@ -48,6 +48,32 @@ export interface AnnotationRect {
   height: number
 }
 
+export interface TextQuoteAnchor {
+  exact: string
+  prefix: string
+  suffix: string
+  normalizedExact: string
+}
+
+export interface EbookAnnotationAnchor {
+  version: 1
+  kind: 'ebook'
+  section: number | null
+  cfi: string | null
+  textOffset: number | null
+  quote: TextQuoteAnchor
+}
+
+export interface PdfAnnotationAnchor {
+  version: 1
+  kind: 'pdf'
+  page: number
+  textOffset: number | null
+  quote: TextQuoteAnchor
+}
+
+export type AnnotationAnchor = EbookAnnotationAnchor | PdfAnnotationAnchor
+
 export interface Annotation {
   id: string
   kind: 'ebook' | 'pdf'
@@ -61,6 +87,8 @@ export interface Annotation {
   createdAt: number
   updatedAt?: number
   tags?: string[]
+  anchor?: AnnotationAnchor
+  anchorStatus?: 'resolved' | 'unresolved'
 }
 
 export type AiScope = 'selection' | 'chapter'
