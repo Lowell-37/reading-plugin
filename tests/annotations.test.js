@@ -119,3 +119,23 @@ test('drops a malformed anchor without dropping the legacy annotation', () => {
   assert.equal(annotation.anchor, undefined)
   assert.equal(annotation.anchorStatus, undefined)
 })
+
+test('drops inconsistent or out-of-bounds anchors without dropping annotations', () => {
+  const base = {
+    version: 1,
+    kind: 'pdf',
+    page: 1,
+    textOffset: 4,
+    quote: { exact: 'Two\n words', normalizedExact: 'Two words', prefix: '', suffix: '' },
+  }
+  const normalized = normalizeAnnotations([
+    { id: 'valid', kind: 'pdf', page: 1, text: 'Two words', createdAt: 1, anchor: base },
+    { id: 'mismatch', kind: 'pdf', page: 1, text: 'Wrong', createdAt: 1, anchor: { ...base, quote: { ...base.quote, normalizedExact: 'Other words' } } },
+    { id: 'negative', kind: 'pdf', page: 1, text: 'Wrong', createdAt: 1, anchor: { ...base, textOffset: -1 } },
+    { id: 'fractional', kind: 'pdf', page: 1, text: 'Wrong', createdAt: 1, anchor: { ...base, page: 1.5 } },
+  ])
+  assert.equal(normalized[0].anchor?.quote.normalizedExact, 'Two words')
+  assert.equal(normalized[1].anchor, undefined)
+  assert.equal(normalized[2].anchor, undefined)
+  assert.equal(normalized[3].anchor, undefined)
+})

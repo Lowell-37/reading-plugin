@@ -1,3 +1,4 @@
+import { normalizeAnchorText } from './text-anchor.js';
 export function normalizeAnnotationTags(value) {
     const source = Array.isArray(value) ? value : String(value || '').split(/[,，]/);
     const tags = source
@@ -33,13 +34,14 @@ export function normalizeAnnotations(value) {
         const item = valueItem;
         const kind = item.kind === 'pdf' || item.kind === 'ebook' ? item.kind : null;
         const id = String(item.id || '').trim();
-        const page = finiteNumber(item.page);
+        const page = nonNegativeInteger(item.page, 1);
+        const section = nonNegativeInteger(item.section);
         const locator = typeof item.locator === 'string' && item.locator ? item.locator : null;
-        if (!id || !kind || (kind === 'pdf' ? page == null || page < 1 : !locator))
+        if (!id || !kind || (kind === 'pdf' ? page == null : !locator))
             continue;
         const createdAt = finiteNumber(item.createdAt) ?? 0;
         const updatedAt = finiteNumber(item.updatedAt);
-        const anchor = normalizeAnnotationAnchor(item.anchor, kind);
+        const anchor = normalizeAnnotationAnchor(item.anchor, kind, { page, section });
         const anchorStatus = anchor && (item.anchorStatus === 'resolved' || item.anchorStatus === 'unresolved')
             ? item.anchorStatus
             : null;
@@ -48,7 +50,7 @@ export function normalizeAnnotations(value) {
             kind,
             locator,
             page,
-            section: finiteNumber(item.section),
+            section,
             text: String(item.text || '').trim().slice(0, 500),
             note: String(item.note || '').trim().slice(0, 2000),
             color: String(item.color || '#f4c95d'),
@@ -137,7 +139,7 @@ export function findTextMatches(text, query) {
     }
     return matches;
 }
-function normalizeAnnotationAnchor(value, kind) {
+function normalizeAnnotationAnchor(value, kind, location) {
     if (!value || typeof value !== 'object')
         return null;
     const source = value;
@@ -146,14 +148,20 @@ function normalizeAnnotationAnchor(value, kind) {
     const quote = normalizeTextQuote(source.quote);
     if (!quote)
         return null;
-    const textOffset = finiteNumber(source.textOffset);
+    const textOffset = nonNegativeInteger(source.textOffset);
+    if (source.textOffset != null && textOffset == null)
+        return null;
     if (kind === 'ebook') {
-        const section = finiteNumber(source.section);
+        const section = nonNegativeInteger(source.section);
+        if (source.section != null && section == null)
+            return null;
+        if (location.section != null && section !== location.section)
+            return null;
         const cfi = typeof source.cfi === 'string' && source.cfi ? source.cfi : null;
         return { version: 1, kind, section, cfi, textOffset, quote };
     }
-    const page = finiteNumber(source.page);
-    if (page == null || page < 1)
+    const page = nonNegativeInteger(source.page, 1);
+    if (page == null || page !== location.page)
         return null;
     return { version: 1, kind, page, textOffset, quote };
 }
@@ -163,7 +171,7 @@ function normalizeTextQuote(value) {
     const source = value;
     const exact = String(source.exact || '').trim().slice(0, 500);
     const normalizedExact = String(source.normalizedExact || '').trim().slice(0, 500);
-    if (!exact || !normalizedExact)
+    if (!exact || !normalizedExact || normalizeAnchorText(exact).text !== normalizedExact)
         return null;
     return {
         exact,
@@ -171,6 +179,10 @@ function normalizeTextQuote(value) {
         prefix: String(source.prefix || '').slice(-96),
         suffix: String(source.suffix || '').slice(0, 96),
     };
+}
+function nonNegativeInteger(value, minimum = 0) {
+    const number = finiteNumber(value);
+    return number != null && Number.isInteger(number) && number >= minimum ? number : null;
 }
 function finiteNumber(value) {
     if (value === null || value === undefined || value === '')

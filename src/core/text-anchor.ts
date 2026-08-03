@@ -43,12 +43,13 @@ export function createTextQuoteAnchor(
   const normalized = normalizeAnchorText(source)
   const normalizedStart = normalizedIndexAtOrAfter(normalized.offsets, Math.max(0, start))
   const normalizedEnd = normalizedIndexAtOrAfter(normalized.offsets, Math.max(start, end))
-  const exact = String(source).slice(start, end).trim()
+  const boundedEnd = Math.min(normalizedEnd, normalizedStart + 500)
+  const normalizedExact = normalized.text.slice(normalizedStart, boundedEnd).trim()
   return {
-    exact,
-    normalizedExact: normalized.text.slice(normalizedStart, normalizedEnd).trim(),
+    exact: normalizedExact,
+    normalizedExact,
     prefix: normalized.text.slice(Math.max(0, normalizedStart - contextLength), normalizedStart),
-    suffix: normalized.text.slice(normalizedEnd, normalizedEnd + contextLength),
+    suffix: normalized.text.slice(boundedEnd, boundedEnd + contextLength),
   }
 }
 
@@ -73,10 +74,8 @@ export function resolveTextQuoteAnchor(
   while (from <= normalized.text.length - needle.length) {
     const index = normalized.text.indexOf(needle, from)
     if (index < 0) break
-    const before = normalized.text.slice(0, index)
-    const after = normalized.text.slice(index + needle.length)
-    const prefix = commonSuffixLength(before, anchor.prefix || '')
-    const suffix = commonPrefixLength(after, anchor.suffix || '')
+    const prefix = commonSuffixAt(normalized.text, index, anchor.prefix || '')
+    const suffix = commonPrefixAt(normalized.text, index + needle.length, anchor.suffix || '')
     const contextSize = (anchor.prefix?.length || 0) + (anchor.suffix?.length || 0)
     const score = contextSize ? (prefix + suffix) / contextSize : 0
     candidates.push({ index, score })
@@ -111,16 +110,16 @@ function toSourceResolution(
   }
 }
 
-function commonPrefixLength(left: string, right: string): number {
-  const length = Math.min(left.length, right.length)
+function commonPrefixAt(source: string, start: number, context: string): number {
+  const length = Math.min(source.length - start, context.length)
   let count = 0
-  while (count < length && left[count] === right[count]) count += 1
+  while (count < length && source[start + count] === context[count]) count += 1
   return count
 }
 
-function commonSuffixLength(left: string, right: string): number {
-  const length = Math.min(left.length, right.length)
+function commonSuffixAt(source: string, end: number, context: string): number {
+  const length = Math.min(end, context.length)
   let count = 0
-  while (count < length && left[left.length - count - 1] === right[right.length - count - 1]) count += 1
+  while (count < length && source[end - count - 1] === context[context.length - count - 1]) count += 1
   return count
 }

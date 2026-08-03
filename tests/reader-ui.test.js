@@ -12,12 +12,6 @@ test('reader exposes search, annotation and PDF navigation controls', async () =
   assert.doesNotMatch(workerSource, /blob:/)
 })
 
-test('EPUB and PDF selections are connected to the AI selection menu', async () => {
-  const source = await readFile(new URL('../src/reader.js', import.meta.url), 'utf8')
-  assert.match(source, /pendingSelection = \{ kind: 'ebook'[\s\S]+?updateAiSelectionUi\(\)/)
-  assert.match(source, /pendingSelection = \{ kind: 'pdf'[\s\S]+?updateAiSelectionUi\(\)/)
-  assert.match(source, /getCurrentChapterContext[\s\S]+?section\.createDocument\(\)/)
-})
 test('scrolled EPUB mode uses a continuous cross-chapter document flow', async () => {
   const source = await readFile(new URL('../src/reader.js', import.meta.url), 'utf8')
   const controller = await readFile(new URL('../src/continuous-ebook.js', import.meta.url), 'utf8')

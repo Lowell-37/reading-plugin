@@ -58,3 +58,21 @@ test('returns null for empty or missing text', () => {
   assert.equal(resolveTextQuoteAnchor('content', anchor, 0), null)
   assert.equal(resolveTextQuoteAnchor('', { ...anchor, exact: 'word', normalizedExact: 'word' }, 0), null)
 })
+
+test('scores frequent short quotes without slicing unbounded chapter context', () => {
+  const source = 'a '.repeat(2_000)
+  const anchor = { exact: 'a', normalizedExact: 'a', prefix: 'missing', suffix: 'context' }
+  const originalSlice = String.prototype.slice
+  String.prototype.slice = function boundedSlice(start, end) {
+    const result = originalSlice.call(this, start, end)
+    if (String(this).length > 1_000 && result.length > 128) {
+      throw new Error('resolver sliced unbounded chapter context')
+    }
+    return result
+  }
+  try {
+    assert.equal(resolveTextQuoteAnchor(source, anchor, null), null)
+  } finally {
+    String.prototype.slice = originalSlice
+  }
+})

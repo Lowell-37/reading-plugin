@@ -911,17 +911,26 @@ function capturePdfSelection(wrapper) {
   const selection = window.getSelection()
   if (!selection || selection.isCollapsed || !selection.rangeCount) return
   const range = selection.getRangeAt(0)
-  if (!wrapper.contains(range.commonAncestorContainer)) return
-  const bounds = wrapper.getBoundingClientRect()
-  const rects = [...range.getClientRects()].filter(rect => rect.width && rect.height).map(rect => ({
-    left: (rect.left - bounds.left) / bounds.width,
-    top: (rect.top - bounds.top) / bounds.height,
-    width: rect.width / bounds.width,
-    height: rect.height / bounds.height,
-  }))
+  const textLayer = wrapper.querySelector('.textLayer')
+  if (!textLayer?.contains(range.commonAncestorContainer)) return
+  const rects = relativeRectsForRange(wrapper, range)
+  const rangeAnchor = createRangeAnchor(textLayer, range)
   const text = selection.toString().trim()
   if (!text || !rects.length) return
-  pendingSelection = { kind: 'pdf', page: Number(wrapper.dataset.page), text, rects }
+  const page = Number(wrapper.dataset.page)
+  pendingSelection = {
+    kind: 'pdf',
+    page,
+    text,
+    rects,
+    anchor: rangeAnchor ? {
+      version: 1,
+      kind: 'pdf',
+      page,
+      textOffset: rangeAnchor.textOffset,
+      quote: rangeAnchor.quote,
+    } : undefined,
+  }
   updateAiSelectionUi()
 }
 
@@ -962,7 +971,16 @@ async function annotateSelection(withNote) {
       ebookView.deselect()
     }
   } else {
-    annotation = createAnnotation({ kind: 'pdf', page: pendingSelection.page, locator: `page:${pendingSelection.page}`, text: pendingSelection.text, note, rects: pendingSelection.rects })
+    annotation = createAnnotation({
+      kind: 'pdf',
+      page: pendingSelection.page,
+      locator: `page:${pendingSelection.page}`,
+      text: pendingSelection.text,
+      note,
+      rects: pendingSelection.rects,
+      anchor: pendingSelection.anchor,
+      anchorStatus: pendingSelection.anchor ? 'resolved' : undefined,
+    })
     annotations.push(annotation)
     window.getSelection()?.removeAllRanges()
     renderPdfAnnotationOverlays(annotation.page)
@@ -1018,6 +1036,44 @@ async function repairEbookAnnotationAnchors(doc, index) {
   if (changed) scheduleAnnotationRepairSave()
 }
 
+function relativeRectsForRange(wrapper, range) {
+  const bounds = wrapper.getBoundingClientRect()
+  if (!bounds.width || !bounds.height) return []
+  return [...range.getClientRects()].filter(rect => rect.width && rect.height).map(rect => ({
+    left: (rect.left - bounds.left) / bounds.width,
+    top: (rect.top - bounds.top) / bounds.height,
+    width: rect.width / bounds.width,
+    height: rect.height / bounds.height,
+  }))
+}
+
+function sameAnnotationRects(left, right) {
+  if (left.length !== right.length) return false
+  return left.every((rect, index) => {
+    const other = right[index]
+    return other && ['left', 'top', 'width', 'height']
+      .every(key => Math.abs(rect[key] - other[key]) < 0.0001)
+  })
+}
+
+function resolvePdfAnnotationRects(wrapper, annotation) {
+  if (annotation.anchor?.kind !== 'pdf') return annotation.rects || []
+  const textLayer = wrapper.querySelector('.textLayer')
+  if (!textLayer) return []
+  const resolved = resolveRangeAnchor(textLayer, annotation.anchor.quote, annotation.anchor.textOffset)
+  if (!resolved) return []
+  const rects = relativeRectsForRange(wrapper, resolved.range)
+  if (!rects.length) return []
+  if (!sameAnnotationRects(annotation.rects || [], rects)
+    || annotation.anchor.textOffset !== resolved.textOffset) {
+    annotation.rects = rects
+    annotation.anchor = { ...annotation.anchor, textOffset: resolved.textOffset }
+    annotation.anchorStatus = 'resolved'
+    scheduleAnnotationRepairSave()
+  }
+  return rects
+}
+
 function renderPdfAnnotationOverlays(pageNumber = null) {
   const wrappers = pageNumber
     ? [elements.pdfPages.querySelector(`[data-page="${pageNumber}"]`)].filter(Boolean)
@@ -1028,7 +1084,7 @@ function renderPdfAnnotationOverlays(pageNumber = null) {
     const layer = document.createElement('div')
     layer.className = 'pdf-annotation-layer'
     for (const annotation of annotations.filter(item => item.kind === 'pdf' && item.page === Number(wrapper.dataset.page))) {
-      for (const rect of annotation.rects || []) {
+      for (const rect of resolvePdfAnnotationRects(wrapper, annotation)) {
         const mark = document.createElement('span')
         mark.style.left = `${rect.left * 100}%`
         mark.style.top = `${rect.top * 100}%`
