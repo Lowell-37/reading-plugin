@@ -37,6 +37,26 @@ test('PDF renders text, zooms, jumps pages and restores progress', async () => {
   const { context, page } = await launchExtension()
   try {
     await openBook(page, 'tracemonkey.pdf')
+    await expect(page.locator('#ebook-host')).toBeHidden()
+    const pdfLayout = await page.evaluate(() => {
+      const stage = document.querySelector<HTMLElement>('#reader-stage')!
+      const viewport = document.querySelector<HTMLElement>('#pdf-viewport')!
+      const firstPage = document.querySelector<HTMLElement>('.pdf-page[data-page="1"]')!
+      const stageRect = stage.getBoundingClientRect()
+      const viewportRect = viewport.getBoundingClientRect()
+      const pageRect = firstPage.getBoundingClientRect()
+      return {
+        ebookDisplay: getComputedStyle(document.querySelector<HTMLElement>('#ebook-host')!).display,
+        viewportStartsInsideStage: viewportRect.top < stageRect.bottom && viewportRect.bottom > stageRect.top,
+        pageIntersectsReader: pageRect.top < Math.min(stageRect.bottom, viewportRect.bottom)
+          && pageRect.bottom > Math.max(stageRect.top, viewportRect.top),
+      }
+    })
+    expect(pdfLayout).toEqual({
+      ebookDisplay: 'none',
+      viewportStartsInsideStage: true,
+      pageIntersectsReader: true,
+    })
     await expect(page.locator('#pdf-page-total')).not.toHaveText('/ 1')
     await expect.poll(async () => page.locator('.textLayer span').count()).toBeGreaterThan(0)
     await clickDom(page, '#pdf-zoom-in')

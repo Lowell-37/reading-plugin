@@ -103,6 +103,7 @@ body.header-collapsed .settings-panel,body.header-collapsed .tools-panel { top:1
 .reader-view { height:calc(100% - var(--header-height)); position:relative; }
 .reader-stage { position:absolute; inset:0 0 var(--footer-height); overflow:hidden; }
 .ebook-host,.ebook-host foliate-view,.pdf-viewport { width:100%; height:100%; display:block; }
+.ebook-host[hidden],.pdf-viewport[hidden] { display:none; }
 .ebook-host { position:relative; overflow:hidden; }
 .continuous-ebook { width:100%; height:100%; overflow-x:hidden; overflow-y:auto; overscroll-behavior:contain; scrollbar-gutter:stable; scroll-behavior:auto; background:var(--bg); }
 .continuous-section { position:relative; width:100%; min-height:160px; overflow:hidden; background:var(--bg); }
