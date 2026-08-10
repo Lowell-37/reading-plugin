@@ -19,4 +19,14 @@ export function activeSectionIndex(layout, viewportMiddle) {
       ? item : closest).index
 }
 
+export function retainedSectionIndices(indices, activeIndex, radius = 3) {
+  const position = indices.indexOf(activeIndex)
+  if (position < 0) return new Set()
+  const safeRadius = Math.max(0, Math.floor(Number(radius) || 0))
+  return new Set(indices.slice(
+    Math.max(0, position - safeRadius),
+    position + safeRadius + 1,
+  ))
+}
+
 export { clamp }

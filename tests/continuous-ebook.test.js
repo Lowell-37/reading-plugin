@@ -1,9 +1,10 @@
-import test from 'node:test'
+import { test } from 'vitest'
 import assert from 'node:assert/strict'
 
 import {
   activeSectionIndex,
   interpolateSectionProgress,
+  retainedSectionIndices,
 } from '../src/continuous-layout.js'
 
 test('maps a local chapter position into whole-book progress', () => {
@@ -38,4 +39,11 @@ test('uses the nearest section outside the rendered bounds', () => {
   assert.equal(activeSectionIndex(layout, 0), 2)
   assert.equal(activeSectionIndex(layout, 1800), 3)
   assert.equal(activeSectionIndex([], 400), -1)
+})
+
+test('keeps a bounded section window around the active chapter', () => {
+  const indices = [1, 2, 4, 5, 8, 9, 12, 15]
+  assert.deepEqual([...retainedSectionIndices(indices, 8, 2)], [4, 5, 8, 9, 12])
+  assert.deepEqual([...retainedSectionIndices(indices, 1, 3)], [1, 2, 4, 5])
+  assert.deepEqual([...retainedSectionIndices(indices, 99, 3)], [])
 })

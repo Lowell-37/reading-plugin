@@ -1,5 +1,12 @@
 import { Overlayer } from '../node_modules/foliate-js/overlayer.js'
-import { activeSectionIndex, clamp, interpolateSectionProgress } from './continuous-layout.js'
+import {
+  activeSectionIndex,
+  clamp,
+  interpolateSectionProgress,
+  retainedSectionIndices,
+} from './continuous-layout.js'
+import { normalizeAnchorText } from './text-anchor.js'
+import { resolveRangeAnchor } from './text-range.js'
 
 export class ContinuousEbookScroller extends EventTarget {
   #host
@@ -16,6 +23,7 @@ export class ContinuousEbookScroller extends EventTarget {
   #onSelection
   #onExternalLink
   #onAnnotation
+  #onAnchorRepair
 
   constructor({
     host,
@@ -26,6 +34,7 @@ export class ContinuousEbookScroller extends EventTarget {
     onSelection,
     onExternalLink,
     onAnnotation,
+    onAnchorRepair,
   }) {
     super()
     this.#host = host
@@ -37,6 +46,7 @@ export class ContinuousEbookScroller extends EventTarget {
     this.#onSelection = onSelection
     this.#onExternalLink = onExternalLink
     this.#onAnnotation = onAnnotation
+    this.#onAnchorRepair = onAnchorRepair
 
     this.#container = document.createElement('div')
     this.#container.className = 'continuous-ebook'
@@ -44,7 +54,8 @@ export class ContinuousEbookScroller extends EventTarget {
       if (this.#scrollFrame != null) return
       this.#scrollFrame = requestAnimationFrame(() => {
         this.#scrollFrame = null
-        this.#emitRelocate()
+        const location = this.#emitRelocate()
+        this.#prune(location?.index)
       })
     }, { passive: true })
   }
@@ -86,6 +97,7 @@ export class ContinuousEbookScroller extends EventTarget {
         iframe: null,
         doc: null,
         loaded: false,
+        empty: false,
         overlayer: null,
         annotationKeys: new Set(),
         loadPromise: null,
@@ -141,11 +153,16 @@ export class ContinuousEbookScroller extends EventTarget {
   async #load(index) {
     const item = this.#items.get(index)
     if (!item || this.#destroyed) return null
-    if (item.doc) return item
+    if (item.doc || item.empty) return item
     if (item.loadPromise) return item.loadPromise
 
     item.loadPromise = Promise.resolve(item.section.load()).then(src => {
-      if (!src) return null
+      if (!src) {
+        item.empty = true
+        item.placeholder.textContent = '本章没有可显示的正文'
+        item.wrapper.style.height = '160px'
+        return item
+      }
       item.loaded = true
       if (this.#destroyed) {
         item.section.unload?.()
@@ -173,6 +190,16 @@ export class ContinuousEbookScroller extends EventTarget {
         }, { once: true })
         iframe.src = src
       })
+    }).catch(error => {
+      item.resizeObserver?.disconnect()
+      item.resizeObserver = null
+      item.doc = null
+      item.iframe = null
+      if (item.loaded) item.section.unload?.()
+      item.loaded = false
+      item.placeholder.textContent = '这一章暂时无法显示'
+      item.wrapper.replaceChildren(item.placeholder)
+      throw error
     }).finally(() => {
       item.loadPromise = null
     })
@@ -224,7 +251,7 @@ export class ContinuousEbookScroller extends EventTarget {
     doc.addEventListener('click', event => {
       const [value] = item.overlayer.hitTest({ x: event.clientX, y: event.clientY })
       if (value) {
-        const annotation = this.#annotations.find(entry => entry.locator === value)
+        const annotation = this.#annotations.find(entry => entry.id === value || entry.locator === value)
         this.#onAnnotation?.(annotation)
         return
       }
@@ -245,19 +272,57 @@ export class ContinuousEbookScroller extends EventTarget {
     for (const key of item.annotationKeys) item.overlayer.remove(key)
     item.annotationKeys.clear()
     for (const annotation of this.#annotations.filter(entry =>
-      entry.kind === 'ebook' && (entry.section == null || entry.section === item.index))) {
+      entry.kind === 'ebook' && entry.anchorStatus !== 'unresolved'
+      && (entry.section == null || entry.section === item.index))) {
+      let range = null
       try {
         const resolved = this.#view.resolveNavigation(annotation.locator)
-        if (resolved?.index !== item.index) continue
-        const range = resolved.anchor?.(item.doc)
-        if (range) {
-          item.overlayer.add(annotation.locator, range,
-            Overlayer.highlight, { color: annotation.color || '#f4c95d' })
-          item.annotationKeys.add(annotation.locator)
-        }
+        if (resolved?.index === item.index) range = resolved.anchor?.(item.doc) || null
       } catch (error) {
-        console.warn(error)
+        console.warn('Stored ebook CFI could not be resolved.', error)
       }
+      const quote = annotation.anchor?.kind === 'ebook' ? annotation.anchor.quote : null
+      const cfiMatches = range && (!quote
+        || normalizeAnchorText(range.toString()).text === quote.normalizedExact)
+      if (!cfiMatches && quote && item.doc.body) {
+        const fallback = resolveRangeAnchor(item.doc.body, quote, annotation.anchor.textOffset)
+        if (fallback) {
+          range = fallback.range
+          try {
+            const locator = this.#view.getCFI(item.index, range)
+            annotation.locator = locator
+            annotation.anchor = { ...annotation.anchor, cfi: locator, textOffset: fallback.textOffset }
+            annotation.anchorStatus = 'resolved'
+            this.#onAnchorRepair?.(annotation)
+          } catch (error) {
+            console.warn('Repaired ebook range could not be converted to CFI.', error)
+          }
+        } else range = null
+      }
+      if (!range) continue
+      item.overlayer.add(annotation.id, range,
+        Overlayer.highlight, { color: annotation.color || '#f4c95d' })
+      item.annotationKeys.add(annotation.id)
+    }
+  }
+
+  #prune(activeIndex) {
+    if (activeIndex == null || activeIndex < 0) return
+    const keep = retainedSectionIndices([...this.#items.keys()], activeIndex, 3)
+    for (const item of this.#items.values()) {
+      if (keep.has(item.index) || !item.doc || item.loadPromise) continue
+      const measuredHeight = Math.max(160, item.wrapper.offsetHeight)
+      item.resizeObserver?.disconnect()
+      item.resizeObserver = null
+      item.overlayer = null
+      item.annotationKeys.clear()
+      item.doc = null
+      item.iframe = null
+      if (item.loaded) item.section.unload?.()
+      item.loaded = false
+      item.placeholder.textContent = '继续滚动以重新载入章节'
+      item.wrapper.replaceChildren(item.placeholder)
+      item.wrapper.style.height = `${measuredHeight}px`
     }
   }
 
@@ -347,6 +412,7 @@ export class ContinuousEbookScroller extends EventTarget {
   #emitRelocate() {
     const location = this.currentLocation()
     if (location) this.dispatchEvent(new CustomEvent('relocate', { detail: location }))
+    return location
   }
 
   destroy() {

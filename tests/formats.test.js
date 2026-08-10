@@ -1,6 +1,6 @@
-import test from 'node:test'
+import { test } from 'vitest'
 import assert from 'node:assert/strict'
-import { detectFormat, displayValue, formatBytes } from '../src/formats.js'
+import { detectFormat, displayValue, formatBytes } from '../src/core/formats.ts'
 
 test('detects supported book extensions case-insensitively', () => {
   assert.equal(detectFormat('book.PDF'), 'pdf')

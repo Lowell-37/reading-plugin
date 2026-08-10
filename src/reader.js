@@ -1,12 +1,37 @@
 import '../node_modules/foliate-js/view.js'
 import * as pdfjsLib from '../node_modules/pdfjs-dist/build/pdf.mjs'
 import { Overlayer } from '../node_modules/foliate-js/overlayer.js'
-import { createAnnotation, excerpt, findTextMatches, normalizeAnnotations } from './annotations.js'
+import {
+  createAnnotation,
+  excerpt,
+  filterAnnotations,
+  normalizeAnnotations,
+  sortAnnotations,
+  updateAnnotation,
+} from './annotations.js'
+import {
+  annotationExportFileName,
+  createAnnotationExport,
+  serializeAnnotationsJson,
+  serializeAnnotationsMarkdown,
+} from './annotation-export.js'
+import { annotationImportMatchesBook, mergeAnnotationImports, parseAnnotationImport } from './annotation-import.js'
+import { recoverTextAnchor } from './anchor-recovery.js'
 import { buildAiMessages, CHAPTER_AI_ACTIONS, getAiPermissionOrigin, SELECTION_AI_ACTIONS, streamAiCompletion } from './ai.js'
+import { bookRepository } from './book-repository.js'
 import { ContinuousEbookScroller } from './continuous-ebook.js'
 import { initializeEbookPosition } from './ebook-navigation.js'
+import { EbookSearchIndex } from './ebook-search-index.js'
 import { detectFormat, displayValue, formatBytes } from './formats.js'
-import { deleteBook, listBooks, loadSettings, saveBook, saveSettings, updateBook } from './storage.js'
+import { backupFileName, createLibraryBackup, parseLibraryBackup } from './library-backup.js'
+import { describeOpenError } from './open-errors.js'
+import { ProgressService } from './progress-service.js'
+import { PromiseCache } from './promise-cache.js'
+import { createEbookReaderAdapter, createPdfReaderAdapter } from './reader-adapter.js'
+import { createSearchContext, findSearchMatches } from './search-context.js'
+import { loadSettings, saveSettings } from './storage.js'
+import { normalizeAnchorText } from './text-anchor.js'
+import { createRangeAnchor, rangeFromTextOffsets, resolveRangeAnchor } from './text-range.js'
 
 const $ = selector => document.querySelector(selector)
 const elements = {
@@ -20,6 +45,10 @@ const elements = {
   dropZone: $('#drop-zone'),
   librarySection: $('#library-section'),
   bookGrid: $('#book-grid'),
+  backupLibrary: $('#backup-library'),
+  restoreLibrary: $('#restore-library'),
+  backupFileInput: $('#backup-file-input'),
+  backupStatus: $('#backup-status'),
   sidebar: $('#sidebar'),
   sidebarButton: $('#sidebar-button'),
   scrim: $('#scrim'),
@@ -35,6 +64,15 @@ const elements = {
   highlightSelection: $('#highlight-selection'),
   noteSelection: $('#note-selection'),
   annotationCount: $('#annotation-count'),
+  annotationFilterQuery: $('#annotation-filter-query'),
+  annotationFilterType: $('#annotation-filter-type'),
+  annotationSort: $('#annotation-sort'),
+  annotationSelectAll: $('#annotation-select-all'),
+  annotationDeleteSelected: $('#annotation-delete-selected'),
+  importAnnotationsJson: $('#import-annotations-json'),
+  annotationImportInput: $('#annotation-import-input'),
+  exportAnnotationsMarkdown: $('#export-annotations-markdown'),
+  exportAnnotationsJson: $('#export-annotations-json'),
   annotationList: $('#annotation-list'),
   aiSelectionPreview: $('#ai-selection-preview'),
   aiSettingsToggle: $('#ai-settings-toggle'),
@@ -57,7 +95,12 @@ const elements = {
   pdfViewport: $('#pdf-viewport'),
   pdfPages: $('#pdf-pages'),
   loadingView: $('#loading-view'),
+  loadingSpinner: $('#loading-spinner'),
+  loadingTitle: $('#loading-title'),
   loadingDetail: $('#loading-detail'),
+  loadingActions: $('#loading-actions'),
+  loadingLibraryButton: $('#loading-library-button'),
+  loadingRetryButton: $('#loading-retry-button'),
   headerTitle: $('#header-title'),
   sidebarTitle: $('#sidebar-title'),
   sidebarAuthor: $('#sidebar-author'),
@@ -100,6 +143,7 @@ let currentRecord = null
 let currentFormat = null
 let ebookView = null
 let continuousEbook = null
+let ebookSearchIndex = null
 let pdfDocument = null
 let pdfLoadingTask = null
 let pdfObserver = null
@@ -107,15 +151,21 @@ let pdfScrollFrame = null
 let currentPdfPage = 1
 let pdfZoom = 1
 let pdfSearchQuery = ''
-let pdfTextCache = new Map()
+let pdfTextCache = new PromiseCache()
 let pendingSelection = null
 let annotations = []
-let searchRun = 0
+let annotationFilterQuery = ''
+let annotationFilterType = 'all'
+let annotationSort = 'newest'
+let annotationRepairSave = null
+const selectedAnnotationIds = new Set()
+let searchAbortController = null
 let aiAbortController = null
-let progressSaveTimer = null
+let readerAdapter = null
 let coverObjectUrl = null
 let libraryObjectUrls = []
 const tocButtons = new Map()
+const progressService = new ProgressService(bookRepository)
 
 function showToast(message, type = '') {
   elements.toast.textContent = message
@@ -125,7 +175,19 @@ function showToast(message, type = '') {
 }
 
 function setLoading(detail = '解析内容与目录…') {
+  elements.loadingView.dataset.state = 'loading'
+  elements.loadingTitle.textContent = '正在打开书籍'
   elements.loadingDetail.textContent = detail
+  elements.loadingActions.hidden = true
+  elements.loadingView.hidden = false
+}
+
+function showOpenError(description) {
+  document.body.classList.remove('pdf-mode')
+  elements.loadingView.dataset.state = 'error'
+  elements.loadingTitle.textContent = description.code === 'unsupported' ? '不支持这个文件' : '无法打开这本书'
+  elements.loadingDetail.textContent = description.message
+  elements.loadingActions.hidden = false
   elements.loadingView.hidden = false
 }
 
@@ -177,10 +239,16 @@ function setHeaderCollapsed(collapsed, persist = true) {
   saveSettings(settings)
 }
 function closeReader() {
-  clearTimeout(progressSaveTimer)
+  progressService.flush().catch(console.error)
+  readerAdapter?.destroy?.()
+  readerAdapter = null
   closePanels()
   continuousEbook?.destroy()
   continuousEbook = null
+  searchAbortController?.abort()
+  searchAbortController = null
+  ebookSearchIndex?.clear()
+  ebookSearchIndex = null
   ebookView?.close?.()
   ebookView?.remove()
   ebookView = null
@@ -305,6 +373,7 @@ async function setEbookFlow(flow, target = null) {
       onAnnotation: annotation => {
         if (annotation?.note) showToast(annotation.note)
       },
+      onAnchorRepair: scheduleAnnotationRepairSave,
     })
     continuousEbook.addEventListener('relocate', ({ detail }) => handleEbookRelocate(detail))
     try {
@@ -329,9 +398,7 @@ async function setEbookFlow(flow, target = null) {
 }
 
 function scheduleProgressSave(progress) {
-  if (!currentRecord?.id) return
-  clearTimeout(progressSaveTimer)
-  progressSaveTimer = setTimeout(() => updateBook(currentRecord.id, { progress, openedAt: Date.now() }).catch(console.error), 350)
+  progressService.schedule(currentRecord?.id, progress)
 }
 
 function updateProgress(fraction, chapter = '') {
@@ -368,7 +435,7 @@ async function setMetadata({ title, author, cover }) {
   setCover(cover, resolvedTitle)
   if (currentRecord?.id) {
     currentRecord = { ...currentRecord, metadata: { title: resolvedTitle, author: resolvedAuthor }, cover }
-    await updateBook(currentRecord.id, { metadata: currentRecord.metadata, cover }).catch(console.error)
+    await bookRepository.update(currentRecord.id, { metadata: currentRecord.metadata, cover }).catch(console.error)
   }
 }
 
@@ -410,6 +477,13 @@ function markCurrentToc(href) {
 
 function loadAnnotations() {
   annotations = normalizeAnnotations(currentRecord?.annotations)
+  annotationFilterQuery = ''
+  annotationFilterType = 'all'
+  annotationSort = 'newest'
+  selectedAnnotationIds.clear()
+  elements.annotationFilterQuery.value = ''
+  elements.annotationFilterType.value = 'all'
+  elements.annotationSort.value = 'newest'
   renderAnnotationList()
 }
 
@@ -418,49 +492,302 @@ async function saveAnnotations() {
   currentRecord = { ...currentRecord, annotations }
   continuousEbook?.setAnnotations(annotations)
   renderAnnotationList()
-  if (currentRecord.id) await updateBook(currentRecord.id, { annotations }).catch(console.error)
+  if (currentRecord.id) await bookRepository.update(currentRecord.id, { annotations }).catch(console.error)
 }
 
 function renderAnnotationList() {
   elements.annotationList.replaceChildren()
-  elements.annotationCount.textContent = `${annotations.length} 条`
-  if (!annotations.length) {
+  const existingIds = new Set(annotations.map(annotation => annotation.id))
+  for (const id of selectedAnnotationIds) {
+    if (!existingIds.has(id)) selectedAnnotationIds.delete(id)
+  }
+  const filtered = sortAnnotations(filterAnnotations(annotations, {
+    query: annotationFilterQuery,
+    type: annotationFilterType,
+  }), annotationSort)
+  elements.annotationCount.textContent = filtered.length === annotations.length
+    ? `${annotations.length} 条`
+    : `${filtered.length} / ${annotations.length} 条`
+  updateBulkAnnotationControls(filtered)
+  if (!filtered.length) {
     const empty = document.createElement('p')
     empty.className = 'tool-empty'
-    empty.textContent = '还没有高亮或批注'
+    empty.textContent = annotations.length ? '没有符合筛选条件的批注' : '还没有高亮或批注'
     elements.annotationList.append(empty)
     return
   }
-  for (const annotation of [...annotations].reverse()) {
+  for (const annotation of filtered) {
     const item = document.createElement('article')
     item.className = 'annotation-item'
+    const selection = document.createElement('input')
+    selection.type = 'checkbox'
+    selection.className = 'annotation-select'
+    selection.setAttribute('aria-label', '选择这条批注')
+    selection.checked = selectedAnnotationIds.has(annotation.id)
+    selection.addEventListener('change', () => {
+      if (selection.checked) selectedAnnotationIds.add(annotation.id)
+      else selectedAnnotationIds.delete(annotation.id)
+      updateBulkAnnotationControls(filtered)
+    })
     const jump = document.createElement('button')
     jump.type = 'button'
     jump.className = 'annotation-jump'
     const location = annotation.kind === 'pdf' ? `第 ${annotation.page} 页` : '电子书高亮'
     jump.innerHTML = `<small>${location}</small><q></q>${annotation.note ? '<p></p>' : ''}`
     jump.querySelector('q').textContent = annotation.text || '无文本高亮'
+    if (annotation.anchorStatus === 'unresolved') {
+      item.classList.add('is-unresolved')
+      const status = document.createElement('span')
+      status.className = 'annotation-anchor-status'
+      status.textContent = '需要重新定位'
+      jump.append(status)
+    }
     const note = jump.querySelector('p')
     if (note) note.textContent = annotation.note
+    if (annotation.tags?.length) {
+      const tags = document.createElement('div')
+      tags.className = 'annotation-tags'
+      for (const value of annotation.tags) {
+        const tag = document.createElement('span')
+        tag.textContent = value
+        tags.append(tag)
+      }
+      jump.append(tags)
+    }
     jump.addEventListener('click', () => {
       closePanels()
       if (annotation.kind === 'pdf') goToPdfPage(annotation.page)
       else if (continuousEbook) continuousEbook.goTo(annotation.locator)
       else ebookView?.showAnnotation({ value: annotation.locator })
     })
+    const actions = document.createElement('div')
+    actions.className = 'annotation-item-actions'
+    const edit = document.createElement('button')
+    edit.type = 'button'
+    edit.className = 'annotation-edit'
+    edit.textContent = '编辑'
+    edit.addEventListener('click', async () => {
+      const noteValue = prompt('编辑批注（留空则仅保留高亮）', annotation.note || '')
+      if (noteValue === null) return
+      const tagsValue = prompt('编辑标签（使用逗号分隔，最多 10 个）', annotation.tags?.join(', ') || '')
+      if (tagsValue === null) return
+      annotations = updateAnnotation(annotations, annotation.id, { note: noteValue, tags: tagsValue })
+      await saveAnnotations()
+      renderPdfAnnotationOverlays()
+      showToast('批注已更新')
+    })
     const remove = document.createElement('button')
     remove.type = 'button'
     remove.className = 'annotation-delete'
     remove.textContent = '删除'
     remove.addEventListener('click', async () => {
-      if (annotation.kind === 'ebook' && !continuousEbook) await ebookView?.deleteAnnotation({ value: annotation.locator })
-      annotations = annotations.filter(item => item.id !== annotation.id)
-      renderPdfAnnotationOverlays()
-      await saveAnnotations()
+      if (!confirm('确定删除这条高亮或批注吗？')) return
+      await removeAnnotations([annotation])
     })
-    item.append(jump, remove)
+    actions.append(edit, remove)
+    item.append(selection, jump, actions)
     elements.annotationList.append(item)
   }
+}
+
+function updateBulkAnnotationControls(filtered) {
+  const visibleIds = filtered.map(annotation => annotation.id)
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selectedAnnotationIds.has(id))
+  elements.annotationSelectAll.textContent = allVisibleSelected ? '取消全选' : '全选当前'
+  elements.annotationSelectAll.disabled = visibleIds.length === 0
+  elements.annotationDeleteSelected.disabled = selectedAnnotationIds.size === 0
+  elements.annotationDeleteSelected.textContent = selectedAnnotationIds.size
+    ? `删除所选（${selectedAnnotationIds.size}）`
+    : '删除所选'
+}
+
+function toggleSelectVisibleAnnotations() {
+  const filtered = sortAnnotations(filterAnnotations(annotations, {
+    query: annotationFilterQuery,
+    type: annotationFilterType,
+  }), annotationSort)
+  const allSelected = filtered.length > 0 && filtered.every(annotation => selectedAnnotationIds.has(annotation.id))
+  for (const annotation of filtered) {
+    if (allSelected) selectedAnnotationIds.delete(annotation.id)
+    else selectedAnnotationIds.add(annotation.id)
+  }
+  renderAnnotationList()
+}
+
+async function removeAnnotations(items) {
+  const ids = new Set(items.map(annotation => annotation.id))
+  if (!continuousEbook) {
+    for (const annotation of items) {
+      if (annotation.kind === 'ebook') await ebookView?.deleteAnnotation({ value: annotation.locator })
+    }
+  }
+  annotations = annotations.filter(annotation => !ids.has(annotation.id))
+  for (const id of ids) selectedAnnotationIds.delete(id)
+  renderPdfAnnotationOverlays()
+  await saveAnnotations()
+}
+
+async function deleteSelectedAnnotations() {
+  const items = annotations.filter(annotation => selectedAnnotationIds.has(annotation.id))
+  if (!items.length) return
+  if (!confirm(`确定删除所选的 ${items.length} 条高亮或批注吗？`)) return
+  await removeAnnotations(items)
+  showToast(`已删除 ${items.length} 条批注`)
+}
+
+async function recoverImportedAnnotations(values, importedIds) {
+  const recovered = []
+  const ebookDocuments = new Map()
+  for (const annotation of values) {
+    if (!importedIds.has(annotation.id) || !annotation.anchor) {
+      recovered.push(annotation)
+      continue
+    }
+    try {
+      recovered.push(annotation.kind === 'ebook'
+        ? await recoverImportedEbookAnnotation(annotation, ebookDocuments)
+        : await recoverImportedPdfAnnotation(annotation))
+    } catch (error) {
+      console.warn('Imported annotation recovery failed.', error)
+      recovered.push({ ...annotation, anchorStatus: 'unresolved' })
+    }
+  }
+  return recovered
+}
+
+async function recoverImportedEbookAnnotation(annotation, documents) {
+  const origin = annotation.anchor.section ?? annotation.section
+  if (!Number.isInteger(origin) || !ebookView?.book?.sections) {
+    return { ...annotation, anchorStatus: 'unresolved' }
+  }
+  const candidates = []
+  for (const index of nearbyLocations(origin, 1, ebookView.book.sections.length - 1)) {
+    const section = ebookView.book.sections[index]
+    if (!section?.createDocument) continue
+    if (!documents.has(index)) documents.set(index, Promise.resolve(section.createDocument()))
+    const doc = await documents.get(index)
+    const text = doc.body?.textContent || doc.documentElement?.textContent || ''
+    documents.set(index, doc)
+    candidates.push({ location: index, text, preferredOffset: index === origin ? annotation.anchor.textOffset : null })
+  }
+  const match = recoverTextAnchor(annotation.anchor.quote, candidates)
+  const doc = match ? documents.get(match.location) : null
+  const range = doc?.body ? rangeFromTextOffsets(doc.body, match.start, match.end) : null
+  if (!match || !range) return { ...annotation, anchorStatus: 'unresolved' }
+  const locator = ebookView.getCFI(match.location, range)
+  return {
+    ...annotation,
+    locator,
+    section: match.location,
+    anchorStatus: 'resolved',
+    anchor: {
+      ...annotation.anchor,
+      section: match.location,
+      cfi: locator,
+      textOffset: match.start,
+      quote: match.quote,
+    },
+  }
+}
+
+async function recoverImportedPdfAnnotation(annotation) {
+  const origin = annotation.anchor.page ?? annotation.page
+  if (!Number.isInteger(origin) || !pdfDocument) return { ...annotation, anchorStatus: 'unresolved' }
+  const candidates = []
+  for (const page of nearbyLocations(origin, 2, pdfDocument.numPages, 1)) {
+    const { content } = await getPdfPageText(page)
+    candidates.push({
+      location: page,
+      text: content.items.map(item => item.str || '').join(''),
+      preferredOffset: page === origin ? annotation.anchor.textOffset : null,
+    })
+  }
+  const match = recoverTextAnchor(annotation.anchor.quote, candidates)
+  if (!match) return { ...annotation, anchorStatus: 'unresolved' }
+  return {
+    ...annotation,
+    page: match.location,
+    locator: `page:${match.location}`,
+    rects: [],
+    anchorStatus: 'resolved',
+    anchor: {
+      ...annotation.anchor,
+      page: match.location,
+      textOffset: match.start,
+      quote: match.quote,
+    },
+  }
+}
+
+function nearbyLocations(origin, distance, maximum, minimum = 0) {
+  const result = [origin]
+  for (let offset = 1; offset <= distance; offset += 1) {
+    if (origin - offset >= minimum) result.push(origin - offset)
+    if (origin + offset <= maximum) result.push(origin + offset)
+  }
+  return result
+}
+
+async function importAnnotationsFile(file) {
+  if (!file || !currentRecord) return
+  try {
+    if (file.size > 10 * 1024 * 1024) throw new Error('批注文件不能超过 10 MB')
+    const document = parseAnnotationImport(await file.text())
+    const matches = annotationImportMatchesBook(document.book, {
+      fileName: currentRecord.name,
+      format: currentRecord.format,
+    })
+    if (!matches && !confirm('导入文件属于另一本书，仍要合并到当前书籍吗？')) return
+    const previousById = new Map(annotations.map(annotation => [annotation.id, annotation]))
+    const recoverableIds = new Set(document.annotations.flatMap(annotation => {
+      const local = previousById.get(annotation.id)
+      if (!local) return [annotation.id]
+      const localTime = local.updatedAt ?? local.createdAt
+      const importedTime = annotation.updatedAt ?? annotation.createdAt
+      return importedTime > localTime ? [annotation.id] : []
+    }))
+    const result = mergeAnnotationImports(annotations, document.annotations)
+    annotations = await recoverImportedAnnotations(result.annotations, recoverableIds)
+    if (!continuousEbook) {
+      const importedIds = new Set(document.annotations.map(annotation => annotation.id))
+      for (const annotation of annotations.filter(item => importedIds.has(item.id) && item.anchorStatus !== 'unresolved')) {
+        if (annotation.kind !== 'ebook') continue
+        const previous = previousById.get(annotation.id)
+        if (previous?.kind === 'ebook') {
+          await ebookView?.deleteAnnotation({ value: previous.locator }).catch(() => {})
+        }
+        await ebookView?.deleteAnnotation({ value: annotation.locator }).catch(() => {})
+        await ebookView?.addAnnotation({ value: annotation.locator, color: annotation.color }).catch(() => {})
+      }
+    }
+    renderPdfAnnotationOverlays()
+    await saveAnnotations()
+    showToast(`导入完成：新增 ${result.added}，更新 ${result.updated}，跳过 ${result.skipped}`)
+  } catch (error) {
+    console.error(error)
+    showToast(error?.message || '无法导入批注文件', 'error')
+  } finally {
+    elements.annotationImportInput.value = ''
+  }
+}
+
+function exportAnnotations(extension) {
+  if (!annotations.length || !currentRecord) {
+    showToast('当前书籍还没有可导出的高亮或批注')
+    return
+  }
+  const exportDocument = createAnnotationExport(currentRecord, annotations)
+  const text = extension === 'json'
+    ? serializeAnnotationsJson(exportDocument)
+    : serializeAnnotationsMarkdown(exportDocument)
+  const type = extension === 'json' ? 'application/json' : 'text/markdown'
+  const url = URL.createObjectURL(new Blob([text], { type: `${type};charset=utf-8` }))
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = annotationExportFileName(exportDocument, extension)
+  anchor.click()
+  setTimeout(() => URL.revokeObjectURL(url), 0)
+  showToast(`已导出 ${annotations.length} 条高亮与批注`)
 }
 
 function addSearchResult({ label, text, onSelect }) {
@@ -476,54 +803,69 @@ function addSearchResult({ label, text, onSelect }) {
   elements.searchResults.append(button)
 }
 
-async function searchEbook(query, run) {
-  let count = 0
-  for await (const result of ebookView.search({ query })) {
-    if (run !== searchRun) return
-    if (result === 'done') break
-    if (typeof result.progress === 'number') {
-      elements.searchStatus.textContent = `正在搜索 ${Math.round(result.progress * 100)}%…`
-      continue
-    }
-    for (const item of result.subitems || []) {
-      count += 1
-      if (count <= 300) addSearchResult({
-        label: displayValue(result.label) || `结果 ${count}`,
-        text: item.excerpt || query,
-        onSelect: () => navigateEbookTo(item.cfi),
-      })
-    }
-  }
-  elements.searchStatus.textContent = count ? `找到 ${count} 处结果${count > 300 ? '（显示前 300 条）' : ''}` : '没有找到匹配内容'
+function renderEbookSearchSnapshot(snapshot) {
+  elements.searchResults.replaceChildren()
+  for (const result of snapshot.results.slice(0, 300)) addSearchResult({
+    label: result.label,
+    text: result.context.text,
+    onSelect: () => navigateEbookTo(result.locator),
+  })
+  const count = snapshot.total
+  elements.searchStatus.textContent = count ? `正在搜索，已找到 ${count} 处…` : '正在搜索…'
+}
+
+async function searchEbook(query, signal) {
+  if (!ebookSearchIndex) throw new Error('Ebook search index is unavailable')
+  const currentSectionIndex = continuousEbook?.currentLocation()?.index
+    ?? ebookView?.lastLocation?.section?.current
+    ?? 0
+  const outcome = await ebookSearchIndex.search(query, {
+    signal,
+    batchSize: 20,
+    maxResults: 300,
+    currentSectionIndex,
+    onBatch: renderEbookSearchSnapshot,
+  })
+  renderEbookSearchSnapshot(outcome)
+  const count = outcome.total
+  elements.searchStatus.textContent = count
+    ? `找到 ${count} 处结果${count > 300 ? '（显示前 300 条）' : ''}${outcome.errors.length ? `，${outcome.errors.length} 章未能搜索` : ''}`
+    : outcome.errors.length ? '没有找到匹配内容，部分章节未能搜索' : '没有找到匹配内容'
 }
 
 async function getPdfPageText(pageNumber) {
-  if (pdfTextCache.has(pageNumber)) return pdfTextCache.get(pageNumber)
-  const page = await pdfDocument.getPage(pageNumber)
-  const content = await page.getTextContent()
-  const text = content.items.map(item => item.str || '').join(' ')
-  const value = { text, content }
-  pdfTextCache.set(pageNumber, value)
-  return value
+  return pdfTextCache.get(pageNumber, async () => {
+    const page = await pdfDocument.getPage(pageNumber)
+    const content = await page.getTextContent()
+    const text = content.items.map(item => item.str || '').join(' ')
+    return { text, content }
+  })
 }
 
-async function searchPdf(query, run) {
+async function searchPdf(query, signal) {
   pdfSearchQuery = query
   let count = 0
+  let renderedCount = 0
   for (let page = 1; page <= pdfDocument.numPages; page += 1) {
-    if (run !== searchRun) return
+    signal.throwIfAborted()
+    const wasCached = pdfTextCache.has(page)
     const { text } = await getPdfPageText(page)
-    const matches = findTextMatches(text, query)
-    for (const index of matches.slice(0, 30)) {
-      count += 1
-      if (count <= 300) addSearchResult({
+    signal.throwIfAborted()
+    const matches = findSearchMatches(text, query)
+    count += matches.length
+    for (const match of matches) {
+      if (renderedCount >= 300) break
+      renderedCount += 1
+      addSearchResult({
         label: `第 ${page} 页`,
-        text: excerpt(text.slice(Math.max(0, index - 60)), query, 58),
-        onSelect: () => goToPdfPage(page),
+        text: createSearchContext(text, match.start, match.end - match.start).text,
+        onSelect: () => goToPdfPage(page, false),
       })
     }
     elements.searchStatus.textContent = `正在搜索 ${Math.round(page / pdfDocument.numPages * 100)}%…`
+    if (!wasCached) await new Promise(resolve => setTimeout(resolve, 0))
   }
+  signal.throwIfAborted()
   elements.searchStatus.textContent = count ? `找到 ${count} 处结果${count > 300 ? '（显示前 300 条）' : ''}` : '没有找到匹配内容'
   elements.pdfPages.querySelectorAll('.textLayer').forEach(markPdfSearchMatches)
 }
@@ -531,8 +873,8 @@ async function searchPdf(query, run) {
 async function runSearch(event) {
   event?.preventDefault()
   const query = elements.searchInput.value.trim()
-  searchRun += 1
-  const run = searchRun
+  searchAbortController?.abort()
+  searchAbortController = null
   elements.searchResults.replaceChildren()
   if (!query) {
     ebookView?.clearSearch?.()
@@ -541,13 +883,19 @@ async function runSearch(event) {
     elements.pdfPages.querySelectorAll('.pdf-search-match').forEach(node => node.classList.remove('pdf-search-match'))
     return
   }
+  const controller = new AbortController()
+  searchAbortController = controller
   elements.searchStatus.textContent = '正在搜索…'
   try {
-    if (currentFormat === 'pdf') await searchPdf(query, run)
-    else await searchEbook(query, run)
+    if (currentFormat === 'pdf') await searchPdf(query, controller.signal)
+    else await searchEbook(query, controller.signal)
   } catch (error) {
-    console.error(error)
-    if (run === searchRun) elements.searchStatus.textContent = '搜索失败，请换一个关键词重试'
+    if (error?.name !== 'AbortError') {
+      console.error(error)
+      if (searchAbortController === controller) elements.searchStatus.textContent = '搜索失败，请换一个关键词重试'
+    }
+  } finally {
+    if (searchAbortController === controller) searchAbortController = null
   }
 }
 
@@ -688,10 +1036,10 @@ async function runAiAction(scope, action) {
 }
 function captureEbookSelection(doc, index) {
   const selection = doc.defaultView.getSelection()
-  if (!selection || selection.isCollapsed || !selection.rangeCount) return
+  if (!selection || selection.isCollapsed || !selection.rangeCount || !doc.body) return
   const text = selection.toString().trim()
   if (!text) return
-  pendingSelection = { kind: 'ebook', index, range: selection.getRangeAt(0).cloneRange(), text }
+  pendingSelection = { kind: 'ebook', index, root: doc.body, range: selection.getRangeAt(0).cloneRange(), text }
   updateAiSelectionUi()
 }
 
@@ -699,17 +1047,26 @@ function capturePdfSelection(wrapper) {
   const selection = window.getSelection()
   if (!selection || selection.isCollapsed || !selection.rangeCount) return
   const range = selection.getRangeAt(0)
-  if (!wrapper.contains(range.commonAncestorContainer)) return
-  const bounds = wrapper.getBoundingClientRect()
-  const rects = [...range.getClientRects()].filter(rect => rect.width && rect.height).map(rect => ({
-    left: (rect.left - bounds.left) / bounds.width,
-    top: (rect.top - bounds.top) / bounds.height,
-    width: rect.width / bounds.width,
-    height: rect.height / bounds.height,
-  }))
+  const textLayer = wrapper.querySelector('.textLayer')
+  if (!textLayer?.contains(range.commonAncestorContainer)) return
+  const rects = relativeRectsForRange(wrapper, range)
+  const rangeAnchor = createRangeAnchor(textLayer, range)
   const text = selection.toString().trim()
   if (!text || !rects.length) return
-  pendingSelection = { kind: 'pdf', page: Number(wrapper.dataset.page), text, rects }
+  const page = Number(wrapper.dataset.page)
+  pendingSelection = {
+    kind: 'pdf',
+    page,
+    text,
+    rects,
+    anchor: rangeAnchor ? {
+      version: 1,
+      kind: 'pdf',
+      page,
+      textOffset: rangeAnchor.textOffset,
+      quote: rangeAnchor.quote,
+    } : undefined,
+  }
   updateAiSelectionUi()
 }
 
@@ -723,7 +1080,24 @@ async function annotateSelection(withNote) {
   let annotation
   if (pendingSelection.kind === 'ebook') {
     const locator = ebookView.getCFI(pendingSelection.index, pendingSelection.range)
-    annotation = createAnnotation({ kind: 'ebook', locator, text: pendingSelection.text, note, section: pendingSelection.index })
+    const rangeAnchor = createRangeAnchor(pendingSelection.root, pendingSelection.range)
+    const anchor = rangeAnchor ? {
+      version: 1,
+      kind: 'ebook',
+      section: pendingSelection.index,
+      cfi: locator,
+      textOffset: rangeAnchor.textOffset,
+      quote: rangeAnchor.quote,
+    } : undefined
+    annotation = createAnnotation({
+      kind: 'ebook',
+      locator,
+      text: pendingSelection.text,
+      note,
+      section: pendingSelection.index,
+      anchor,
+      anchorStatus: anchor ? 'resolved' : undefined,
+    })
     annotations.push(annotation)
     if (continuousEbook) {
       continuousEbook.setAnnotations(annotations)
@@ -733,7 +1107,16 @@ async function annotateSelection(withNote) {
       ebookView.deselect()
     }
   } else {
-    annotation = createAnnotation({ kind: 'pdf', page: pendingSelection.page, locator: `page:${pendingSelection.page}`, text: pendingSelection.text, note, rects: pendingSelection.rects })
+    annotation = createAnnotation({
+      kind: 'pdf',
+      page: pendingSelection.page,
+      locator: `page:${pendingSelection.page}`,
+      text: pendingSelection.text,
+      note,
+      rects: pendingSelection.rects,
+      anchor: pendingSelection.anchor,
+      anchorStatus: pendingSelection.anchor ? 'resolved' : undefined,
+    })
     annotations.push(annotation)
     window.getSelection()?.removeAllRanges()
     renderPdfAnnotationOverlays(annotation.page)
@@ -742,6 +1125,90 @@ async function annotateSelection(withNote) {
   updateAiSelectionUi()
   await saveAnnotations()
   showToast(withNote ? '批注已保存' : '高亮已保存')
+}
+
+function scheduleAnnotationRepairSave() {
+  if (annotationRepairSave != null) return
+  annotationRepairSave = setTimeout(() => {
+    annotationRepairSave = null
+    saveAnnotations().catch(console.error)
+  }, 0)
+}
+
+function validEbookAnnotationRange(range, annotation) {
+  if (!range || range.collapsed) return false
+  if (!annotation.anchor?.quote?.normalizedExact) return true
+  return normalizeAnchorText(range.toString()).text === annotation.anchor.quote.normalizedExact
+}
+
+function resolveEbookAnnotationRange(doc, index, annotation) {
+  try {
+    const resolved = ebookView.resolveNavigation(annotation.locator)
+    if (resolved?.index === index) {
+      const range = resolved.anchor?.(doc)
+      if (validEbookAnnotationRange(range, annotation)) return { range, repaired: false }
+    }
+  } catch (error) {
+    console.warn('Stored ebook CFI could not be resolved.', error)
+  }
+  if (annotation.anchor?.kind !== 'ebook' || !doc.body) return null
+  const fallback = resolveRangeAnchor(doc.body, annotation.anchor.quote, annotation.anchor.textOffset)
+  if (!fallback) return null
+  return { range: fallback.range, textOffset: fallback.textOffset, repaired: true }
+}
+
+async function repairEbookAnnotationAnchors(doc, index) {
+  let changed = false
+  for (const annotation of annotations.filter(item => item.kind === 'ebook' && item.section === index && item.anchor?.kind === 'ebook')) {
+    const resolved = resolveEbookAnnotationRange(doc, index, annotation)
+    if (!resolved?.repaired) continue
+    const locator = ebookView.getCFI(index, resolved.range)
+    annotation.locator = locator
+    annotation.anchor = { ...annotation.anchor, cfi: locator, textOffset: resolved.textOffset }
+    annotation.anchorStatus = 'resolved'
+    await ebookView.addAnnotation({ value: locator, color: annotation.color, note: annotation.note }).catch(console.error)
+    changed = true
+  }
+  if (changed) scheduleAnnotationRepairSave()
+}
+
+function relativeRectsForRange(wrapper, range) {
+  const bounds = wrapper.getBoundingClientRect()
+  if (!bounds.width || !bounds.height) return []
+  return [...range.getClientRects()].filter(rect => rect.width && rect.height).map(rect => ({
+    left: (rect.left - bounds.left) / bounds.width,
+    top: (rect.top - bounds.top) / bounds.height,
+    width: rect.width / bounds.width,
+    height: rect.height / bounds.height,
+  }))
+}
+
+function sameAnnotationRects(left, right) {
+  if (left.length !== right.length) return false
+  return left.every((rect, index) => {
+    const other = right[index]
+    return other && ['left', 'top', 'width', 'height']
+      .every(key => Math.abs(rect[key] - other[key]) < 0.0001)
+  })
+}
+
+function resolvePdfAnnotationRects(wrapper, annotation) {
+  if (annotation.anchorStatus === 'unresolved') return []
+  if (annotation.anchor?.kind !== 'pdf') return annotation.rects || []
+  const textLayer = wrapper.querySelector('.textLayer')
+  if (!textLayer) return []
+  const resolved = resolveRangeAnchor(textLayer, annotation.anchor.quote, annotation.anchor.textOffset)
+  if (!resolved) return []
+  const rects = relativeRectsForRange(wrapper, resolved.range)
+  if (!rects.length) return []
+  if (!sameAnnotationRects(annotation.rects || [], rects)
+    || annotation.anchor.textOffset !== resolved.textOffset) {
+    annotation.rects = rects
+    annotation.anchor = { ...annotation.anchor, textOffset: resolved.textOffset }
+    annotation.anchorStatus = 'resolved'
+    scheduleAnnotationRepairSave()
+  }
+  return rects
 }
 
 function renderPdfAnnotationOverlays(pageNumber = null) {
@@ -754,7 +1221,7 @@ function renderPdfAnnotationOverlays(pageNumber = null) {
     const layer = document.createElement('div')
     layer.className = 'pdf-annotation-layer'
     for (const annotation of annotations.filter(item => item.kind === 'pdf' && item.page === Number(wrapper.dataset.page))) {
-      for (const rect of annotation.rects || []) {
+      for (const rect of resolvePdfAnnotationRects(wrapper, annotation)) {
         const mark = document.createElement('span')
         mark.style.left = `${rect.left * 100}%`
         mark.style.top = `${rect.top * 100}%`
@@ -785,7 +1252,7 @@ async function openEbook(file) {
   })
   ebookView.addEventListener('draw-annotation', ({ detail: { draw, annotation } }) => draw(Overlayer.highlight, { color: annotation.color || '#f4c95d' }))
   ebookView.addEventListener('create-overlay', ({ detail: { index } }) => {
-    for (const annotation of annotations.filter(item => item.kind === 'ebook' && (item.section == null || item.section === index))) ebookView.addAnnotation({ value: annotation.locator, color: annotation.color, note: annotation.note })
+    for (const annotation of annotations.filter(item => item.kind === 'ebook' && item.anchorStatus !== 'unresolved' && (item.section == null || item.section === index))) ebookView.addAnnotation({ value: annotation.locator, color: annotation.color, note: annotation.note })
   })
   ebookView.addEventListener('show-annotation', ({ detail }) => {
     const annotation = annotations.find(item => item.locator === detail.value)
@@ -797,19 +1264,57 @@ async function openEbook(file) {
   ebookView.addEventListener('load', ({ detail: { doc, index } }) => {
     doc.addEventListener('mouseup', () => captureEbookSelection(doc, index))
     doc.addEventListener('selectionchange', () => captureEbookSelection(doc, index))
+    repairEbookAnnotationAnchors(doc, index).catch(console.error)
   })
 
   await ebookView.open(file)
+  ebookSearchIndex = createEbookSearchIndex()
   applyReaderSettings()
   const metadata = ebookView.book.metadata || {}
   const cover = await Promise.resolve(ebookView.book.getCover?.()).catch(() => null)
   await setMetadata({ title: metadata.title, author: metadata.author, cover })
+  readerAdapter = createEbookReaderAdapter({
+    format: currentFormat,
+    goTo: target => navigateEbookTo(target),
+    goToFraction: fraction => continuousEbook ? continuousEbook.goToFraction(fraction) : ebookView?.goToFraction(fraction),
+    goLeft: () => continuousEbook ? continuousEbook.scrollByPage(-1) : ebookView?.goLeft(),
+    goRight: () => continuousEbook ? continuousEbook.scrollByPage(1) : ebookView?.goRight(),
+    getLocation: () => continuousEbook?.currentLocation() || ebookView?.lastLocation || null,
+  })
   renderToc(ebookView.book.toc, item => navigateEbookTo(item.href).catch(error => showToast(error.message, 'error')))
 
   const rendered = await initializeEbookPosition(ebookView, currentRecord?.progress)
   if (!rendered) throw new Error('No readable EPUB section could be rendered')
   if (settings.flow === 'scrolled') await setEbookFlow('scrolled', ebookView.lastLocation || currentRecord?.progress)
   hideLoading()
+}
+
+function createEbookSearchIndex() {
+  const sections = ebookView.book.sections.flatMap((section, index) => {
+    if (!section?.createDocument) return []
+    let documentPromise = null
+    const loadDocument = () => {
+      documentPromise ||= Promise.resolve(section.createDocument())
+      return documentPromise
+    }
+    return [{
+      index,
+      label: displayValue(ebookView.getProgressOf(index)?.tocItem?.label) || `第 ${index + 1} 章`,
+      loadText: async () => {
+        const doc = await loadDocument()
+        await new Promise(resolve => setTimeout(resolve, 0))
+        return doc.body?.textContent || doc.documentElement?.textContent || ''
+      },
+      createLocator: async (offset, length) => {
+        const doc = await loadDocument()
+        const root = doc.body || doc.documentElement
+        const range = root ? rangeFromTextOffsets(root, offset, offset + length) : null
+        if (!range) throw new Error(`Unable to locate search result in section ${index}`)
+        return ebookView.getCFI(index, range)
+      },
+    }]
+  })
+  return new EbookSearchIndex(sections)
 }
 
 async function loadPdfOutline(pdf) {
@@ -912,7 +1417,8 @@ function goToPdfPage(pageNumber, smooth = true) {
   if (!pdfDocument) return
   currentPdfPage = Math.max(1, Math.min(pdfDocument.numPages, Math.round(pageNumber)))
   const page = elements.pdfPages.querySelector(`[data-page="${currentPdfPage}"]`)
-  page?.scrollIntoView({ block: 'start', behavior: smooth ? 'smooth' : 'auto' })
+  if (page && smooth) elements.pdfViewport.scrollTo({ top: page.offsetTop, behavior: 'smooth' })
+  else if (page) elements.pdfViewport.scrollTop = page.offsetTop
   elements.pdfPageInput.value = currentPdfPage
   renderPdfPage(currentPdfPage)
 }
@@ -939,6 +1445,11 @@ async function openPdf(file) {
     wasmUrl: `${baseUrl}wasm/`,
   })
   pdfDocument = await pdfLoadingTask.promise
+  readerAdapter = createPdfReaderAdapter({
+    goToPage: page => goToPdfPage(page),
+    getPage: () => currentPdfPage,
+    getPageCount: () => pdfDocument?.numPages || 1,
+  })
   elements.pdfPageInput.max = pdfDocument.numPages
   elements.pdfPageTotal.textContent = `/ ${pdfDocument.numPages}`
   const metadataResult = await pdfDocument.getMetadata().catch(() => null)
@@ -974,26 +1485,23 @@ async function openPdf(file) {
   requestAnimationFrame(() => goToPdfPage(restoredPage || 1))
 }
 
-function friendlyOpenError(error, format) {
-  console.error(error)
-  if (/password/i.test(error?.name || '') || /password/i.test(error?.message || '')) return '这本书受密码保护，暂时无法打开'
-  if (format === 'mobi' || format === 'azw3') return '无法解析这本 Kindle 书籍；它可能带有 DRM，或使用了暂不支持的压缩方式'
-  if (format === 'epub') return '无法解析 EPUB；文件可能损坏或带有 DRM'
-  if (format === 'pdf') return '无法解析 PDF；文件可能损坏或受保护'
-  return '无法打开这本书'
-}
-
 async function openBook(file, existingRecord = null) {
   const format = detectFormat(file.name, file.type)
-  if (!format) { showToast('请选择 PDF、EPUB、MOBI 或 AZW3 文件', 'error'); return }
   closeReader()
-  currentFormat = format
   showReader()
-  setLoading()
   elements.headerTitle.textContent = file.name
+  if (!format) {
+    showOpenError(describeOpenError(null, null))
+    return
+  }
+
+  currentFormat = format
+  setLoading()
   elements.sidebarFormat.textContent = format.toUpperCase()
+  let savedNewBook = false
   try {
-    currentRecord = existingRecord || await saveBook(file, format)
+    currentRecord = existingRecord || await bookRepository.save(file, format)
+    savedNewBook = !existingRecord && Boolean(currentRecord?.id)
     loadAnnotations()
   } catch (error) {
     console.warn('The book could not be persisted locally.', error)
@@ -1005,9 +1513,13 @@ async function openBook(file, existingRecord = null) {
     if (format === 'pdf') await openPdf(file)
     else await openEbook(file)
   } catch (error) {
-    hideLoading()
-    showToast(friendlyOpenError(error, format), 'error')
-    setTimeout(showLibrary, 2200)
+    console.error(error)
+    const description = describeOpenError(error, format)
+    if (savedNewBook && currentRecord?.id) {
+      await bookRepository.delete(currentRecord.id).catch(cleanupError => console.error('Failed to remove invalid book.', cleanupError))
+    }
+    closeReader()
+    showOpenError(description)
   }
 }
 
@@ -1016,14 +1528,14 @@ async function openStoredBook(record) {
   const file = record.blob instanceof File
     ? record.blob
     : new File([record.blob], record.name, { type: record.type, lastModified: record.lastModified })
-  await updateBook(record.id, { openedAt: Date.now() }).catch(console.error)
+  await bookRepository.update(record.id, { openedAt: Date.now() }).catch(console.error)
   await openBook(file, record)
 }
 
 async function renderLibrary() {
   libraryObjectUrls.forEach(URL.revokeObjectURL)
   libraryObjectUrls = []
-  const books = await listBooks().catch(() => [])
+  const books = await bookRepository.list().catch(() => [])
   elements.bookGrid.replaceChildren()
   elements.librarySection.hidden = books.length === 0
   for (const record of books) {
@@ -1061,7 +1573,7 @@ async function renderLibrary() {
     remove.textContent = '×'
     remove.addEventListener('click', async event => {
       event.stopPropagation()
-      await deleteBook(record.id)
+      await bookRepository.delete(record.id)
       card.remove()
       if (!elements.bookGrid.children.length) elements.librarySection.hidden = true
     })
@@ -1073,11 +1585,68 @@ async function renderLibrary() {
   }
 }
 
+function setBackupBusy(busy, message) {
+  elements.backupLibrary.disabled = busy
+  elements.restoreLibrary.disabled = busy
+  elements.backupStatus.textContent = message
+}
+
+async function exportLibraryBackup() {
+  setBackupBusy(true, '正在校验并打包本地书库…')
+  elements.backupStatus.dataset.state = 'working'
+  try {
+    await progressService.flush()
+    const records = await bookRepository.list()
+    const archive = await createLibraryBackup(records, settings)
+    const url = URL.createObjectURL(archive)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = backupFileName()
+    link.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+    const message = `备份完成：${records.length} 本书；API 密钥未写入备份`
+    setBackupBusy(false, message)
+    elements.backupStatus.dataset.state = 'exported'
+    showToast(message)
+  } catch (error) {
+    console.error(error)
+    setBackupBusy(false, '备份失败，原书库未被修改')
+    elements.backupStatus.dataset.state = 'error'
+    showToast('书库备份失败，请重试', 'error')
+  }
+}
+
+async function restoreLibraryBackup(file) {
+  setBackupBusy(true, '正在验证备份完整性…')
+  elements.backupStatus.dataset.state = 'working'
+  try {
+    const backup = await parseLibraryBackup(file)
+    const currentApiKey = settings.aiApiKey
+    await bookRepository.restore(backup.records)
+    settings = { ...settings, ...backup.settings, aiApiKey: currentApiKey }
+    applyReaderSettings()
+    await renderLibrary()
+    const message = `恢复完成：${backup.records.length} 本书；现有同名记录已更新`
+    setBackupBusy(false, message)
+    elements.backupStatus.dataset.state = 'restored'
+    showToast(message)
+  } catch (error) {
+    console.error(error)
+    setBackupBusy(false, '恢复失败，未写入未经验证的数据')
+    elements.backupStatus.dataset.state = 'error'
+    showToast('备份文件无效或已损坏', 'error')
+  } finally {
+    elements.backupFileInput.value = ''
+  }
+}
+
+function openBackupPicker() {
+  elements.backupFileInput.value = ''
+  elements.backupFileInput.click()
+}
+
 function navigate(direction) {
-  if (currentFormat === 'pdf') goToPdfPage(currentPdfPage + direction)
-  else if (continuousEbook) continuousEbook.scrollByPage(direction)
-  else if (direction < 0) ebookView?.goLeft()
-  else ebookView?.goRight()
+  readerAdapter?.navigate(direction)
 }
 
 function bindControls() {
@@ -1088,9 +1657,18 @@ function bindControls() {
     if (file) openBook(file)
   })
   elements.homeButton.addEventListener('click', showLibrary)
+  elements.loadingLibraryButton.addEventListener('click', showLibrary)
+  elements.loadingRetryButton.addEventListener('click', openPicker)
   elements.headerToggle.addEventListener('click', () => setHeaderCollapsed(!document.body.classList.contains('header-collapsed')))
   elements.sidebarButton.addEventListener('click', () => openPanel(elements.sidebar))
   elements.settingsButton.addEventListener('click', () => openPanel(elements.settingsPanel))
+  elements.backupLibrary.addEventListener('click', exportLibraryBackup)
+  elements.restoreLibrary.addEventListener('click', openBackupPicker)
+  elements.backupFileInput.addEventListener('change', event => {
+    const [file] = event.target.files
+    if (file) restoreLibraryBackup(file)
+  })
+
   elements.toolsButton.addEventListener('click', () => openPanel(elements.toolsPanel))
   elements.aiSettingsToggle.addEventListener('click', () => {
     elements.aiSettings.hidden = !elements.aiSettings.hidden
@@ -1104,6 +1682,30 @@ function bindControls() {
   elements.searchForm.addEventListener('submit', runSearch)
   elements.highlightSelection.addEventListener('click', () => annotateSelection(false))
   elements.noteSelection.addEventListener('click', () => annotateSelection(true))
+  elements.annotationFilterQuery.addEventListener('input', event => {
+    annotationFilterQuery = event.target.value
+    renderAnnotationList()
+  })
+  elements.annotationFilterType.addEventListener('change', event => {
+    annotationFilterType = event.target.value
+    renderAnnotationList()
+  })
+  elements.annotationSort.addEventListener('change', event => {
+    annotationSort = event.target.value
+    renderAnnotationList()
+  })
+  elements.annotationSelectAll.addEventListener('click', toggleSelectVisibleAnnotations)
+  elements.annotationDeleteSelected.addEventListener('click', deleteSelectedAnnotations)
+  elements.importAnnotationsJson.addEventListener('click', () => {
+    elements.annotationImportInput.value = ''
+    elements.annotationImportInput.click()
+  })
+  elements.annotationImportInput.addEventListener('change', event => {
+    const [file] = event.target.files
+    if (file) importAnnotationsFile(file)
+  })
+  elements.exportAnnotationsMarkdown.addEventListener('click', () => exportAnnotations('md'))
+  elements.exportAnnotationsJson.addEventListener('click', () => exportAnnotations('json'))
   elements.closeSettings.addEventListener('click', closePanels)
   elements.scrim.addEventListener('click', closePanels)
   elements.prevButton.addEventListener('click', () => navigate(-1))
@@ -1118,9 +1720,7 @@ function bindControls() {
   })
   elements.progressSlider.addEventListener('input', event => {
     const fraction = Number(event.target.value)
-    if (currentFormat === 'pdf') goToPdfPage(1 + fraction * (pdfDocument.numPages - 1))
-    else if (continuousEbook) continuousEbook.goToFraction(fraction)
-    else ebookView?.goToFraction(fraction)
+    readerAdapter?.goToFraction(fraction)
   })
 
   document.querySelectorAll('[data-flow]').forEach(button => button.addEventListener('click', async () => {
@@ -1149,9 +1749,9 @@ function bindControls() {
     window.addEventListener(eventName, event => { event.preventDefault(); elements.dropZone.classList.remove('dragging') })
   }
   window.addEventListener('drop', event => {
-    const file = [...event.dataTransfer.files].find(candidate => detectFormat(candidate.name, candidate.type))
+    const [file] = event.dataTransfer.files
     if (file) openBook(file)
-    else showToast('没有找到支持的书籍文件', 'error')
+    else showToast('没有找到可打开的文件', 'error')
   })
   window.addEventListener('keydown', event => {
     if (event.key === 'Escape') { closePanels(); elements.selectionAiMenu.hidden = true; return }

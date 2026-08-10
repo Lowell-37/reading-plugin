@@ -1,4 +1,4 @@
-import test from 'node:test'
+import { test } from 'vitest'
 import assert from 'node:assert/strict'
 import {
   buildAiMessages,
@@ -6,7 +6,7 @@ import {
   getAiPermissionOrigin,
   normalizeAiEndpoint,
   streamAiCompletion,
-} from '../src/ai.js'
+} from '../src/core/ai.ts'
 
 test('normalizes OpenAI-compatible base URLs', () => {
   assert.equal(normalizeAiEndpoint('https://example.com/v1/'), 'https://example.com/v1/chat/completions')
