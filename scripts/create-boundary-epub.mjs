@@ -6,7 +6,7 @@ const chapters = [
   emptyChapter('Blank chapter'),
   chapter('Image chapter', '<p>IMAGE-CHAPTER</p><img src="../image.svg" alt="Boundary illustration"/>'),
   chapter('Long chapter', Array.from({ length: 140 }, (_, index) =>
-    `<p>LONG-PARAGRAPH-${String(index + 1).padStart(3, '0')} — This paragraph makes the chapter tall enough to test stable scrolling inside one section.</p>`).join('')),
+    `<p><span>LONG-PARAGRAPH-${String(index + 1).padStart(3, '0')}.</span> This paragraph makes the chapter tall enough to test stable scrolling inside one section.</p>`).join('')),
   ...Array.from({ length: 10 }, (_, index) =>
     chapter(`Short chapter ${index + 5}`, `<p>SHORT-CHAPTER-${index + 5}</p><p>Next chapter content.</p>`)),
 ]

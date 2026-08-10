@@ -17,7 +17,7 @@
     "zip": "npm run sync:assets && wxt zip",
     "typecheck:vue": "vue-tsc --noEmit -p .wxt/tsconfig.json",
     "fetch:test-books": "node scripts/fetch-test-books.mjs",
-    "e2e:prepare": "npm run build:core && npm run fetch:test-books && node scripts/create-versioned-epub.mjs",
+    "e2e:prepare": "npm run build:core && npm run fetch:test-books && node scripts/create-boundary-epub.mjs && node scripts/create-versioned-epub.mjs",
     "test:e2e": "npm run e2e:prepare && playwright test"
   },
   "dependencies": {

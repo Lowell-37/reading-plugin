@@ -22,11 +22,13 @@ import { buildAiMessages, CHAPTER_AI_ACTIONS, getAiPermissionOrigin, SELECTION_A
 import { bookRepository } from './book-repository.js'
 import { ContinuousEbookScroller } from './continuous-ebook.js'
 import { initializeEbookPosition } from './ebook-navigation.js'
+import { EbookSearchIndex } from './ebook-search-index.js'
 import { detectFormat, displayValue, formatBytes } from './formats.js'
 import { backupFileName, createLibraryBackup, parseLibraryBackup } from './library-backup.js'
 import { describeOpenError } from './open-errors.js'
 import { ProgressService } from './progress-service.js'
 import { createEbookReaderAdapter, createPdfReaderAdapter } from './reader-adapter.js'
+import { createSearchContext } from './search-context.js'
 import { loadSettings, saveSettings } from './storage.js'
 import { normalizeAnchorText } from './text-anchor.js'
 import { createRangeAnchor, rangeFromTextOffsets, resolveRangeAnchor } from './text-range.js'
@@ -141,6 +143,7 @@ let currentRecord = null
 let currentFormat = null
 let ebookView = null
 let continuousEbook = null
+let ebookSearchIndex = null
 let pdfDocument = null
 let pdfLoadingTask = null
 let pdfObserver = null
@@ -156,7 +159,7 @@ let annotationFilterType = 'all'
 let annotationSort = 'newest'
 let annotationRepairSave = null
 const selectedAnnotationIds = new Set()
-let searchRun = 0
+let searchAbortController = null
 let aiAbortController = null
 let readerAdapter = null
 let coverObjectUrl = null
@@ -242,6 +245,10 @@ function closeReader() {
   closePanels()
   continuousEbook?.destroy()
   continuousEbook = null
+  searchAbortController?.abort()
+  searchAbortController = null
+  ebookSearchIndex?.clear()
+  ebookSearchIndex = null
   ebookView?.close?.()
   ebookView?.remove()
   ebookView = null
@@ -796,25 +803,33 @@ function addSearchResult({ label, text, onSelect }) {
   elements.searchResults.append(button)
 }
 
-async function searchEbook(query, run) {
-  let count = 0
-  for await (const result of ebookView.search({ query })) {
-    if (run !== searchRun) return
-    if (result === 'done') break
-    if (typeof result.progress === 'number') {
-      elements.searchStatus.textContent = `正在搜索 ${Math.round(result.progress * 100)}%…`
-      continue
-    }
-    for (const item of result.subitems || []) {
-      count += 1
-      if (count <= 300) addSearchResult({
-        label: displayValue(result.label) || `结果 ${count}`,
-        text: item.excerpt || query,
-        onSelect: () => navigateEbookTo(item.cfi),
-      })
-    }
-  }
-  elements.searchStatus.textContent = count ? `找到 ${count} 处结果${count > 300 ? '（显示前 300 条）' : ''}` : '没有找到匹配内容'
+function renderEbookSearchSnapshot(snapshot) {
+  elements.searchResults.replaceChildren()
+  for (const result of snapshot.results.slice(0, 300)) addSearchResult({
+    label: result.label,
+    text: result.context.text,
+    onSelect: () => navigateEbookTo(result.locator),
+  })
+  const count = snapshot.results.length
+  elements.searchStatus.textContent = count ? `正在搜索，已找到 ${count} 处…` : '正在搜索…'
+}
+
+async function searchEbook(query, signal) {
+  if (!ebookSearchIndex) throw new Error('Ebook search index is unavailable')
+  const currentSectionIndex = continuousEbook?.currentLocation()?.index
+    ?? ebookView?.lastLocation?.section?.current
+    ?? 0
+  const outcome = await ebookSearchIndex.search(query, {
+    signal,
+    batchSize: 1,
+    currentSectionIndex,
+    onBatch: renderEbookSearchSnapshot,
+  })
+  renderEbookSearchSnapshot(outcome)
+  const count = outcome.results.length
+  elements.searchStatus.textContent = count
+    ? `找到 ${count} 处结果${count > 300 ? '（显示前 300 条）' : ''}${outcome.errors.length ? `，${outcome.errors.length} 章未能搜索` : ''}`
+    : outcome.errors.length ? '没有找到匹配内容，部分章节未能搜索' : '没有找到匹配内容'
 }
 
 async function getPdfPageText(pageNumber) {
@@ -827,23 +842,27 @@ async function getPdfPageText(pageNumber) {
   return value
 }
 
-async function searchPdf(query, run) {
+async function searchPdf(query, signal) {
   pdfSearchQuery = query
   let count = 0
   for (let page = 1; page <= pdfDocument.numPages; page += 1) {
-    if (run !== searchRun) return
+    signal.throwIfAborted()
+    const wasCached = pdfTextCache.has(page)
     const { text } = await getPdfPageText(page)
+    signal.throwIfAborted()
     const matches = findTextMatches(text, query)
     for (const index of matches.slice(0, 30)) {
       count += 1
       if (count <= 300) addSearchResult({
         label: `第 ${page} 页`,
-        text: excerpt(text.slice(Math.max(0, index - 60)), query, 58),
+        text: createSearchContext(text, index, query.length).text,
         onSelect: () => goToPdfPage(page),
       })
     }
     elements.searchStatus.textContent = `正在搜索 ${Math.round(page / pdfDocument.numPages * 100)}%…`
+    if (!wasCached) await new Promise(resolve => setTimeout(resolve, 0))
   }
+  signal.throwIfAborted()
   elements.searchStatus.textContent = count ? `找到 ${count} 处结果${count > 300 ? '（显示前 300 条）' : ''}` : '没有找到匹配内容'
   elements.pdfPages.querySelectorAll('.textLayer').forEach(markPdfSearchMatches)
 }
@@ -851,8 +870,8 @@ async function searchPdf(query, run) {
 async function runSearch(event) {
   event?.preventDefault()
   const query = elements.searchInput.value.trim()
-  searchRun += 1
-  const run = searchRun
+  searchAbortController?.abort()
+  searchAbortController = null
   elements.searchResults.replaceChildren()
   if (!query) {
     ebookView?.clearSearch?.()
@@ -861,13 +880,19 @@ async function runSearch(event) {
     elements.pdfPages.querySelectorAll('.pdf-search-match').forEach(node => node.classList.remove('pdf-search-match'))
     return
   }
+  const controller = new AbortController()
+  searchAbortController = controller
   elements.searchStatus.textContent = '正在搜索…'
   try {
-    if (currentFormat === 'pdf') await searchPdf(query, run)
-    else await searchEbook(query, run)
+    if (currentFormat === 'pdf') await searchPdf(query, controller.signal)
+    else await searchEbook(query, controller.signal)
   } catch (error) {
-    console.error(error)
-    if (run === searchRun) elements.searchStatus.textContent = '搜索失败，请换一个关键词重试'
+    if (error?.name !== 'AbortError') {
+      console.error(error)
+      if (searchAbortController === controller) elements.searchStatus.textContent = '搜索失败，请换一个关键词重试'
+    }
+  } finally {
+    if (searchAbortController === controller) searchAbortController = null
   }
 }
 
@@ -1240,6 +1265,7 @@ async function openEbook(file) {
   })
 
   await ebookView.open(file)
+  ebookSearchIndex = createEbookSearchIndex()
   applyReaderSettings()
   const metadata = ebookView.book.metadata || {}
   const cover = await Promise.resolve(ebookView.book.getCover?.()).catch(() => null)
@@ -1258,6 +1284,34 @@ async function openEbook(file) {
   if (!rendered) throw new Error('No readable EPUB section could be rendered')
   if (settings.flow === 'scrolled') await setEbookFlow('scrolled', ebookView.lastLocation || currentRecord?.progress)
   hideLoading()
+}
+
+function createEbookSearchIndex() {
+  const sections = ebookView.book.sections.flatMap((section, index) => {
+    if (!section?.createDocument) return []
+    let documentPromise = null
+    const loadDocument = () => {
+      documentPromise ||= Promise.resolve(section.createDocument())
+      return documentPromise
+    }
+    return [{
+      index,
+      label: displayValue(ebookView.getProgressOf(index)?.tocItem?.label) || `第 ${index + 1} 章`,
+      loadText: async () => {
+        const doc = await loadDocument()
+        await new Promise(resolve => setTimeout(resolve, 0))
+        return doc.body?.textContent || doc.documentElement?.textContent || ''
+      },
+      createLocator: async (offset, length) => {
+        const doc = await loadDocument()
+        const root = doc.body || doc.documentElement
+        const range = root ? rangeFromTextOffsets(root, offset, offset + length) : null
+        if (!range) throw new Error(`Unable to locate search result in section ${index}`)
+        return ebookView.getCFI(index, range)
+      },
+    }]
+  })
+  return new EbookSearchIndex(sections)
 }
 
 async function loadPdfOutline(pdf) {
