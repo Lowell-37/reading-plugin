@@ -130,3 +130,71 @@ test('finds every case-insensitive occurrence with original offsets and sentence
     { offset: 33, length: 6, excerpt: 'NEEDLE last!' },
   ])
 })
+
+test('yields during a match-heavy section so a scheduled abort stops locator work', async () => {
+  const controller = new AbortController()
+  let locatorCalls = 0
+  const index = new EbookSearchIndex([{
+    index: 0,
+    label: 'Dense chapter',
+    loadText: async () => Array.from({ length: 500 }, () => 'needle.').join(' '),
+    createLocator: (offset, length) => {
+      locatorCalls += 1
+      return `section:0:${offset}:${length}`
+    },
+  }])
+  const pending = index.search('needle', {
+    signal: controller.signal,
+    batchSize: 10,
+    onBatch: () => setTimeout(() => controller.abort(), 0),
+  })
+
+  await assert.rejects(pending, error => error?.name === 'AbortError')
+  assert.ok(locatorCalls < 500)
+})
+
+test('uses original offsets when case folding expands a character', async () => {
+  const index = new EbookSearchIndex([section(0, 'İNeedle ends here.')])
+  const outcome = await index.search('needle')
+  assert.equal(outcome.results[0].offset, 1)
+  assert.equal(outcome.results[0].locator, 'section:0:1:6')
+})
+
+test('yields while scanning many cached sparse sections so a timer can abort', async () => {
+  let locatorCalls = 0
+  const sections = Array.from({ length: 200 }, (_, index) => ({
+    index,
+    label: `Chapter ${index + 1}`,
+    loadText: async () => 'one needle.',
+    createLocator: () => {
+      locatorCalls += 1
+      return `section:${index}`
+    },
+  }))
+  const index = new EbookSearchIndex(sections)
+  await index.search('not-present')
+  const controller = new AbortController()
+  const pending = index.search('needle', { signal: controller.signal, batchSize: 1000 })
+  setTimeout(() => controller.abort(), 0)
+
+  await assert.rejects(pending, error => error?.name === 'AbortError')
+  assert.ok(locatorCalls < sections.length)
+}, 10_000)
+
+test('counts all matches without creating locators beyond maxResults', async () => {
+  let locatorCalls = 0
+  const index = new EbookSearchIndex([{
+    index: 0,
+    label: 'Dense chapter',
+    loadText: async () => 'needle needle needle needle',
+    createLocator: (offset, length) => {
+      locatorCalls += 1
+      return `section:0:${offset}:${length}`
+    },
+  }])
+
+  const outcome = await index.search('needle', { maxResults: 2 })
+  assert.equal(outcome.total, 4)
+  assert.equal(outcome.results.length, 2)
+  assert.equal(locatorCalls, 2)
+})

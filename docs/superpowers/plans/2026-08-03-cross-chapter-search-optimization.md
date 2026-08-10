@@ -12,10 +12,10 @@
 
 **Files:** create `src/core/search-context.ts`, `src/search-context.js`, generated runtime; test `tests/search-context.test.js`; modify `package.json`.
 
-- [ ] Write RED tests for English and Chinese sentence boundaries, whitespace collapse, match at boundaries, and 60-character fallback.
-- [ ] Implement `createSearchContext(source, start, length, radius?)` returning excerpt plus mapped start/end offsets.
-- [ ] Run focused tests, `npm run check`, and `npm test`.
-- [ ] Commit/push `feat: add sentence-aware search context`.
+- [x] Write RED tests for English and Chinese sentence boundaries, whitespace collapse, match at boundaries, and 60-character fallback.
+- [x] Implement `createSearchContext(source, start, length, radius?)` returning excerpt plus mapped start/end offsets.
+- [x] Run focused tests, `npm run check`, and `npm test`.
+- [x] Commit/push `feat: add sentence-aware search context`.
 
 ### Task 2: Session-scoped ebook index
 
@@ -23,25 +23,25 @@
 
 **Interface:** constructor accepts ordered sections `{ index, label, loadText, createLocator }`; `search(query,{signal,batchSize,onBatch})`; `clear()`.
 
-- [ ] Write RED tests: each section loads once across queries; cached/current sections return first; batches preserve reading order; a new AbortController prevents any later old-result batches; section load error is reported and scanning continues.
-- [ ] Cache Promises to deduplicate concurrent section loads; never write cache to IndexedDB.
-- [ ] Build results with section, original offset/length, sentence context, and lazily generated locator.
-- [ ] Run focused/full unit gates; commit/push `feat: cache cancellable ebook search`.
+- [x] Write RED tests: each section loads once across queries; cached/current sections return first; batches preserve reading order; a new AbortController prevents any later old-result batches; section load error is reported and scanning continues.
+- [x] Cache Promises to deduplicate concurrent section loads; never write cache to IndexedDB.
+- [x] Build results with section, original offset/length, sentence context, and lazily generated locator.
+- [x] Run focused/full unit gates; commit/push `feat: cache cancellable ebook search`.
 
 ### Task 3: Reader integration and PDF parity
 
 **Files:** modify `src/reader.js`; test `tests/e2e/search-index.spec.ts`; extend controlled long-book fixture generator.
 
-- [ ] Write RED Edge scenario with repeated searches: first query scans multiple sections, second query reuses cache, rapidly submitted new query cancels old UI updates, result excerpt contains a complete sentence, result click navigates to the correct section.
-- [ ] Create/destroy one `EbookSearchIndex` with the current ebook; replace `ebookView.search()` loop with batched index results and an AbortController.
-- [ ] Prioritize current/cached sections without changing final stable reading-order result list.
-- [ ] Reuse `createSearchContext` and AbortController in PDF search; retain current per-page text cache.
-- [ ] Keep UI responsive by yielding between uncached sections and cap DOM results at 300.
-- [ ] Run search E2E plus EPUB/MOBI/AZW3/PDF regression.
+- [x] Write RED Edge scenario with repeated searches: first query scans multiple sections, second query reuses cache, rapidly submitted new query cancels old UI updates, result excerpt contains a complete sentence, result click navigates to the correct section.
+- [x] Create/destroy one `EbookSearchIndex` with the current ebook; replace `ebookView.search()` loop with batched index results and an AbortController.
+- [x] Prioritize current/cached sections without changing final stable reading-order result list.
+- [x] Reuse `createSearchContext` and AbortController in PDF search; retain current per-page text cache.
+- [x] Keep UI responsive by yielding between uncached sections and cap DOM results at 300.
+- [x] Run search E2E plus EPUB/MOBI/AZW3/PDF regression.
 
 ### Task 4: Verification and release
 
-- [ ] Run `git diff --check`, `npm run check`, `npm test`, `npm run test:e2e`.
-- [ ] Update README and ROADMAP with exact counts and mark stage 3 complete if acceptance passes.
-- [ ] Request independent review and address verified Critical/Important findings.
-- [ ] Commit/push `feat: optimize cross-chapter search` and verify local/remote hashes.
+- [x] Run `git diff --check`, `npm run check`, `npm test`, `npm run test:e2e`.
+- [x] Update README and ROADMAP with exact counts and mark stage 3 complete if acceptance passes.
+- [x] Request independent review and address verified Critical/Important findings.
+- [x] Commit/push `feat: optimize cross-chapter search` and verify local/remote hashes.

@@ -6,7 +6,9 @@ export function createSearchContext(sourceValue, matchStartValue, matchLengthVal
     const matchLength = Math.max(0, Number(matchLengthValue) || 0);
     const matchEnd = Math.min(source.length, matchStart + matchLength);
     const previousBoundary = findPreviousBoundary(source, matchStart);
-    const nextBoundary = findNextBoundary(source, matchEnd);
+    const nextBoundary = matchEnd > matchStart && SENTENCE_BOUNDARY.test(source[matchEnd - 1])
+        ? matchEnd - 1
+        : findNextBoundary(source, matchEnd);
     let start = previousBoundary >= 0 ? previousBoundary + 1 : Math.max(0, matchStart - radius);
     let end = nextBoundary >= 0 ? nextBoundary + 1 : Math.min(source.length, matchEnd + radius);
     while (start < matchStart && /\s/u.test(source[start]))
@@ -22,6 +24,64 @@ export function createSearchContext(sourceValue, matchStartValue, matchLengthVal
         matchStart: normalizedIndexAtOrAfter(normalized.offsets, matchStart - start),
         matchEnd: normalizedIndexAtOrAfter(normalized.offsets, matchEnd - start),
     };
+}
+export function findSearchMatches(sourceValue, queryValue) {
+    return [...iterateSearchMatches(sourceValue, queryValue)];
+}
+export function* iterateSearchMatches(sourceValue, queryValue) {
+    const source = String(sourceValue ?? '');
+    const query = String(queryValue ?? '');
+    const foldedQuery = foldCase(query).text;
+    if (!foldedQuery)
+        return;
+    const foldedSource = foldCase(source);
+    let fromIndex = 0;
+    while (fromIndex <= foldedSource.text.length - foldedQuery.length) {
+        const foldedStart = foldedSource.text.indexOf(foldedQuery, fromIndex);
+        if (foldedStart < 0)
+            break;
+        const foldedEnd = foldedStart + foldedQuery.length;
+        yield {
+            start: foldedSource.starts[foldedStart] ?? source.length,
+            end: foldedSource.ends[foldedEnd - 1] ?? source.length,
+        };
+        fromIndex = foldedEnd;
+    }
+}
+function foldCase(source) {
+    const text = source.toLowerCase();
+    let sourceOffset = 0;
+    const starts = [];
+    const ends = [];
+    for (const character of source) {
+        const folded = character.toLowerCase();
+        const sourceEnd = sourceOffset + character.length;
+        for (let index = 0; index < folded.length; index += 1) {
+            starts.push(sourceOffset);
+            ends.push(sourceEnd);
+        }
+        sourceOffset = sourceEnd;
+    }
+    if (starts.length !== text.length)
+        return foldCaseByPrefixes(source, text);
+    return { text, starts, ends };
+}
+function foldCaseByPrefixes(source, text) {
+    const starts = [];
+    const ends = [];
+    let sourceOffset = 0;
+    let foldedOffset = 0;
+    for (const character of source) {
+        const sourceEnd = sourceOffset + character.length;
+        const foldedEnd = source.slice(0, sourceEnd).toLowerCase().length;
+        while (foldedOffset < foldedEnd) {
+            starts.push(sourceOffset);
+            ends.push(sourceEnd);
+            foldedOffset += 1;
+        }
+        sourceOffset = sourceEnd;
+    }
+    return { text, starts, ends };
 }
 function findPreviousBoundary(source, before) {
     for (let index = before - 1; index >= 0; index -= 1) {

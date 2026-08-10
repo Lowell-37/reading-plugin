@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
-import { createSearchContext } from '../src/core/search-context.ts'
+import { createSearchContext, findSearchMatches } from '../src/core/search-context.ts'
 
 test('returns the complete English sentence containing the match', () => {
   const source = 'First sentence. The silver compass points north! Final sentence.'
@@ -36,4 +36,22 @@ test('falls back to a bounded window when there is no sentence boundary', () => 
   assert.equal(result.text, 'abcdefghijABC')
   assert.ok(result.start >= start - 5)
   assert.ok(result.end <= start + 3 + 5)
+})
+
+test('maps case-folded matches back to original UTF-16 offsets', () => {
+  const source = 'İNeedle follows the expanding capital.'
+  assert.deepEqual(findSearchMatches(source, 'needle'), [{ start: 1, end: 7 }])
+})
+
+test('maps a match inside an expanding case-folded character to the whole original character', () => {
+  assert.deepEqual(findSearchMatches('İstanbul', 'i'), [{ start: 0, end: 1 }])
+})
+
+test('uses whole-string casing context for Greek final sigma', () => {
+  assert.deepEqual(findSearchMatches('ΟΣ', 'ος'), [{ start: 0, end: 2 }])
+})
+
+test('stops context at punctuation included in the match', () => {
+  const source = 'One sentence. Next sentence.'
+  assert.equal(createSearchContext(source, 0, 'One sentence.'.length).text, 'One sentence.')
 })

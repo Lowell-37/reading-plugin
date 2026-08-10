@@ -5,7 +5,6 @@ import {
   createAnnotation,
   excerpt,
   filterAnnotations,
-  findTextMatches,
   normalizeAnnotations,
   sortAnnotations,
   updateAnnotation,
@@ -27,8 +26,9 @@ import { detectFormat, displayValue, formatBytes } from './formats.js'
 import { backupFileName, createLibraryBackup, parseLibraryBackup } from './library-backup.js'
 import { describeOpenError } from './open-errors.js'
 import { ProgressService } from './progress-service.js'
+import { PromiseCache } from './promise-cache.js'
 import { createEbookReaderAdapter, createPdfReaderAdapter } from './reader-adapter.js'
-import { createSearchContext } from './search-context.js'
+import { createSearchContext, findSearchMatches } from './search-context.js'
 import { loadSettings, saveSettings } from './storage.js'
 import { normalizeAnchorText } from './text-anchor.js'
 import { createRangeAnchor, rangeFromTextOffsets, resolveRangeAnchor } from './text-range.js'
@@ -151,7 +151,7 @@ let pdfScrollFrame = null
 let currentPdfPage = 1
 let pdfZoom = 1
 let pdfSearchQuery = ''
-let pdfTextCache = new Map()
+let pdfTextCache = new PromiseCache()
 let pendingSelection = null
 let annotations = []
 let annotationFilterQuery = ''
@@ -810,7 +810,7 @@ function renderEbookSearchSnapshot(snapshot) {
     text: result.context.text,
     onSelect: () => navigateEbookTo(result.locator),
   })
-  const count = snapshot.results.length
+  const count = snapshot.total
   elements.searchStatus.textContent = count ? `正在搜索，已找到 ${count} 处…` : '正在搜索…'
 }
 
@@ -821,42 +821,45 @@ async function searchEbook(query, signal) {
     ?? 0
   const outcome = await ebookSearchIndex.search(query, {
     signal,
-    batchSize: 1,
+    batchSize: 20,
+    maxResults: 300,
     currentSectionIndex,
     onBatch: renderEbookSearchSnapshot,
   })
   renderEbookSearchSnapshot(outcome)
-  const count = outcome.results.length
+  const count = outcome.total
   elements.searchStatus.textContent = count
     ? `找到 ${count} 处结果${count > 300 ? '（显示前 300 条）' : ''}${outcome.errors.length ? `，${outcome.errors.length} 章未能搜索` : ''}`
     : outcome.errors.length ? '没有找到匹配内容，部分章节未能搜索' : '没有找到匹配内容'
 }
 
 async function getPdfPageText(pageNumber) {
-  if (pdfTextCache.has(pageNumber)) return pdfTextCache.get(pageNumber)
-  const page = await pdfDocument.getPage(pageNumber)
-  const content = await page.getTextContent()
-  const text = content.items.map(item => item.str || '').join(' ')
-  const value = { text, content }
-  pdfTextCache.set(pageNumber, value)
-  return value
+  return pdfTextCache.get(pageNumber, async () => {
+    const page = await pdfDocument.getPage(pageNumber)
+    const content = await page.getTextContent()
+    const text = content.items.map(item => item.str || '').join(' ')
+    return { text, content }
+  })
 }
 
 async function searchPdf(query, signal) {
   pdfSearchQuery = query
   let count = 0
+  let renderedCount = 0
   for (let page = 1; page <= pdfDocument.numPages; page += 1) {
     signal.throwIfAborted()
     const wasCached = pdfTextCache.has(page)
     const { text } = await getPdfPageText(page)
     signal.throwIfAborted()
-    const matches = findTextMatches(text, query)
-    for (const index of matches.slice(0, 30)) {
-      count += 1
-      if (count <= 300) addSearchResult({
+    const matches = findSearchMatches(text, query)
+    count += matches.length
+    for (const match of matches) {
+      if (renderedCount >= 300) break
+      renderedCount += 1
+      addSearchResult({
         label: `第 ${page} 页`,
-        text: createSearchContext(text, index, query.length).text,
-        onSelect: () => goToPdfPage(page),
+        text: createSearchContext(text, match.start, match.end - match.start).text,
+        onSelect: () => goToPdfPage(page, false),
       })
     }
     elements.searchStatus.textContent = `正在搜索 ${Math.round(page / pdfDocument.numPages * 100)}%…`
@@ -1414,7 +1417,8 @@ function goToPdfPage(pageNumber, smooth = true) {
   if (!pdfDocument) return
   currentPdfPage = Math.max(1, Math.min(pdfDocument.numPages, Math.round(pageNumber)))
   const page = elements.pdfPages.querySelector(`[data-page="${currentPdfPage}"]`)
-  page?.scrollIntoView({ block: 'start', behavior: smooth ? 'smooth' : 'auto' })
+  if (page && smooth) elements.pdfViewport.scrollTo({ top: page.offsetTop, behavior: 'smooth' })
+  else if (page) elements.pdfViewport.scrollTop = page.offsetTop
   elements.pdfPageInput.value = currentPdfPage
   renderPdfPage(currentPdfPage)
 }

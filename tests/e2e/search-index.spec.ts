@@ -52,13 +52,30 @@ test('cancels stale PDF search and navigates from complete sentence context', as
     await expect(page.locator('#search-status')).toHaveText(/找到 \d+ 处结果/)
 
     const results = page.locator('#search-results .search-result')
+    await expect(results.first().locator('strong')).toHaveText('第 2 页')
     await expect(results.first().locator('span')).toHaveText(
       'TraceMonkey supports all the JavaScript features of Spi- derMonkey, with a 2x-20x speedup for traceable programs.',
     )
     expect(await results.locator('span').allTextContents()).not.toContain('Dynamic languages')
 
-    await results.first().evaluate((button: HTMLElement) => button.click())
+    const immediateNavigation = await results.first().evaluate((button: HTMLElement) => {
+      const input = document.querySelector<HTMLInputElement>('#pdf-page-input')!
+      const viewport = document.querySelector<HTMLElement>('#pdf-viewport')!
+      const target = document.querySelector<HTMLElement>('.pdf-page[data-page="2"]')!
+      const before = { input: input.value, scrollTop: viewport.scrollTop }
+      button.click()
+      return {
+        before,
+        after: { input: input.value, scrollTop: viewport.scrollTop },
+        target: { offsetTop: target.offsetTop, state: target.dataset.state },
+      }
+    })
+    expect(immediateNavigation.after.scrollTop).toBe(immediateNavigation.target.offsetTop)
     await expect(page.locator('#pdf-page-input')).toHaveValue('2')
+
+    await submitSearch(page, 'the')
+    await expect(page.locator('#search-status')).toHaveText('找到 985 处结果（显示前 300 条）')
+    await expect(page.locator('#search-results .search-result')).toHaveCount(300)
   } finally {
     await context.close()
   }
