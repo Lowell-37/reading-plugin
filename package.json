@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "postinstall": "node scripts/patch-foliate.mjs && wxt prepare",
-    "check": "npm run build:core && npm run typecheck && npm run typecheck:vue && node --check src/background.js && node --check src/reader.js && node --check src/annotation-export.js && node --check src/annotation-import.js && node --check src/text-anchor.js && node --check src/anchor-recovery.js && node --check src/search-context.js && node --check src/ebook-search-index.js && node --check src/promise-cache.js && node --check src/text-range.js && node --check src/open-errors.js && node --check src/storage-schema.js && node --check src/storage.js && node --check src/library-backup.js && node --check src/book-repository.js && node --check src/progress-service.js && node --check src/reader-adapter.js && node --check src/continuous-layout.js && node --check src/continuous-ebook.js && node --check scripts/create-boundary-epub.mjs && node --check scripts/create-compatibility-epub.mjs && node --check scripts/create-versioned-epub.mjs && node --check scripts/patch-foliate.mjs",
+    "check": "npm run build:core && npm run typecheck && npm run typecheck:vue && node --check src/background.js && node --check src/reader.js && node --check src/annotation-export.js && node --check src/annotation-import.js && node --check src/text-anchor.js && node --check src/anchor-recovery.js && node --check src/search-context.js && node --check src/ebook-search-index.js && node --check src/promise-cache.js && node --check src/text-range.js && node --check src/open-errors.js && node --check src/storage-schema.js && node --check src/storage.js && node --check src/library-backup.js && node --check src/book-repository.js && node --check src/progress-service.js && node --check src/reader-adapter.js && node --check src/continuous-layout.js && node --check src/continuous-ebook.js && node --check scripts/create-boundary-epub.mjs && node --check scripts/create-compatibility-epub.mjs && node --check scripts/create-large-epub.mjs && node --check scripts/create-versioned-epub.mjs && node --check scripts/patch-foliate.mjs",
     "test": "vitest run",
     "build:core": "tsc -p tsconfig.runtime.json",
     "typecheck": "tsc -p tsconfig.json",
@@ -17,7 +17,7 @@
     "zip": "npm run sync:assets && wxt zip",
     "typecheck:vue": "vue-tsc --noEmit -p .wxt/tsconfig.json",
     "fetch:test-books": "node scripts/fetch-test-books.mjs",
-    "e2e:prepare": "npm run build:core && npm run fetch:test-books && node scripts/create-boundary-epub.mjs && node scripts/create-versioned-epub.mjs",
+    "e2e:prepare": "npm run build:core && npm run fetch:test-books && node scripts/create-boundary-epub.mjs && node scripts/create-large-epub.mjs && node scripts/create-versioned-epub.mjs",
     "test:e2e": "npm run e2e:prepare && playwright test"
   },
   "dependencies": {

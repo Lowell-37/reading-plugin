@@ -55,7 +55,15 @@ export class ContinuousEbookScroller extends EventTarget {
       this.#scrollFrame = requestAnimationFrame(() => {
         this.#scrollFrame = null
         const location = this.#emitRelocate()
-        this.#prune(location?.index)
+        const activeIndex = location?.index
+        if (activeIndex != null) {
+          Promise.all([
+            this.#load(activeIndex),
+            this.#load(this.#adjacent(activeIndex, -1)),
+            this.#load(this.#adjacent(activeIndex, 1)),
+          ]).catch(error => console.error('Unable to load the active continuous chapter.', error))
+        }
+        this.#prune(activeIndex)
       })
     }, { passive: true })
   }
