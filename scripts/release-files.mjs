@@ -1,6 +1,7 @@
 export const releaseFiles = [
   'manifest.json',
   'reader.html',
+  'assets',
   'styles',
   'src',
   'node_modules/foliate-js',

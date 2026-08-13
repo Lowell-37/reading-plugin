@@ -6,6 +6,7 @@ describe('releaseFiles', () => {
     expect(releaseFiles).toEqual([
       'manifest.json',
       'reader.html',
+      'assets',
       'styles',
       'src',
       'node_modules/foliate-js',
