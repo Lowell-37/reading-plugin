@@ -1,11 +1,11 @@
 <template>
-  <aside id="tools-panel" class="tools-panel" aria-label="搜索、AI与批注">
-    <div class="panel-header"><div><p class="eyebrow">TOOLS</p><h2>搜索、AI与批注</h2></div><button id="close-tools" class="icon-button" aria-label="关闭工具">×</button></div>
+  <aside id="tools-panel" class="tools-panel" aria-label="搜索与批注">
+    <div class="panel-header"><div><p class="eyebrow">TOOLS</p><h2>搜索与批注</h2></div><button id="close-tools" class="icon-button" aria-label="关闭工具">×</button></div>
     <form id="search-form" class="search-form"><input id="search-input" type="search" placeholder="搜索书中内容" autocomplete="off"><button type="submit">搜索</button></form>
     <div id="search-status" class="search-status">输入关键词搜索整本书</div>
     <div id="search-results" class="search-results" />
     <div class="tool-divider" />
-    <section class="ai-section" aria-labelledby="ai-heading">
+    <section class="ai-section" aria-labelledby="ai-heading" hidden>
       <div class="annotation-heading"><strong id="ai-heading">AI 阅读助手</strong><button id="ai-settings-toggle" class="text-button" type="button">接口设置</button></div>
       <p id="ai-selection-preview" class="selection-hint">选中文字后，可以解释、翻译或补充背景。</p>
       <div class="ai-actions" aria-label="划词 AI">

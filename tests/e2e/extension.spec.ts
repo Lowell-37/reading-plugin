@@ -13,7 +13,7 @@ for (const format of ['epub', 'mobi', 'azw3'] as const) {
       await openBook(page, `alice.${format}`)
       await expect(page.locator('#sidebar-title')).toContainText(/Alice/i)
       await expect.poll(async () => page.locator('#toc button').count()).toBeGreaterThan(2)
-      await expect(page.locator('[data-ai-scope="chapter"][data-ai-action="summary"]').first()).toBeVisible()
+      await expect(page.locator('[data-ai-scope="chapter"][data-ai-action="summary"]').first()).toBeHidden()
 
       await clickDom(page, '#toc button', 2)
       await expect.poll(() => progress(page)).toBeGreaterThan(0)

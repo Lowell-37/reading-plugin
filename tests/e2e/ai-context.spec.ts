@@ -1,7 +1,7 @@
 import { test, expect, chromium, type Frame } from '@playwright/test'
 import { resolve } from 'node:path'
 
-test('real EPUB exposes chapter text and selection to the AI controls', async () => {
+test('real EPUB keeps AI controls disabled after text selection', async () => {
   const extensionPath = resolve('.')
   const context = await chromium.launchPersistentContext('', {
     executablePath: 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
@@ -37,8 +37,8 @@ test('real EPUB exposes chapter text and selection to the AI controls', async ()
       selection?.addRange(range)
       document.dispatchEvent(new Event('selectionchange'))
     })
-    await expect(page.locator('#ai-selection-preview')).not.toHaveText('选中文字后，可以解释、翻译或补充背景。')
-    await expect(page.locator('#selection-ai-menu')).toBeVisible()
+    await expect(page.locator('#ai-selection-preview')).toHaveText('选中文字后，可以解释、翻译或补充背景。')
+    await expect(page.locator('#selection-ai-menu')).toBeHidden()
   } finally {
     await context.close()
   }

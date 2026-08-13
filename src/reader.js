@@ -138,6 +138,10 @@ const workerUrl = globalThis.chrome?.runtime?.getURL
   : new URL('../node_modules/pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).href
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
 
+// Keep the AI implementation and local settings intact while the product UI is paused.
+// Set this to true to restore the existing AI controls without reconstructing state.
+const AI_FEATURE_ENABLED = false
+
 let settings = loadSettings()
 let currentRecord = null
 let currentFormat = null
@@ -909,6 +913,10 @@ function markPdfSearchMatches(textLayer) {
 }
 
 function updateAiSelectionUi() {
+  if (!AI_FEATURE_ENABLED) {
+    elements.selectionAiMenu.hidden = true
+    return
+  }
   const valid = pendingSelection && pendingSelection.kind === (currentFormat === 'pdf' ? 'pdf' : 'ebook')
   elements.selectionAiMenu.hidden = !valid
   elements.aiSelectionPreview.textContent = valid
@@ -967,6 +975,7 @@ async function getCurrentChapterContext() {
 }
 
 async function runAiAction(scope, action) {
+  if (!AI_FEATURE_ENABLED) return
   const selectionContext = scope === 'selection' ? pendingSelection?.text : ''
   if (scope === 'selection' && !selectionContext) {
     showToast('请先在正文中选中一段文字')

@@ -263,6 +263,7 @@ html[data-theme="dark"] .pdf-annotation-layer span { mix-blend-mode:screen; back
 @media (max-width:700px) { .pdf-toolbar { right:8px; bottom:57px; } .footer-status { grid-column:2; } .pdf-page-jump { display:none; } }
 /* AI reading assistant */
 .ai-section { display:flex; flex-direction:column; gap:10px; }
+.ai-section[hidden] { display:none; }
 .text-button { border:0; padding:3px 0; background:transparent; color:var(--accent); cursor:pointer; font-size:10px; }
 .ai-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; }
 .ai-actions button { min-height:34px; border:1px solid var(--line); border-radius:9px; padding:7px 9px; background:var(--surface); color:var(--text); cursor:pointer; font-size:10px; }

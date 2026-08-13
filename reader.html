@@ -29,7 +29,7 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v12m-5-5 5 5 5-5M5 20h14"/></svg>
         打开书籍
       </button>
-      <button class="icon-button header-icon-button reader-only" id="tools-button" aria-label="搜索、AI与批注" title="搜索、AI与批注">
+      <button class="icon-button header-icon-button reader-only" id="tools-button" aria-label="搜索与批注" title="搜索与批注">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
       </button>
       <button class="icon-button header-icon-button reader-only" id="settings-button" aria-label="阅读设置" title="阅读设置">
@@ -115,13 +115,13 @@
     <div class="setting-group"><label>页面主题</label><div class="theme-options"><button data-theme="paper" title="纸张" class="paper active"></button><button data-theme="light" title="明亮" class="light"></button><button data-theme="sepia" title="暖黄" class="sepia"></button><button data-theme="dark" title="深色" class="dark"></button></div></div>
     <p class="panel-tip" id="panel-tip">方向键翻页，Esc 收起面板</p>
   </aside>
-  <aside class="tools-panel" id="tools-panel" aria-label="搜索、AI与批注">
-    <div class="panel-header"><div><p class="eyebrow">TOOLS</p><h2>搜索、AI与批注</h2></div><button class="icon-button" id="close-tools" aria-label="关闭工具">×</button></div>
+  <aside class="tools-panel" id="tools-panel" aria-label="搜索与批注">
+    <div class="panel-header"><div><p class="eyebrow">TOOLS</p><h2>搜索与批注</h2></div><button class="icon-button" id="close-tools" aria-label="关闭工具">×</button></div>
     <form class="search-form" id="search-form"><input id="search-input" type="search" placeholder="搜索书中内容" autocomplete="off"><button type="submit">搜索</button></form>
     <div class="search-status" id="search-status">输入关键词搜索整本书</div>
     <div class="search-results" id="search-results"></div>
     <div class="tool-divider"></div>
-    <section class="ai-section" aria-labelledby="ai-heading">
+    <section class="ai-section" aria-labelledby="ai-heading" hidden>
       <div class="annotation-heading"><strong id="ai-heading">AI 阅读助手</strong><button class="text-button" id="ai-settings-toggle" type="button">接口设置</button></div>
       <p class="selection-hint" id="ai-selection-preview">选中文字后，可以解释、翻译或补充背景。</p>
       <div class="ai-actions" aria-label="划词 AI">

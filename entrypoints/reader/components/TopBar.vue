@@ -23,7 +23,7 @@ const { title } = storeToRefs(useReaderStore())
       <button id="open-button" class="soft-button">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v12m-5-5 5 5 5-5M5 20h14" /></svg>打开书籍
       </button>
-      <button id="tools-button" class="icon-button header-icon-button reader-only" aria-label="搜索、AI与批注" title="搜索、AI与批注">
+      <button id="tools-button" class="icon-button header-icon-button reader-only" aria-label="搜索与批注" title="搜索与批注">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4 4" /></svg>
       </button>
       <button id="settings-button" class="icon-button header-icon-button reader-only" aria-label="阅读设置" title="阅读设置">

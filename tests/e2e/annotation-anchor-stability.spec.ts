@@ -68,8 +68,8 @@ test('PDF highlight rebuilds its rectangle after zoom, stale geometry and reopen
     await expect(page.locator('#loading-view')).toBeHidden({ timeout: 30_000 })
     await expect.poll(() => page.locator('.pdf-page[data-page="1"] .textLayer span').count()).toBeGreaterThan(0)
     const selectedText = await selectPdfText(page)
-    await expect(page.locator('#selection-ai-menu')).toBeVisible()
-    await expect(page.locator('#ai-selection-preview')).toContainText(selectedText.slice(0, 12))
+    await expect(page.locator('#selection-ai-menu')).toBeHidden()
+    await expect(page.locator('#ai-selection-preview')).toHaveText('选中文字后，可以解释、翻译或补充背景。')
 
     await page.locator('#tools-button').evaluate((button: HTMLElement) => button.click())
     await page.locator('#highlight-selection').click()
