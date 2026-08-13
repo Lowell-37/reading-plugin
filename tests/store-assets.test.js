@@ -11,3 +11,12 @@ test('store-ready manifest declares every required icon size', async () => {
   })
   await Promise.all(Object.values(manifest.icons).map(path => access(new URL(`../${path}`, import.meta.url))))
 })
+
+test('store screenshots are 1280 by 800 and contain no user library data', async () => {
+  for (const name of ['store-welcome.png', 'store-reader.png']) {
+    const image = await readFile(new URL(`../assets/store/${name}`, import.meta.url))
+    expect(image.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+    expect(image.readUInt32BE(16)).toBe(1280)
+    expect(image.readUInt32BE(20)).toBe(800)
+  }
+})

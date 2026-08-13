@@ -25,8 +25,8 @@
 
 - [ ] 使用 `npm run release` 生成并校验 ZIP、SHA-256 与 JSON 清单。
 - [ ] 从 ZIP 解压后，在干净 Edge 与 Chrome 配置中加载并打开 PDF、EPUB、MOBI、AZW3 各一册。
-- [ ] 准备 1 张 1280×800 或商店要求尺寸的无敏感信息截图：书架页。
-- [ ] 准备 1 张阅读页截图：目录、连续阅读或 PDF 文本层。
+- [x] 已提供 1280×800 无敏感信息欢迎页截图：`assets/store/store-welcome.png`。
+- [x] 已提供 1280×800 无敏感信息阅读页截图：`assets/store/store-reader.png`。
 - [x] 已提供浏览器图标：16、32、48、128px PNG，以及可编辑的 `assets/icon.svg` 源稿。
 - [ ] 按所选商店要求从 SVG 源稿导出额外尺寸（如 440×280 宣传图或更大图标）。
 - [ ] 填写开发者支持邮箱、隐私政策公开 URL 和商店分类。
