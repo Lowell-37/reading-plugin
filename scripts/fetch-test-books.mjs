@@ -6,6 +6,14 @@ export const TEST_BOOKS = [
   { name: 'alice.mobi', format: 'mobi', url: 'https://www.gutenberg.org/ebooks/11.kindle.images' },
   { name: 'alice.azw3', format: 'azw3', url: 'https://www.gutenberg.org/ebooks/11.kf8.images' },
   {
+    name: 'water-margin.epub',
+    format: 'epub',
+    title: '水滸傳',
+    license: 'Project Gutenberg public domain in the USA',
+    url: 'https://www.gutenberg.org/ebooks/23863.epub3.images',
+    sha256: 'e764b737e341283ad10b42df6ce5846b1752655b34427b0b8fd1355e335cf980',
+  },
+  {
     name: 'tracemonkey.pdf',
     format: 'pdf',
     url: 'https://raw.githubusercontent.com/mozilla/pdf.js/master/web/compressed.tracemonkey-pldi-09.pdf',
@@ -25,11 +33,16 @@ for (const book of TEST_BOOKS) {
     if (bytes.length < 1024) throw new Error(`Downloaded fixture is unexpectedly small: ${book.name}`)
     await writeFile(target, bytes)
   }
+  const hash = createHash('sha256').update(bytes).digest('hex')
+  if (book.sha256 && book.sha256 !== hash) {
+    throw new Error(`Fixture checksum changed for ${book.name}; delete it and review the upstream revision before accepting ${hash}`)
+  }
   book.bytes = bytes.length
-  book.sha256 = createHash('sha256').update(bytes).digest('hex')
+  book.sha256 = hash
 }
 
 await import('./create-boundary-epub.mjs')
+await import('./create-compatibility-epub.mjs')
 await writeFile(new URL('manifest.json', directory), `${JSON.stringify(TEST_BOOKS, null, 2)}\n`)
 
 async function downloadWithRetry(url, attempts = 4) {
