@@ -20,7 +20,7 @@
     "release": "npm run release:package && npm run release:verify",
     "typecheck:vue": "vue-tsc --noEmit -p .wxt/tsconfig.json",
     "fetch:test-books": "node scripts/fetch-test-books.mjs",
-    "e2e:prepare": "npm run build:core && npm run fetch:test-books && node scripts/create-boundary-epub.mjs && node scripts/create-large-epub.mjs && node scripts/create-versioned-epub.mjs",
+    "e2e:prepare": "npm run build:core && npm run fetch:test-books && node scripts/create-boundary-epub.mjs && node scripts/create-large-epub.mjs && node scripts/create-versioned-epub.mjs && node scripts/package-release.mjs",
     "test:e2e": "npm run e2e:prepare && playwright test"
   },
   "dependencies": {
@@ -31,6 +31,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.62.0",
+    "@types/adm-zip": "^0.5.8",
     "@vitejs/plugin-vue": "^6.0.8",
     "@vue/test-utils": "^2.4.11",
     "adm-zip": "^0.5.18",

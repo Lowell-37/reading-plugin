@@ -15,7 +15,11 @@ npm run release
 - `quiet-reader-<version>.sha256`：ZIP 的 SHA-256 校验和。
 - `quiet-reader-<version>.json`：版本、文件清单和校验和。
 
+ZIP 内文件顺序与条目时间戳固定；相同源码、依赖和版本连续执行会生成相同的 SHA-256。
+
 发布包只包含根目录版运行所需的 `manifest.json`、`reader.html`、`styles/`、`src/`、Foliate.js 和 PDF.js 运行时资源；不会包含测试、WXT 输出或整个开发依赖目录。解压后选择包含 `manifest.json` 的目录，在 Edge 的 `edge://extensions` 中使用“加载解压缩的扩展”。
+
+自动化 Edge E2E 会从 ZIP 解压并加载扩展，验证它与项目根目录稳定版使用同一个固定扩展 ID 且能打开书架首页。
 
 ## 升级
 

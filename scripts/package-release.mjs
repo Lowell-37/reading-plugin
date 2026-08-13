@@ -12,6 +12,7 @@ const staging = new URL(`../dist/${releaseName}/`, import.meta.url)
 const archive = new URL(`../dist/${releaseName}.zip`, import.meta.url)
 const checksum = new URL(`../dist/${releaseName}.sha256`, import.meta.url)
 const releaseManifest = new URL(`../dist/${releaseName}.json`, import.meta.url)
+const releaseTimestamp = new Date('2026-01-01T00:00:00.000Z')
 
 await mkdir(dist, { recursive: true })
 await rm(staging, { recursive: true, force: true })
@@ -20,7 +21,10 @@ for (const path of releaseFiles)
   await cp(new URL(`../${path}`, import.meta.url), new URL(path, staging), { recursive: true })
 
 const zip = new AdmZip()
-for (const file of await listFiles(staging)) zip.addLocalFile(fileURLToPath(new URL(file, staging)), file.includes('/') ? file.slice(0, file.lastIndexOf('/') + 1) : '')
+for (const file of await listFiles(staging)) {
+  const entry = zip.addFile(file, await readFile(new URL(file, staging)))
+  entry.header.time = releaseTimestamp
+}
 zip.writeZip(fileURLToPath(archive))
 const archiveHash = await sha256(archive)
 const entries = await listFiles(staging)
