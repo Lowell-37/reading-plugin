@@ -41,6 +41,7 @@ test('EPUB highlight survives typography, flow changes, stale CFI and reopen', a
     await page.locator('#settings-button').evaluate((button: HTMLElement) => button.click())
     await page.locator('[data-flow="paginated"]').click()
     await expect(page.locator('.continuous-ebook')).toHaveCount(0)
+    await chapterFrame(page)
     const wrong = await replaceStoredEbookCfiWithWrongValidCfi(page, selectedText)
     await page.locator('#home-button').evaluate((button: HTMLElement) => button.click())
     await expect(page.locator('#welcome-view')).toBeVisible()

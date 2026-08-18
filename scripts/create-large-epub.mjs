@@ -104,3 +104,46 @@ function crc32(bytes) {
 }
 
 await writeFile(new URL('large-reading.epub', directory), createZip(entries))
+
+const largeFileChapterCount = 32
+const largeFileParagraphCount = 700
+const largeFilePayload = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'.repeat(15)
+const largeFileChapters = Array.from({ length: largeFileChapterCount }, (_, index) => {
+  const number = String(index + 1).padStart(3, '0')
+  const paragraphs = Array.from({ length: largeFileParagraphCount }, (_, paragraphIndex) =>
+    `<p>LARGE-FILE-SECTION-${number} PARAGRAPH-${String(paragraphIndex + 1).padStart(3, '0')}. ${largeFilePayload}</p>`).join('')
+  return chapter(`Very large section ${number}`, paragraphs)
+})
+const largeFileManifestItems = largeFileChapters.map((_, index) =>
+  `<item id="large-c${index + 1}" href="chapters/large-c${index + 1}.xhtml" media-type="application/xhtml+xml"/>`).join('')
+const largeFileSpineItems = largeFileChapters.map((_, index) =>
+  `<itemref idref="large-c${index + 1}"/>`).join('')
+const largeFileNavItems = largeFileChapters.map((_, index) =>
+  `<li><a href="chapters/large-c${index + 1}.xhtml">Very large section ${index + 1}</a></li>`).join('')
+const largeFileEntries = new Map([
+  ['mimetype', encoder.encode('application/epub+zip')],
+  ['META-INF/container.xml', entries.get('META-INF/container.xml')],
+  ['OEBPS/content.opf', encoder.encode(`<?xml version="1.0" encoding="UTF-8"?>
+<package version="3.0" unique-identifier="book-id" xmlns="http://www.idpf.org/2007/opf">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:identifier id="book-id">quiet-reader-large-file</dc:identifier>
+    <dc:title>Very Large Reading Stress</dc:title>
+    <dc:language>en</dc:language>
+    <meta property="dcterms:modified">2026-08-18T00:00:00Z</meta>
+  </metadata>
+  <manifest>
+    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+    <item id="style" href="styles.css" media-type="text/css"/>
+    ${largeFileManifestItems}
+  </manifest>
+  <spine>${largeFileSpineItems}</spine>
+</package>`)],
+  ['OEBPS/nav.xhtml', encoder.encode(`<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+<head><title>Contents</title></head><body><nav epub:type="toc"><ol>${largeFileNavItems}</ol></nav></body></html>`)],
+  ['OEBPS/styles.css', entries.get('OEBPS/styles.css')],
+])
+
+largeFileChapters.forEach((content, index) =>
+  largeFileEntries.set(`OEBPS/chapters/large-c${index + 1}.xhtml`, encoder.encode(content)))
+await writeFile(new URL('large-file.epub', directory), createZip(largeFileEntries))
