@@ -28,6 +28,7 @@ test('EPUB highlight survives typography, flow changes, stale CFI and reopen', a
       textOffset: expect.any(Number),
     })
     expect(stored.anchor.quote.exact).toBe(selectedText)
+    const wrong = await createWrongValidEbookCfi(page, selectedText)
 
     await page.locator('#close-tools').click()
     await page.locator('#settings-button').evaluate((button: HTMLElement) => button.click())
@@ -41,8 +42,7 @@ test('EPUB highlight survives typography, flow changes, stale CFI and reopen', a
     await page.locator('#settings-button').evaluate((button: HTMLElement) => button.click())
     await page.locator('[data-flow="paginated"]').click()
     await expect(page.locator('.continuous-ebook')).toHaveCount(0)
-    await chapterFrame(page)
-    const wrong = await replaceStoredEbookCfiWithWrongValidCfi(page, selectedText)
+    await storeWrongEbookCfi(page, wrong.wrongCfi)
     await page.locator('#home-button').evaluate((button: HTMLElement) => button.click())
     await expect(page.locator('#welcome-view')).toBeVisible()
     await page.locator('.library-card').first().evaluate((card: HTMLElement) => card.click())
@@ -222,7 +222,7 @@ async function firstStoredAnnotation(page: Page): Promise<any> {
   })
 }
 
-async function replaceStoredEbookCfiWithWrongValidCfi(page: Page, selectedText: string) {
+async function createWrongValidEbookCfi(page: Page, selectedText: string) {
   return page.evaluate(async selected => {
     const view: any = document.querySelector('foliate-view')
     const content = view?.renderer?.getContents?.().find((item: any) =>
@@ -241,6 +241,12 @@ async function replaceStoredEbookCfiWithWrongValidCfi(page: Page, selectedText: 
     range.setEnd(node, end)
     const wrongText = range.toString().trim()
     const wrongCfi = view.getCFI(content.index, range)
+    return { wrongText, wrongCfi }
+  }, selectedText)
+}
+
+async function storeWrongEbookCfi(page: Page, wrongCfi: string) {
+  await page.evaluate(async replacementCfi => {
     const database = await new Promise<IDBDatabase>((resolvePromise, reject) => {
       const request = indexedDB.open('quiet-reader')
       request.onsuccess = () => resolvePromise(request.result)
@@ -252,17 +258,16 @@ async function replaceStoredEbookCfiWithWrongValidCfi(page: Page, selectedText: 
       const request = store.getAll()
       request.onsuccess = () => {
         const record = request.result[0]
-        record.annotations[0].locator = wrongCfi
-        record.annotations[0].anchor.cfi = wrongCfi
-        record.annotations[0].anchor.previousCfi = wrongCfi
+        record.annotations[0].locator = replacementCfi
+        record.annotations[0].anchor.cfi = replacementCfi
+        record.annotations[0].anchor.previousCfi = replacementCfi
         store.put(record)
       }
       transaction.oncomplete = () => resolvePromise()
       transaction.onerror = () => reject(transaction.error)
     })
     database.close()
-    return { wrongText, wrongCfi }
-  }, selectedText)
+  }, wrongCfi)
 }
 
 async function expectPaginatedHighlightAligned(page: Page, selectedText: string, wrongText: string) {
