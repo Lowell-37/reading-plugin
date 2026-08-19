@@ -14,6 +14,17 @@ export const TEST_BOOKS = [
     sha256: 'e764b737e341283ad10b42df6ce5846b1752655b34427b0b8fd1355e335cf980',
   },
   {
+    name: 'peter-rabbit.epub',
+    format: 'epub',
+    title: 'The Tale of Peter Rabbit',
+    creator: 'Beatrix Potter',
+    source: 'GITenberg release 0.1.0 / Project Gutenberg eBook #14838',
+    license: 'Public domain in the USA; check local law outside the USA',
+    licenseUrl: 'https://www.gutenberg.org/policy/license',
+    url: 'https://github.com/GITenberg/The-Tale-of-Peter-Rabbit_14838/releases/download/0.1.0/book.epub',
+    sha256: '4865e0cfbfe7f1218f43f4ef7e8e31647ec227ecb59cc520abbe4a39e9a4a000',
+  },
+  {
     name: 'tracemonkey.pdf',
     format: 'pdf',
     url: 'https://raw.githubusercontent.com/mozilla/pdf.js/master/web/compressed.tracemonkey-pldi-09.pdf',
