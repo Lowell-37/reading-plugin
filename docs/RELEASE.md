@@ -9,6 +9,8 @@ npm run test:e2e
 npm run release
 ```
 
+发布前先把 `CHANGELOG.md` 的 `[Unreleased]` 内容整理到与 `package.json` 一致的新版本标题下。`npm run release` 会拒绝缺少当前版本、没有分类变更条目或版本顺序错误的变更日志。
+
 `npm run release` 会创建以下文件（均在 `dist/`）：
 
 - `quiet-reader-<version>.zip`：可分发的扩展包。

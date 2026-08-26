@@ -24,6 +24,7 @@
 ## 发布前人工清单
 
 - [ ] 使用 `npm run release` 生成并校验 ZIP、SHA-256 与 JSON 清单。
+- [x] 使用根目录 `CHANGELOG.md` 记录当前版本的用户可见变更，并通过自动校验。
 - [ ] 从 ZIP 解压后，在干净 Edge 与 Chrome 配置中加载并打开 PDF、EPUB、MOBI、AZW3 各一册。
 - [x] 已提供 1280×800 无敏感信息欢迎页截图：`assets/store/store-welcome.png`。
 - [x] 已提供 1280×800 无敏感信息阅读页截图：`assets/store/store-reader.png`。
