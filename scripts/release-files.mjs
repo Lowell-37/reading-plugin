@@ -1,7 +1,10 @@
 export const releaseFiles = [
   'manifest.json',
   'reader.html',
-  'assets',
+  'assets/icon-16.png',
+  'assets/icon-32.png',
+  'assets/icon-48.png',
+  'assets/icon-128.png',
   'styles',
   'src',
   'node_modules/foliate-js',

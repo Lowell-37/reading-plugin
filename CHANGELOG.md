@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- 增加可重复生成并自动校验的 Edge Add-ons / Chrome Web Store 小宣传图和大宣传图。
+
 ## [0.2.0] - 2026-08-26
 
 ### Added

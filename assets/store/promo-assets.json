@@ -1,0 +1,19 @@
+{
+  "format": "quiet-reader-store-promos",
+  "formatVersion": 1,
+  "sourceSha256": "37b436ab3b9be9af38213db4977840aeb57a3e2e68d1a4eaa82610b7f679af42",
+  "assets": [
+    {
+      "file": "promo-small.png",
+      "width": 440,
+      "height": 280,
+      "sha256": "498bc2d831c0b452306b052dbc3eca085d6c253853ee74b27ee9fa1d5d3b63db"
+    },
+    {
+      "file": "promo-marquee.png",
+      "width": 1400,
+      "height": 560,
+      "sha256": "0a2adc41a81f02712d3d3aa2dcecde971dfe7918a415b191e93bfafc378a2ac8"
+    }
+  ]
+}

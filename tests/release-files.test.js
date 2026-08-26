@@ -6,7 +6,10 @@ describe('releaseFiles', () => {
     expect(releaseFiles).toEqual([
       'manifest.json',
       'reader.html',
-      'assets',
+      'assets/icon-16.png',
+      'assets/icon-32.png',
+      'assets/icon-48.png',
+      'assets/icon-128.png',
       'styles',
       'src',
       'node_modules/foliate-js',
@@ -22,5 +25,6 @@ describe('releaseFiles', () => {
     expect(releaseFiles).not.toContain('.wxt')
     expect(releaseFiles).not.toContain('tests')
     expect(releaseFiles).not.toContain('node_modules')
+    expect(releaseFiles).not.toContain('assets/store')
   })
 })

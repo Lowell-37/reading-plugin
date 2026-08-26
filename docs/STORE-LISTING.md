@@ -29,7 +29,9 @@
 - [x] 已提供 1280×800 无敏感信息欢迎页截图：`assets/store/store-welcome.png`。
 - [x] 已提供 1280×800 无敏感信息阅读页截图：`assets/store/store-reader.png`。
 - [x] 已提供浏览器图标：16、32、48、128px PNG，以及可编辑的 `assets/icon.svg` 源稿。
-- [ ] 按所选商店要求从 SVG 源稿导出额外尺寸（如 440×280 宣传图或更大图标）。
+- [x] 已提供 440×280 小宣传图：`assets/store/promo-small.png`。
+- [x] 已提供 1400×560 大宣传图 / Marquee：`assets/store/promo-marquee.png`。
+- [x] 运行 `npm run generate:store-promos` 可从现有品牌源稿重复生成两张无系统字体依赖的宣传图，并更新源指纹与图片校验和。
 - [ ] 填写开发者支持邮箱、隐私政策公开 URL 和商店分类。
 - [ ] 复核 [隐私政策](PRIVACY.md) 与实际上架版本功能一致。
 
