@@ -19,6 +19,7 @@ test('WXT build keeps the root extension identity and opens the reader shell', a
     await expect(wxt.page.locator('#file-input')).toHaveAttribute('accept', /\.epub/)
     await expect(wxt.page.locator('.ai-section')).toBeHidden()
     await expect(wxt.page.locator('[data-ai-action]').first()).toBeHidden()
+    await expect(wxt.page.locator('#selection-ai-menu')).toBeHidden()
   } finally {
     await wxt.context.close()
   }
@@ -32,8 +33,10 @@ for (const format of ['epub', 'mobi', 'azw3'] as const) {
       await expect(page.locator('#sidebar-title')).toContainText(/Alice/i)
       await expect.poll(async () => page.locator('#toc button').count()).toBeGreaterThan(2)
 
-      await page.locator('#toc button').nth(2).evaluate((element: HTMLElement) => element.click())
-      await expect.poll(() => progress(page)).toBeGreaterThan(0)
+      const initialProgress = await progress(page)
+      const targetChapter = page.locator('#toc button').nth(2)
+      await targetChapter.evaluate((element: HTMLElement) => element.click())
+      await expect.poll(() => progress(page)).toBeGreaterThan(initialProgress)
     } finally {
       await context.close()
     }
@@ -50,12 +53,15 @@ test('WXT renders a real PDF text layer, page jump and zoom', async () => {
 
     await page.locator('#pdf-zoom-in').evaluate((element: HTMLElement) => element.click())
     await expect(page.locator('#pdf-zoom-label')).toHaveText('110%')
+    const initialProgress = await progress(page)
     await page.locator('#pdf-page-input').evaluate((input: HTMLInputElement) => {
       input.value = '3'
       input.dispatchEvent(new Event('change', { bubbles: true }))
     })
     await expect(page.locator('#pdf-page-input')).toHaveValue('3')
-    await expect.poll(() => progress(page)).toBeGreaterThan(0)
+    await expect.poll(async () => page.locator('.pdf-page[data-page="3"] .textLayer span').count()).toBeGreaterThan(0)
+    await expect(page.locator('#chapter-label')).toContainText('第 3 页')
+    await expect.poll(() => progress(page)).toBeGreaterThan(initialProgress)
   } finally {
     await context.close()
   }

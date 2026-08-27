@@ -15,7 +15,7 @@ const REQUIRED_RUNTIME_FILES = [
   'node_modules/pdfjs-dist/wasm/openjpeg.wasm',
 ]
 
-export function verifyWxtBuildContract({ rootManifest, builtManifest, files }) {
+export function verifyWxtBuildContract({ rootManifest, builtManifest, files, requiredRuntimeFiles = [] }) {
   for (const field of IDENTITY_FIELDS) {
     if (builtManifest[field] !== rootManifest[field]) {
       throw new Error(`WXT manifest ${field} differs from root manifest`)
@@ -29,10 +29,11 @@ export function verifyWxtBuildContract({ rootManifest, builtManifest, files }) {
   }
 
   const emittedFiles = new Set(files.map(file => file.replaceAll('\\', '/')))
-  const requiredFiles = [
+  const requiredFiles = new Set([
     ...REQUIRED_RUNTIME_FILES,
+    ...requiredRuntimeFiles,
     ...Object.values(rootManifest.icons ?? {}),
-  ]
+  ])
   for (const file of requiredFiles) {
     if (!emittedFiles.has(file)) throw new Error(`WXT build is missing ${file}`)
   }

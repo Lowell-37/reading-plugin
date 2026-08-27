@@ -5,13 +5,14 @@ import { verifyWxtBuildContract } from './wxt-build-contract.mjs'
 
 const projectRoot = fileURLToPath(new URL('..', import.meta.url))
 const outputDirectory = resolve(projectRoot, process.argv[2] ?? '.output/chrome-mv3')
-const [rootManifest, builtManifest, files] = await Promise.all([
+const [rootManifest, builtManifest, files, requiredRuntimeFiles] = await Promise.all([
   readJson(resolve(projectRoot, 'manifest.json')),
   readJson(resolve(outputDirectory, 'manifest.json')),
   listFiles(outputDirectory),
+  listPdfRuntimeFiles(projectRoot),
 ])
 
-const result = verifyWxtBuildContract({ rootManifest, builtManifest, files })
+const result = verifyWxtBuildContract({ rootManifest, builtManifest, files, requiredRuntimeFiles })
 console.log(`Verified WXT build identity and runtime assets (${result.fileCount} files)`)
 
 async function readJson(path) {
@@ -30,4 +31,17 @@ async function listFiles(directory) {
       else if (entry.isFile()) files.push(relative(directory, path).replaceAll('\\', '/'))
     }
   }
+}
+
+async function listPdfRuntimeFiles(root) {
+  const pdfRoot = resolve(root, 'node_modules/pdfjs-dist')
+  const directories = ['cmaps', 'standard_fonts', 'wasm']
+  const directoryFiles = await Promise.all(directories.map(async directory => (
+    (await listFiles(resolve(pdfRoot, directory)))
+      .map(file => `node_modules/pdfjs-dist/${directory}/${file}`)
+  )))
+  return [
+    'node_modules/pdfjs-dist/build/pdf.worker.min.mjs',
+    ...directoryFiles.flat(),
+  ]
 }

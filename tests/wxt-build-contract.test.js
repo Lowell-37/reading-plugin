@@ -27,9 +27,11 @@ const completeFiles = [
   'assets/icon-128.png',
   'node_modules/pdfjs-dist/build/pdf.worker.min.mjs',
   'node_modules/pdfjs-dist/cmaps/78-EUC-H.bcmap',
+  'node_modules/pdfjs-dist/cmaps/Adobe-CNS1-0.bcmap',
   'node_modules/pdfjs-dist/standard_fonts/FoxitDingbats.pfb',
   'node_modules/pdfjs-dist/wasm/openjpeg.wasm',
 ]
+const expectedRuntimeFiles = completeFiles.filter(file => file.startsWith('node_modules/pdfjs-dist/'))
 
 describe('WXT build contract', () => {
   test.each(['key', 'name', 'version'])('rejects a different extension %s', field => {
@@ -77,6 +79,15 @@ describe('WXT build contract', () => {
       builtManifest: rootManifest,
       files: completeFiles.filter(file => file !== missingFile),
     })).toThrow(new RegExp(missingFile.split('/').at(-1).replace('.', '\\.')))
+  })
+
+  test('rejects any missing file from the complete PDF runtime inventory', () => {
+    expect(() => verifyWxtBuildContract({
+      rootManifest,
+      builtManifest: rootManifest,
+      files: completeFiles.filter(file => file !== 'node_modules/pdfjs-dist/cmaps/Adobe-CNS1-0.bcmap'),
+      requiredRuntimeFiles: expectedRuntimeFiles,
+    })).toThrow(/Adobe-CNS1-0\.bcmap/)
   })
 
   test('returns the verified extension identity and file count', () => {

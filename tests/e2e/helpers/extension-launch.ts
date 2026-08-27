@@ -14,11 +14,14 @@ export interface LaunchedExtension {
 
 export async function launchExtension(extensionPath: string): Promise<LaunchedExtension> {
   if (!existsSync(extensionPath)) throw new Error(`Extension path does not exist: ${extensionPath}`)
-  const executablePath = edgeCandidates.find(existsSync)
-  if (!executablePath) throw new Error('Microsoft Edge executable was not found')
+  const configuredEdgePath = process.env.EDGE_EXECUTABLE_PATH
+  if (configuredEdgePath && !existsSync(configuredEdgePath)) {
+    throw new Error(`EDGE_EXECUTABLE_PATH does not exist: ${configuredEdgePath}`)
+  }
+  const executablePath = configuredEdgePath || edgeCandidates.find(existsSync)
 
   const context = await chromium.launchPersistentContext('', {
-    executablePath,
+    ...(executablePath ? { executablePath } : { channel: 'msedge' }),
     headless: true,
     args: [
       `--disable-extensions-except=${extensionPath}`,

@@ -54,7 +54,7 @@
 ## 阶段 A 验收记录（2026-08-27）
 
 - `npm run check`：通过
-- `npm test`：29 个测试文件、135 项测试通过
+- `npm test`：29 个测试文件、136 项测试通过
 - `npm run build:wxt:verify`：通过，223 个构建文件
 - `npm run test:e2e`：25 项根目录稳定版 Microsoft Edge 测试通过
 - `npm run test:e2e:wxt:baseline`：5 项 WXT Microsoft Edge 测试通过
