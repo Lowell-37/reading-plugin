@@ -7,14 +7,18 @@ export const storePromos = Object.freeze([
 ])
 
 export async function storePromoFingerprint() {
-  const icon = await readFile(new URL('../assets/icon.svg', import.meta.url))
+  const icon = normalizeLineEndings(await readFile(new URL('../assets/icon.svg', import.meta.url), 'utf8'))
   return createHash('sha256')
     .update(JSON.stringify(storePromos))
     .update('\0')
-    .update(renderStorePromo.toString())
+    .update(normalizeLineEndings(renderStorePromo.toString()))
     .update('\0')
     .update(icon)
     .digest('hex')
+}
+
+function normalizeLineEndings(value) {
+  return value.replace(/\r\n/g, '\n')
 }
 
 export function renderStorePromo(variant, iconSvg) {
