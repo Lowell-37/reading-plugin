@@ -249,9 +249,9 @@ function openPanel(panel) {
   requestLegacyPanel(panel === elements.sidebar ? 'toc' : panel === elements.settingsPanel ? 'settings' : 'tools')
 }
 
-function showReader() {
+function showReader(title) {
   document.body.classList.add('is-reading')
-  emitLegacyState({ isReading: true })
+  emitLegacyState({ title, chapter: '开始', progress: 0, isReading: true })
   setHeaderCollapsed(Boolean(settings.headerCollapsed), false)
   elements.welcomeView.hidden = true
   elements.readerView.hidden = false
@@ -1534,9 +1534,8 @@ async function openPdf(file) {
 async function openBook(file, existingRecord = null, { newlySaved = false } = {}) {
   const format = detectFormat(file.name, file.type)
   closeReader()
-  showReader()
+  showReader(file.name)
   elements.headerTitle.textContent = file.name
-  emitLegacyState({ title: file.name })
   if (!format) {
     showOpenError(describeOpenError(null, null))
     return
@@ -1860,6 +1859,7 @@ export function createLegacyReaderPort(callbacks = {}) {
       if (destroyed) return
       destroyed = true
       closeReader()
+      emitLegacyState({ title: '未命名书籍', chapter: '开始', progress: 0, isReading: false })
       legacyCallbacks = emptyLegacyCallbacks
     },
   }
