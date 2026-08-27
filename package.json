@@ -13,6 +13,7 @@
     "sync:assets": "node scripts/sync-public-assets.mjs",
     "dev": "npm run sync:assets && wxt",
     "build": "npm run sync:assets && wxt build",
+    "build:wxt:verify": "npm run build && node scripts/verify-wxt-build.mjs",
     "build:firefox": "npm run sync:assets && wxt build -b firefox",
     "zip": "npm run sync:assets && wxt zip",
     "release:package": "npm run check && node scripts/package-release.mjs",
