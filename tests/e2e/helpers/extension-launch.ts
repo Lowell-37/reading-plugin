@@ -12,7 +12,16 @@ export interface LaunchedExtension {
   extensionId: string
 }
 
-export async function launchExtension(extensionPath: string): Promise<LaunchedExtension> {
+export interface ExtensionLaunchOptions {
+  userDataDir?: string
+  waitForSelector?: string | null
+  extensionId?: string
+}
+
+export async function launchExtension(
+  extensionPath: string,
+  { userDataDir = '', waitForSelector = '#welcome-view', extensionId: knownExtensionId }: ExtensionLaunchOptions = {},
+): Promise<LaunchedExtension> {
   if (!existsSync(extensionPath)) throw new Error(`Extension path does not exist: ${extensionPath}`)
   const configuredEdgePath = process.env.EDGE_EXECUTABLE_PATH
   if (configuredEdgePath && !existsSync(configuredEdgePath)) {
@@ -20,7 +29,7 @@ export async function launchExtension(extensionPath: string): Promise<LaunchedEx
   }
   const executablePath = configuredEdgePath || edgeCandidates.find(existsSync)
 
-  const context = await chromium.launchPersistentContext('', {
+  const context = await chromium.launchPersistentContext(userDataDir, {
     ...(executablePath ? { executablePath } : { channel: 'msedge' }),
     headless: true,
     args: [
@@ -30,12 +39,15 @@ export async function launchExtension(extensionPath: string): Promise<LaunchedEx
   })
 
   try {
-    let [worker] = context.serviceWorkers()
-    worker ||= await context.waitForEvent('serviceworker')
-    const extensionId = new URL(worker.url()).host
+    let extensionId = knownExtensionId
+    if (!extensionId) {
+      let [worker] = context.serviceWorkers()
+      worker ||= await context.waitForEvent('serviceworker')
+      extensionId = new URL(worker.url()).host
+    }
     const page = await context.newPage()
     await page.goto(`chrome-extension://${extensionId}/reader.html`)
-    await page.locator('#welcome-view').waitFor({ state: 'visible' })
+    if (waitForSelector) await page.locator(waitForSelector).waitFor({ state: 'visible' })
     return { context, page, extensionId }
   } catch (error) {
     await context.close()
