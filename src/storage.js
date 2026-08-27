@@ -5,6 +5,7 @@ import {
   DB_VERSION,
   META_STORE,
 } from './storage-schema.js'
+import { normalizeReaderSettings } from './core-runtime/migration-preflight.js'
 
 function requestToPromise(request) {
   return new Promise((resolve, reject) => {
@@ -111,24 +112,11 @@ export async function restoreBooks(records) {
   return records.length
 }
 
-const DEFAULT_SETTINGS = {
-  theme: 'paper',
-  flow: 'paginated',
-  font: 'serif',
-  fontSize: 20,
-  lineHeight: 1.75,
-  pageWidth: 760,
-  headerCollapsed: false,
-  aiEndpoint: 'https://api.openai.com/v1',
-  aiModel: '',
-  aiApiKey: '',
-}
-
 export function loadSettings() {
   try {
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem('quiet-reader-settings')) }
+    return normalizeReaderSettings(JSON.parse(localStorage.getItem('quiet-reader-settings'))).settings
   } catch {
-    return { ...DEFAULT_SETTINGS }
+    return normalizeReaderSettings({}).settings
   }
 }
 

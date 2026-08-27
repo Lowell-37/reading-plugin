@@ -25,6 +25,7 @@ export interface MigrationSnapshot {
 }
 
 export type MigrationPreflightErrorCode =
+  | 'database-open-failed'
   | 'database-version-newer'
   | 'database-version-unsupported'
   | 'missing-store'

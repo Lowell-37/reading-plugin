@@ -23,3 +23,12 @@ test('WXT asset sync preserves PDF.js runtime paths', async () => {
     assert.match(source, new RegExp(path.replace('.', '\\.')))
   }
 })
+
+test('WXT completes the read-only migration preflight before loading the legacy controller', async () => {
+  const source = await readFile(new URL('../entrypoints/reader/main.ts', import.meta.url), 'utf8')
+  const preflight = source.indexOf('await runMigrationPreflight')
+  const legacyImport = source.indexOf("await import('../../src/reader.js')")
+  assert.ok(preflight >= 0, 'WXT reader entrypoint must run the migration preflight')
+  assert.ok(legacyImport > preflight, 'legacy controller must load only after the preflight')
+  assert.match(source, /if \(!preflight\.ok\) return/)
+})
