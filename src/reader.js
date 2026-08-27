@@ -170,6 +170,36 @@ let coverObjectUrl = null
 let libraryObjectUrls = []
 const tocButtons = new Map()
 const progressService = new ProgressService(bookRepository)
+const emptyLegacyCallbacks = Object.freeze({
+  onState() {},
+  onPanelRequest() {},
+  onLibraryChanged() {},
+})
+let legacyCallbacks = emptyLegacyCallbacks
+let legacyReaderState = {
+  title: '未命名书籍',
+  chapter: '开始',
+  progress: 0,
+  isReading: false,
+}
+let controllerInitialized = false
+
+function emitLegacyState(state) {
+  legacyReaderState = { ...legacyReaderState, ...state }
+  legacyCallbacks.onState({ ...legacyReaderState })
+}
+
+function requestLegacyPanel(panel) {
+  legacyCallbacks.onPanelRequest(panel)
+}
+
+async function notifyLegacyLibraryChanged() {
+  try {
+    await legacyCallbacks.onLibraryChanged()
+  } catch (error) {
+    console.error('Failed to refresh the library projection.', error)
+  }
+}
 
 function showToast(message, type = '') {
   elements.toast.textContent = message
@@ -209,16 +239,19 @@ function closePanels() {
   elements.settingsPanel.classList.remove('open')
   elements.toolsPanel.classList.remove('open')
   elements.scrim.classList.remove('show')
+  requestLegacyPanel(null)
 }
 
 function openPanel(panel) {
   closePanels()
   panel.classList.add('open')
   elements.scrim.classList.add('show')
+  requestLegacyPanel(panel === elements.sidebar ? 'toc' : panel === elements.settingsPanel ? 'settings' : 'tools')
 }
 
 function showReader() {
   document.body.classList.add('is-reading')
+  emitLegacyState({ isReading: true })
   setHeaderCollapsed(Boolean(settings.headerCollapsed), false)
   elements.welcomeView.hidden = true
   elements.readerView.hidden = false
@@ -230,6 +263,7 @@ async function showLibrary() {
   elements.readerView.hidden = true
   elements.welcomeView.hidden = false
   document.title = '静读'
+  emitLegacyState({ isReading: false })
   await renderLibrary()
 }
 
@@ -333,9 +367,9 @@ function getContinuousBookStyles() {
   `
 }
 
-function applyReaderSettings() {
+function applyReaderSettings(persist = true) {
   applySettingsToControls()
-  saveSettings(settings)
+  if (persist) saveSettings(settings)
   if (!ebookView?.renderer) return
   ebookView.renderer.setAttribute('flow', 'paginated')
   ebookView.renderer.setAttribute('animated', '')
@@ -410,6 +444,7 @@ function updateProgress(fraction, chapter = '') {
   elements.progressSlider.value = safeFraction
   elements.progressLabel.textContent = `${Math.round(safeFraction * 100)}%`
   if (chapter) elements.chapterLabel.textContent = chapter
+  emitLegacyState({ progress: safeFraction, ...(chapter ? { chapter } : {}) })
 }
 
 function setCover(cover, title) {
@@ -436,10 +471,12 @@ async function setMetadata({ title, author, cover }) {
   elements.sidebarFormat.textContent = currentFormat.toUpperCase()
   elements.coverLetter.textContent = resolvedTitle.slice(0, 1)
   document.title = `${resolvedTitle} · 静读`
+  emitLegacyState({ title: resolvedTitle })
   setCover(cover, resolvedTitle)
   if (currentRecord?.id) {
     currentRecord = { ...currentRecord, metadata: { title: resolvedTitle, author: resolvedAuthor }, cover }
     await bookRepository.update(currentRecord.id, { metadata: currentRecord.metadata, cover }).catch(console.error)
+    await notifyLegacyLibraryChanged()
   }
 }
 
@@ -1494,11 +1531,12 @@ async function openPdf(file) {
   requestAnimationFrame(() => goToPdfPage(restoredPage || 1))
 }
 
-async function openBook(file, existingRecord = null) {
+async function openBook(file, existingRecord = null, { newlySaved = false } = {}) {
   const format = detectFormat(file.name, file.type)
   closeReader()
   showReader()
   elements.headerTitle.textContent = file.name
+  emitLegacyState({ title: file.name })
   if (!format) {
     showOpenError(describeOpenError(null, null))
     return
@@ -1507,10 +1545,10 @@ async function openBook(file, existingRecord = null) {
   currentFormat = format
   setLoading()
   elements.sidebarFormat.textContent = format.toUpperCase()
-  let savedNewBook = false
+  let savedNewBook = newlySaved
   try {
     currentRecord = existingRecord || await bookRepository.save(file, format)
-    savedNewBook = !existingRecord && Boolean(currentRecord?.id)
+    savedNewBook ||= !existingRecord && Boolean(currentRecord?.id)
     loadAnnotations()
   } catch (error) {
     console.warn('The book could not be persisted locally.', error)
@@ -1526,19 +1564,20 @@ async function openBook(file, existingRecord = null) {
     const description = describeOpenError(error, format)
     if (savedNewBook && currentRecord?.id) {
       await bookRepository.delete(currentRecord.id).catch(cleanupError => console.error('Failed to remove invalid book.', cleanupError))
+      await notifyLegacyLibraryChanged()
     }
     closeReader()
     showOpenError(description)
   }
 }
 
-async function openStoredBook(record) {
+async function openStoredBook(record, options) {
   if (!record.blob) { showToast('本地书籍数据已丢失，请重新选择文件', 'error'); return }
   const file = record.blob instanceof File
     ? record.blob
     : new File([record.blob], record.name, { type: record.type, lastModified: record.lastModified })
   await bookRepository.update(record.id, { openedAt: Date.now() }).catch(console.error)
-  await openBook(file, record)
+  await openBook(file, record, options)
 }
 
 async function renderLibrary() {
@@ -1585,6 +1624,7 @@ async function renderLibrary() {
       await bookRepository.delete(record.id)
       card.remove()
       if (!elements.bookGrid.children.length) elements.librarySection.hidden = true
+      await notifyLegacyLibraryChanged()
     })
     const open = () => openStoredBook(record)
     card.addEventListener('click', open)
@@ -1635,6 +1675,7 @@ async function restoreLibraryBackup(file) {
     settings = { ...settings, ...backup.settings, aiApiKey: currentApiKey }
     applyReaderSettings()
     await renderLibrary()
+    await notifyLegacyLibraryChanged()
     const message = `恢复完成：${backup.records.length} 本书；现有同名记录已更新`
     setBackupBusy(false, message)
     elements.backupStatus.dataset.state = 'restored'
@@ -1771,6 +1812,59 @@ function bindControls() {
   })
 }
 
-applySettingsToControls()
-bindControls()
-renderLibrary()
+function initializeLegacyReaderController() {
+  if (controllerInitialized) return
+  controllerInitialized = true
+  applySettingsToControls()
+  // Vue ownership moves listener groups in later migration tasks; until then the
+  // explicit port owns the existing baseline-compatible controller bindings.
+  bindControls()
+  renderLibrary()
+}
+
+export function createLegacyReaderPort(callbacks = {}) {
+  legacyCallbacks = {
+    onState: typeof callbacks.onState === 'function' ? callbacks.onState : emptyLegacyCallbacks.onState,
+    onPanelRequest: typeof callbacks.onPanelRequest === 'function' ? callbacks.onPanelRequest : emptyLegacyCallbacks.onPanelRequest,
+    onLibraryChanged: typeof callbacks.onLibraryChanged === 'function' ? callbacks.onLibraryChanged : emptyLegacyCallbacks.onLibraryChanged,
+  }
+  initializeLegacyReaderController()
+  emitLegacyState({})
+
+  let destroyed = false
+  const ensureActive = () => {
+    if (destroyed) throw new Error('Legacy reader port has been destroyed')
+  }
+
+  return {
+    async openRecord(record, options) {
+      ensureActive()
+      await openStoredBook(record, options)
+    },
+    async closeSession() {
+      ensureActive()
+      await showLibrary()
+    },
+    async applySettings(nextSettings) {
+      ensureActive()
+      const previousFlow = settings.flow
+      settings = { ...settings, ...nextSettings }
+      applyReaderSettings(false)
+      if (settings.flow !== previousFlow) await setEbookFlow(settings.flow)
+    },
+    async flushProgress() {
+      ensureActive()
+      await progressService.flush()
+    },
+    destroy() {
+      if (destroyed) return
+      destroyed = true
+      closeReader()
+      legacyCallbacks = emptyLegacyCallbacks
+    },
+  }
+}
+
+if (document.documentElement.dataset.legacyController !== 'loading') {
+  initializeLegacyReaderController()
+}

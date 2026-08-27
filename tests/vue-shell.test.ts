@@ -3,6 +3,7 @@ import { createPinia } from 'pinia'
 import { mount } from '@vue/test-utils'
 import { describe, expect, test } from 'vitest'
 import App from '../entrypoints/reader/App.vue'
+import { connectLegacyReaderState } from '../entrypoints/reader/legacy-bridge'
 import { useReaderStore } from '../entrypoints/reader/stores/reader'
 import { useMigrationStore } from '../entrypoints/reader/stores/migration'
 
@@ -31,6 +32,24 @@ describe('Vue reader shell', () => {
     })
     expect('books' in store.$state).toBe(false)
     expect('annotations' in store.$state).toBe(false)
+  })
+
+  test('projects structured legacy reader state callbacks into Pinia', () => {
+    const pinia = createPinia()
+    const store = useReaderStore(pinia)
+    const bridge = connectLegacyReaderState(pinia)
+
+    bridge.callbacks.onState({ title: '海边的卡夫卡', isReading: true })
+    bridge.callbacks.onState({ chapter: '第一章', progress: 0.375 })
+    bridge.callbacks.onPanelRequest('toc')
+
+    expect(store.$state).toEqual({
+      title: '海边的卡夫卡',
+      chapter: '第一章',
+      progress: 0.375,
+      isReading: true,
+      activePanel: 'toc',
+    })
   })
 
   test('shows a persistent migration recovery view with safe actions', () => {

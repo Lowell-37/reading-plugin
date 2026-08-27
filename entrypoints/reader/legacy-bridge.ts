@@ -1,21 +1,29 @@
 import type { Pinia } from 'pinia'
+import type { LegacyReaderCallbacks, LegacyReaderPort } from './legacy-reader-port'
 import { useReaderStore } from './stores/reader'
 
-export function connectLegacyReaderState(pinia: Pinia): () => void {
+export interface LegacyReaderBridge {
+  callbacks: LegacyReaderCallbacks
+  attachPort(port: LegacyReaderPort): void
+  destroy(): void
+}
+
+export function connectLegacyReaderState(pinia: Pinia): LegacyReaderBridge {
   const store = useReaderStore(pinia)
-  const sync = () => store.syncFromDom()
-  const observer = new MutationObserver(sync)
-  observer.observe(document.body, {
-    attributes: true,
-    childList: true,
-    characterData: true,
-    subtree: true,
-    attributeFilter: ['class', 'value'],
-  })
-  document.addEventListener('input', sync)
-  sync()
-  return () => {
-    observer.disconnect()
-    document.removeEventListener('input', sync)
+  let port: LegacyReaderPort | null = null
+
+  return {
+    callbacks: {
+      onState: state => store.applyLegacyState(state),
+      onPanelRequest: panel => store.requestPanel(panel),
+      onLibraryChanged: () => undefined,
+    },
+    attachPort(nextPort) {
+      port = nextPort
+    },
+    destroy() {
+      port?.destroy()
+      port = null
+    },
   }
 }

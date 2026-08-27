@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import type { LegacyReaderState, ReaderPanel } from '../legacy-reader-port'
 
 export const useReaderStore = defineStore('reader', {
   state: () => ({
@@ -9,18 +10,14 @@ export const useReaderStore = defineStore('reader', {
     activePanel: null as 'toc' | 'settings' | 'tools' | null,
   }),
   actions: {
-    syncFromDom() {
-      this.title = document.querySelector('#header-title')?.textContent || '未命名书籍'
-      this.chapter = document.querySelector('#chapter-label')?.textContent || '开始'
-      this.progress = Number((document.querySelector('#progress-slider') as HTMLInputElement | null)?.value || 0)
-      this.isReading = document.body.classList.contains('is-reading')
-      this.activePanel = document.querySelector('#sidebar.open')
-        ? 'toc'
-        : document.querySelector('#settings-panel.open')
-          ? 'settings'
-          : document.querySelector('#tools-panel.open')
-            ? 'tools'
-            : null
+    applyLegacyState(state: Partial<LegacyReaderState>) {
+      if (state.title !== undefined) this.title = state.title
+      if (state.chapter !== undefined) this.chapter = state.chapter
+      if (state.progress !== undefined) this.progress = state.progress
+      if (state.isReading !== undefined) this.isReading = state.isReading
+    },
+    requestPanel(panel: ReaderPanel) {
+      this.activePanel = panel
     },
   },
 })
