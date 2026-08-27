@@ -3,6 +3,7 @@ dist/
 *.log
 .output/
 .wxt/
+.worktrees/
 public/node_modules/
 test-results/
 playwright-report/
