@@ -7,6 +7,12 @@
 ### Added
 
 - 增加可重复生成并自动校验的 Edge Add-ons / Chrome Web Store 小宣传图和大宣传图。
+- 增加 WXT 构建身份、权限、CSP、图标与 PDF 运行资源契约，以及独立的 Microsoft Edge 四格式基线。
+
+### Fixed
+
+- 补齐 WXT Vue 外壳中旧阅读控制器依赖的加载与批注工具节点，修复 EPUB、MOBI、AZW3 和 PDF 初始化空引用。
+- 统一商店宣传图源码指纹的文本换行符，避免新 Windows 工作区出现校验误报。
 
 ## [0.2.0] - 2026-08-26
 

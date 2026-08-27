@@ -24,7 +24,7 @@
     "typecheck:vue": "vue-tsc --noEmit -p .wxt/tsconfig.json",
     "fetch:test-books": "node scripts/fetch-test-books.mjs",
     "e2e:prepare": "npm run build:core && npm run fetch:test-books && node scripts/create-boundary-epub.mjs && node scripts/create-image-heavy-epub.mjs && node scripts/create-large-epub.mjs && node scripts/create-versioned-epub.mjs && node scripts/package-release.mjs",
-    "test:e2e": "npm run e2e:prepare && playwright test",
+    "test:e2e": "npm run e2e:prepare && playwright test --grep-invert \"@wxt\"",
     "e2e:wxt:prepare": "npm run build && npm run fetch:test-books",
     "test:e2e:wxt:baseline": "npm run e2e:wxt:prepare && playwright test tests/e2e/wxt-baseline.spec.ts"
   },

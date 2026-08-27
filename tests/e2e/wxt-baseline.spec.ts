@@ -6,6 +6,7 @@ const rootExtension = resolve('.')
 const wxtExtension = resolve('.output/chrome-mv3')
 const booksPath = resolve('tests/fixtures/books')
 
+test.describe('@wxt', () => {
 test('WXT build keeps the root extension identity and opens the reader shell', async () => {
   const root = await launchExtension(rootExtension)
   const rootExtensionId = root.extensionId
@@ -69,3 +70,4 @@ async function openBook(page: Page, name: string) {
 async function progress(page: Page) {
   return Number(await page.locator('#progress-slider').inputValue())
 }
+})
