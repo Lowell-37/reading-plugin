@@ -10,6 +10,7 @@ export interface LaunchedExtension {
   context: BrowserContext
   page: Page
   extensionId: string
+  pageErrors: Error[]
 }
 
 export interface ExtensionLaunchOptions {
@@ -46,9 +47,11 @@ export async function launchExtension(
       extensionId = new URL(worker.url()).host
     }
     const page = await context.newPage()
+    const pageErrors: Error[] = []
+    page.on('pageerror', error => pageErrors.push(error))
     await page.goto(`chrome-extension://${extensionId}/reader.html`)
     if (waitForSelector) await page.locator(waitForSelector).waitFor({ state: 'visible' })
-    return { context, page, extensionId }
+    return { context, page, extensionId, pageErrors }
   } catch (error) {
     await context.close()
     throw error

@@ -9,8 +9,7 @@ import { BOOKS_STORE, DB_NAME, META_STORE } from '../../src/storage-schema.js'
 export async function runMigrationPreflight(): Promise<MigrationPreflightResult> {
   try {
     return await inspectMigrationSnapshot(await readMigrationSnapshot())
-  } catch (cause) {
-    const message = cause instanceof Error ? cause.message : String(cause)
+  } catch {
     return {
       ok: false,
       error: {
@@ -24,7 +23,7 @@ export async function runMigrationPreflight(): Promise<MigrationPreflightResult>
           bookCount: 0,
           settingsKey: 'quiet-reader-settings',
           settingsKeys: [],
-          settingsWarnings: [`database-open:${message}`],
+          settingsWarnings: ['database-open'],
         },
       },
     }
@@ -60,10 +59,10 @@ async function readMigrationSnapshot(): Promise<MigrationSnapshot> {
       }
     }
     const transaction = database.transaction([BOOKS_STORE, META_STORE], 'readonly')
-    const booksRequest = transaction.objectStore(BOOKS_STORE).getAll()
+    const booksPromise = readBookRecords(transaction.objectStore(BOOKS_STORE))
     const schemaRequest = transaction.objectStore(META_STORE).get('schema')
     const [books, schema] = await Promise.all([
-      requestResult<unknown[]>(booksRequest),
+      booksPromise,
       requestResult<unknown>(schemaRequest),
       transactionComplete(transaction),
     ])
@@ -78,6 +77,32 @@ async function readMigrationSnapshot(): Promise<MigrationSnapshot> {
   } finally {
     database.close()
   }
+}
+
+function readBookRecords(store: IDBObjectStore): Promise<unknown[]> {
+  return new Promise((resolve, reject) => {
+    const books: unknown[] = []
+    const request = store.openCursor()
+    request.onerror = () => reject(request.error)
+    request.onsuccess = () => {
+      const cursor = request.result
+      if (!cursor) {
+        resolve(books)
+        return
+      }
+      const value = cursor.value
+      if (value?.blob instanceof Blob) {
+        books.push({
+          ...value,
+          blob: value.blob.slice(0, Math.min(1, value.blob.size)),
+          blobSize: value.blob.size,
+        })
+      } else {
+        books.push(value)
+      }
+      cursor.continue()
+    }
+  })
 }
 
 function openExistingDatabase(): Promise<IDBDatabase> {

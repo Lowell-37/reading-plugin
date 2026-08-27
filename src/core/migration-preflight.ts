@@ -14,6 +14,7 @@ export const DEFAULT_READER_SETTINGS = {
   aiModel: '',
   aiApiKey: '',
 } as const
+const KNOWN_SETTINGS_KEYS = Object.keys(DEFAULT_READER_SETTINGS)
 
 export interface MigrationSnapshot {
   databaseExists: boolean
@@ -95,7 +96,9 @@ export async function inspectMigrationSnapshot(snapshot: MigrationSnapshot): Pro
   const parsedSettings = parseSettings(snapshot.rawSettings)
   const normalized = normalizeReaderSettings(parsedSettings.value)
   const settingsWarnings = [...parsedSettings.warnings, ...normalized.warnings]
-  const settingsKeys = isRecord(parsedSettings.value) ? Object.keys(parsedSettings.value).sort() : []
+  const settingsKeys = isRecord(parsedSettings.value)
+    ? Object.keys(parsedSettings.value).filter(key => KNOWN_SETTINGS_KEYS.includes(key)).sort()
+    : []
   const schemaVersion = schemaVersionOf(snapshot.schema)
   const diagnostic: MigrationDiagnostic = {
     databaseExists: snapshot.databaseExists,
@@ -147,7 +150,9 @@ function success(
     diagnostic,
     summary: {
       ...diagnostic,
-      blobBytes: records.reduce((total, book) => total + (book.blob instanceof Blob ? book.blob.size : 0), 0),
+      blobBytes: records.reduce((total, book) => total + (
+        Number.isFinite(book.blobSize) ? Number(book.blobSize) : book.blob instanceof Blob ? book.blob.size : 0
+      ), 0),
       booksWithProgress: records.filter(book => isRecord(book.progress)).length,
       booksWithAnnotations: records.filter(book => Array.isArray(book.annotations) && book.annotations.length > 0).length,
     },

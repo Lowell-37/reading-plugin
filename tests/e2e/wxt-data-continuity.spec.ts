@@ -22,7 +22,9 @@ test('@wxt-data root → WXT → root preserves and extends the same local libra
       rootId = root.extensionId
       await root.page.locator('#file-input').setInputFiles(bookPath)
       await expect(root.page.locator('#loading-view')).toBeHidden({ timeout: 30_000 })
+      const rootInitialProgress = Number(await root.page.locator('#progress-slider').inputValue())
       await root.page.locator('#toc button').nth(3).evaluate((button: HTMLElement) => button.click())
+      await expect.poll(async () => Number(await root.page.locator('#progress-slider').inputValue())).not.toBe(rootInitialProgress)
       await selectText(await chapterFrame(root.page))
       await root.page.locator('#tools-button').evaluate((button: HTMLElement) => button.click())
       root.page.once('dialog', dialog => dialog.accept('Root annotation'))
@@ -39,6 +41,8 @@ test('@wxt-data root → WXT → root preserves and extends the same local libra
           aiApiKey: 'local-secret-must-stay-local',
         }))
       })
+      await expect.poll(async () => (await readContinuityState(root.page)).books[0]?.progress?.fraction ?? 0)
+        .toBeGreaterThan(0)
     } finally {
       await root.context.close()
     }
@@ -47,6 +51,8 @@ test('@wxt-data root → WXT → root preserves and extends the same local libra
     expect(rootState.schema.version).toBe(2)
     expect(rootState.books).toHaveLength(1)
     expect(rootState.books[0].annotations[0].note).toBe('Root annotation')
+    expect(rootState.books[0].progress).toMatchObject({ kind: 'ebook' })
+    expect(rootState.books[0].progress.fraction).toBeGreaterThan(0)
     expect(rootState.settings).toMatchObject({ theme: 'sepia', continuityMarker: 'root-created' })
 
     await stageWxtExtension(extension)
@@ -55,6 +61,7 @@ test('@wxt-data root → WXT → root preserves and extends the same local libra
     try {
       expect(wxt.extensionId).toBe(rootId)
       await expect(wxt.page.locator('html')).toHaveAttribute('data-migration-preflight', 'ready')
+      await expect(wxt.page.locator('html')).toHaveAttribute('data-legacy-controller', 'ready')
       await expect(wxt.page.locator('.library-card')).toHaveCount(1)
       wxtState = await readContinuityState(wxt.page)
       expect(wxtState.books[0].blobSha256).toBe(rootState.books[0].blobSha256)
@@ -84,7 +91,11 @@ test('@wxt-data root → WXT → root preserves and extends the same local libra
         const settings = JSON.parse(localStorage.getItem('quiet-reader-settings') || '{}')
         localStorage.setItem('quiet-reader-settings', JSON.stringify({ ...settings, continuityMarker: 'wxt-updated' }))
       })
+      await expect.poll(async () => (await readContinuityState(wxt.page)).books[0]?.progress?.fraction)
+        .not.toBe(rootState.books[0].progress.fraction)
       wxtState = await readContinuityState(wxt.page)
+      expect(wxtState.books[0].progress).toMatchObject({ kind: 'ebook' })
+      expect(wxtState.books[0].progress.fraction).not.toBe(rootState.books[0].progress.fraction)
     } finally {
       await wxt.context.close()
     }
@@ -93,6 +104,7 @@ test('@wxt-data root → WXT → root preserves and extends the same local libra
     const rollback = await launchExtension(extension, { userDataDir: profile, extensionId: rootId })
     try {
       expect(rollback.extensionId).toBe(rootId)
+      await expect(rollback.page.locator('html')).not.toHaveAttribute('data-migration-preflight', /.+/)
       await expect(rollback.page.locator('.library-card')).toHaveCount(1)
       const rollbackState = await readContinuityState(rollback.page)
       expect(rollbackState.version).toBe(2)
@@ -125,8 +137,10 @@ test('@wxt-data failed WXT preflight preserves a damaged schema and blocks start
     await stageRootExtension(extension)
     const root = await launchExtension(extension, { userDataDir: profile })
     const extensionId = root.extensionId
+    let beforeFailure
     try {
       await root.page.evaluate(corruptSchema)
+      beforeFailure = await readContinuityState(root.page)
     } finally {
       await root.context.close()
     }
@@ -142,11 +156,10 @@ test('@wxt-data failed WXT preflight preserves a damaged schema and blocks start
       await expect(wxt.page.locator('#migration-error-view')).toBeVisible()
       await expect(wxt.page.locator('#welcome-view')).toHaveCount(0)
       await expect(wxt.page.locator('#migration-export-diagnostic')).toBeVisible()
+      await expect(wxt.page.locator('html')).not.toHaveAttribute('data-legacy-controller', /.+/)
+      expect(wxt.pageErrors).toEqual([])
       const state = await readContinuityState(wxt.page)
-      expect(state.version).toBe(2)
-      expect(state.schema).toEqual({ key: 'schema', version: 1, marker: 'do-not-rewrite' })
-      expect(state.books).toHaveLength(1)
-      expect(state.books[0].id).toBe('preflight-sentinel')
+      expect(state).toEqual(beforeFailure)
     } finally {
       await wxt.context.close()
     }
@@ -182,21 +195,21 @@ async function readContinuityState(page: Page): Promise<any> {
       request.onsuccess = () => resolve(request.result)
       request.onerror = () => reject(request.error)
     })
-    const summarizedBooks = await Promise.all(books.map(async book => ({
-      id: book.id,
-      name: book.name,
-      size: book.size,
-      progress: book.progress,
-      annotations: book.annotations,
-      blobSha256: [...new Uint8Array(await crypto.subtle.digest('SHA-256', await book.blob.arrayBuffer()))]
-        .map(byte => byte.toString(16).padStart(2, '0')).join(''),
-    })))
+    const summarizedBooks = await Promise.all(books.map(async book => {
+      const { blob, ...fields } = book
+      return {
+        ...fields,
+        blobSha256: [...new Uint8Array(await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()))]
+          .map(byte => byte.toString(16).padStart(2, '0')).join(''),
+      }
+    }))
     const result = {
       version: database.version,
       stores: Array.from(database.objectStoreNames),
       schema,
       books: summarizedBooks,
       settings: JSON.parse(localStorage.getItem('quiet-reader-settings') || '{}'),
+      rawSettings: localStorage.getItem('quiet-reader-settings'),
     }
     database.close()
     return result

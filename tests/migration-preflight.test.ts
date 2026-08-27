@@ -64,7 +64,7 @@ describe('WXT migration preflight', () => {
       blobBytes: 12,
       booksWithProgress: 1,
       booksWithAnnotations: 1,
-      settingsKeys: ['aiApiKey', 'customReaderFlag', 'fontSize', 'theme'],
+      settingsKeys: ['aiApiKey', 'fontSize', 'theme'],
     })
     expect(JSON.stringify(result.diagnostic)).not.toContain('never-export-this')
   })

@@ -20,9 +20,11 @@ async function startReader() {
   if (!preflight.ok) return
   migration.ready()
   connectLegacyReaderState(pinia)
+  document.documentElement.dataset.legacyController = 'loading'
   // The imperative controller remains JavaScript until its engine adapters move to TypeScript.
   // @ts-expect-error JavaScript compatibility controller has no declaration file yet.
   await import('../../src/reader.js')
+  document.documentElement.dataset.legacyController = 'ready'
 }
 
 await startReader()
