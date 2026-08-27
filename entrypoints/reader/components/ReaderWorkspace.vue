@@ -7,7 +7,11 @@ import TocSidebar from './TocSidebar.vue'
     <TocSidebar />
     <div id="reader-stage" class="reader-stage">
       <div id="loading-view" class="loading-view">
-        <div class="spinner" /><strong>正在打开书籍</strong><span id="loading-detail">解析内容与目录…</span>
+        <div id="loading-spinner" class="spinner" /><strong id="loading-title">正在打开书籍</strong><span id="loading-detail">解析内容与目录…</span>
+        <div id="loading-actions" class="loading-actions" hidden>
+          <button id="loading-library-button" class="soft-button" type="button">返回书架</button>
+          <button id="loading-retry-button" class="primary-button" type="button">重新选择文件</button>
+        </div>
       </div>
       <div id="ebook-host" class="ebook-host" />
       <div id="pdf-viewport" class="pdf-viewport"><div id="pdf-pages" class="pdf-pages" /></div>

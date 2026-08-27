@@ -31,6 +31,23 @@
     <div class="annotation-heading"><strong>高亮与批注</strong><span id="annotation-count">0 条</span></div>
     <p class="selection-hint">在正文中选中文字，然后高亮或添加批注。</p>
     <div class="selection-actions"><button id="highlight-selection" type="button">高亮选中</button><button id="note-selection" type="button">添加批注</button></div>
+    <div class="annotation-filters">
+      <input id="annotation-filter-query" type="search" placeholder="筛选原文、批注或标签" aria-label="筛选批注">
+      <select id="annotation-filter-type" aria-label="批注类型">
+        <option value="all">全部</option><option value="notes">有批注</option><option value="highlights">仅高亮</option><option value="pdf">PDF</option><option value="ebook">电子书</option>
+      </select>
+      <select id="annotation-sort" aria-label="批注排序">
+        <option value="newest">最近修改</option><option value="oldest">最早创建</option><option value="location">阅读位置</option>
+      </select>
+      <button id="annotation-select-all" class="text-button" type="button">全选当前</button>
+      <button id="annotation-delete-selected" class="text-button danger" type="button" disabled>删除所选</button>
+    </div>
+    <div class="annotation-export-actions">
+      <button id="import-annotations-json" class="text-button" type="button">导入 JSON</button>
+      <input id="annotation-import-input" type="file" accept=".json,application/json" hidden>
+      <button id="export-annotations-markdown" class="text-button" type="button">导出 Markdown</button>
+      <button id="export-annotations-json" class="text-button" type="button">导出 JSON</button>
+    </div>
     <div id="annotation-list" class="annotation-list" />
   </aside>
 </template>
