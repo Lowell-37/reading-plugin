@@ -1,6 +1,14 @@
+<script setup lang="ts">
+import { storeToRefs } from 'pinia'
+import { useReaderStore } from '../stores/reader'
+
+const reader = useReaderStore()
+const { activePanel } = storeToRefs(reader)
+</script>
+
 <template>
-  <aside id="tools-panel" class="tools-panel" aria-label="搜索与批注">
-    <div class="panel-header"><div><p class="eyebrow">TOOLS</p><h2>搜索与批注</h2></div><button id="close-tools" class="icon-button" aria-label="关闭工具">×</button></div>
+  <aside id="tools-panel" class="tools-panel" :class="{ open: activePanel === 'tools' }" aria-label="搜索与批注">
+    <div class="panel-header"><div><p class="eyebrow">TOOLS</p><h2>搜索与批注</h2></div><button id="close-tools" class="icon-button" aria-label="关闭工具" @click="reader.closePanel()">×</button></div>
     <form id="search-form" class="search-form"><input id="search-input" type="search" placeholder="搜索书中内容" autocomplete="off"><button type="submit">搜索</button></form>
     <div id="search-status" class="search-status">输入关键词搜索整本书</div>
     <div id="search-results" class="search-results" />

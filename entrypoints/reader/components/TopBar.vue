@@ -1,14 +1,18 @@
 <script setup lang="ts">
 import { storeToRefs } from 'pinia'
 import { useReaderStore } from '../stores/reader'
+import { useSettingsStore } from '../stores/settings'
 
-const { title } = storeToRefs(useReaderStore())
+const reader = useReaderStore()
+const settings = useSettingsStore()
+const { title } = storeToRefs(reader)
+const { headerCollapsed } = storeToRefs(settings)
 </script>
 
 <template>
   <header id="app-header" class="app-header">
     <div class="header-left">
-      <button id="sidebar-button" class="icon-button reader-only" aria-label="打开目录" title="目录">
+      <button id="sidebar-button" class="icon-button reader-only" aria-label="打开目录" title="目录" @click="reader.togglePanel('toc')">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
       </button>
       <button id="home-button" class="brand" title="返回书架">
@@ -23,15 +27,23 @@ const { title } = storeToRefs(useReaderStore())
       <button id="open-button" class="soft-button">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v12m-5-5 5 5 5-5M5 20h14" /></svg>打开书籍
       </button>
-      <button id="tools-button" class="icon-button header-icon-button reader-only" aria-label="搜索与批注" title="搜索与批注">
+      <button id="tools-button" class="icon-button header-icon-button reader-only" aria-label="搜索与批注" title="搜索与批注" @click="reader.togglePanel('tools')">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4 4" /></svg>
       </button>
-      <button id="settings-button" class="icon-button header-icon-button reader-only" aria-label="阅读设置" title="阅读设置">
+      <button id="settings-button" class="icon-button header-icon-button reader-only" aria-label="阅读设置" title="阅读设置" @click="reader.togglePanel('settings')">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10" /><circle cx="16" cy="7" r="2" /><circle cx="8" cy="17" r="2" /></svg>
       </button>
     </div>
   </header>
-  <button id="header-toggle" class="header-toggle reader-only" type="button" aria-expanded="true" aria-label="收起顶部栏" title="收起顶部栏">
+  <button
+    id="header-toggle"
+    class="header-toggle reader-only"
+    type="button"
+    :aria-expanded="!headerCollapsed"
+    :aria-label="headerCollapsed ? '展开顶部栏' : '收起顶部栏'"
+    :title="headerCollapsed ? '展开顶部栏' : '收起顶部栏'"
+    @click="settings.toggleHeaderCollapsed()"
+  >
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 14 5-5 5 5" /></svg>
   </button>
 </template>

@@ -121,6 +121,39 @@ describe('legacy reader port lifecycle', () => {
       isReading: false,
     })
   })
+
+  test('WXT port mode leaves migrated panel buttons to Vue without duplicate requests', async () => {
+    const panelRequests: unknown[] = []
+    // @ts-expect-error JavaScript compatibility controller has no declaration file.
+    const { createLegacyReaderPort } = await import('../src/reader.js')
+    const port = createLegacyReaderPort({
+      onState() {},
+      onPanelRequest: (panel: unknown) => panelRequests.push(panel),
+      onLibraryChanged() {},
+    })
+
+    document.querySelector<HTMLElement>('#settings-button')?.click()
+
+    expect(panelRequests).toEqual([])
+    port.destroy()
+  })
+
+  test('applying settings through the WXT port synchronizes the legacy header body class', async () => {
+    // @ts-expect-error JavaScript compatibility controller has no declaration file.
+    const { createLegacyReaderPort } = await import('../src/reader.js')
+    const port = createLegacyReaderPort({
+      onState() {},
+      onPanelRequest() {},
+      onLibraryChanged() {},
+    })
+
+    await port.applySettings({ headerCollapsed: true })
+    expect(document.body.classList.contains('header-collapsed')).toBe(true)
+
+    await port.applySettings({ headerCollapsed: false })
+    expect(document.body.classList.contains('header-collapsed')).toBe(false)
+    port.destroy()
+  })
 })
 
 function record(name: string, format: BookRecord['format']): BookRecord {

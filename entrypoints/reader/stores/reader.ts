@@ -19,5 +19,11 @@ export const useReaderStore = defineStore('reader', {
     requestPanel(panel: ReaderPanel) {
       this.activePanel = panel
     },
+    togglePanel(panel: Exclude<ReaderPanel, null>) {
+      this.activePanel = this.activePanel === panel ? null : panel
+    },
+    closePanel() {
+      this.activePanel = null
+    },
   },
 })
