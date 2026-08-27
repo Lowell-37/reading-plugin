@@ -10,6 +10,12 @@ export default defineConfig({
     short_name: '静读',
     version: '0.2.0',
     description: '在浏览器中离线阅读 PDF、EPUB、MOBI 与 AZW3 电子书。',
+    icons: {
+      16: 'assets/icon-16.png',
+      32: 'assets/icon-32.png',
+      48: 'assets/icon-48.png',
+      128: 'assets/icon-128.png',
+    },
     action: {
       default_title: '打开静读',
     },

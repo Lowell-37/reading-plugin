@@ -5,6 +5,7 @@ dist/
 .wxt/
 .worktrees/
 public/node_modules/
+public/assets/
 test-results/
 playwright-report/
 tests/fixtures/books/
