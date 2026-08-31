@@ -2,28 +2,35 @@ import { test } from 'vitest'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
-const WXT_PROHIBITED_UI_BINDINGS = [
-  'headerToggle',
-  'openButton',
-  'heroOpenButton',
-  'fileInput',
-  'homeButton',
-  'sidebarButton',
-  'settingsButton',
-  'toolsButton',
-  'closeSettings',
-  'closeTools',
-  'scrim',
-  'backupLibrary',
-  'restoreLibrary',
-  'backupFileInput',
-  'fontSelect',
-  'fontSize',
-  'lineHeight',
-  'pageWidth',
-  '[data-flow]',
-  '[data-theme]',
-  'dropZone',
+const EXPECTED_ENGINE_LISTENERS = [
+  'loading-return-library@loadingLibraryButton:click',
+  'loading-retry-file@loadingRetryButton:click',
+  'ai-settings-toggle@aiSettingsToggle:click',
+  'ai-settings-save@saveAiSettings:click',
+  'ai-stop@aiStop:click',
+  'ai-selection-close@closeSelectionAiMenu:click',
+  'ai-action@aiActionButtons:click',
+  'search-submit@searchForm:submit',
+  'annotation-highlight@highlightSelection:click',
+  'annotation-note@noteSelection:click',
+  'annotation-filter-query@annotationFilterQuery:input',
+  'annotation-filter-type@annotationFilterType:change',
+  'annotation-sort@annotationSort:change',
+  'annotation-select-all@annotationSelectAll:click',
+  'annotation-delete-selected@annotationDeleteSelected:click',
+  'annotation-import-picker@importAnnotationsJson:click',
+  'annotation-import-file@annotationImportInput:change',
+  'annotation-export-markdown@exportAnnotationsMarkdown:click',
+  'annotation-export-json@exportAnnotationsJson:click',
+  'reader-prev@prevButton:click',
+  'reader-next@nextButton:click',
+  'pdf-zoom-out@pdfZoomOut:click',
+  'pdf-zoom-in@pdfZoomIn:click',
+  'pdf-fit-width@pdfFitWidth:click',
+  'pdf-page-change@pdfPageInput:change',
+  'pdf-page-keyboard@pdfPageInput:keydown',
+  'reader-progress@progressSlider:input',
+  'reader-keyboard@window:keydown',
 ]
 
 test('WXT owns the background and reader entrypoints', async () => {
@@ -57,32 +64,27 @@ test('WXT completes the read-only migration preflight before loading the legacy 
   assert.match(source, /if \(!preflight\.ok\) return/)
 })
 
-test('WXT starts engine listeners without binding any Vue-owned UI control', async () => {
-  const source = await readFile(new URL('../src/reader.js', import.meta.url), 'utf8')
-  const engineBindings = functionSource(source, 'bindEngineControls')
-  const portFactory = functionSource(source, 'createLegacyReaderPort')
+test('WXT startup owns the exhaustive engine inventory and no migrated UI action', async () => {
+  const ownership = await import('../src/reader-listener-registry.js').catch(() => null)
+  assert.ok(ownership, 'reader listener ownership must be represented by an importable production registry')
 
-  for (const binding of WXT_PROHIBITED_UI_BINDINGS) {
-    assert.doesNotMatch(engineBindings, new RegExp(escapeRegExp(binding)), `${binding} must not be bound by the WXT engine`)
-  }
-  assert.match(engineBindings, /elements\.prevButton\.addEventListener/)
-  assert.match(engineBindings, /elements\.searchForm\.addEventListener/)
-  assert.match(portFactory, /initializeLegacyReaderController\(\{ rootUi: false \}\)/)
+  assert.deepEqual(signatures(ownership.ENGINE_LISTENERS), EXPECTED_ENGINE_LISTENERS)
+  assert.deepEqual(ownership.LISTENER_STARTUP.wxt, ['engine'])
+  const migratedActions = new Set([
+    ...ownership.ROOT_UI_LISTENERS,
+    ...ownership.ROOT_LIBRARY_LISTENERS,
+  ].map(binding => binding.action))
+  assert.deepEqual(ownership.ENGINE_LISTENERS.filter(binding => migratedActions.has(binding.action)), [])
+
+  const started = []
+  ownership.startReaderListenerMode('wxt', {
+    engine: () => started.push('engine'),
+    rootUi: () => started.push('rootUi'),
+    rootLibrary: () => started.push('rootLibrary'),
+  })
+  assert.deepEqual(started, ['engine'])
 })
 
-function functionSource(source, name) {
-  const start = source.indexOf(`function ${name}(`)
-  assert.notEqual(start, -1, `${name} must exist`)
-  const bodyStart = source.indexOf('{', source.indexOf(') {', start))
-  let depth = 0
-  for (let index = bodyStart; index < source.length; index += 1) {
-    if (source[index] === '{') depth += 1
-    if (source[index] === '}') depth -= 1
-    if (depth === 0) return source.slice(start, index + 1)
-  }
-  assert.fail(`${name} must have a complete function body`)
-}
-
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+function signatures(bindings) {
+  return bindings.map(binding => `${binding.action}@${binding.target}:${binding.event}`)
 }

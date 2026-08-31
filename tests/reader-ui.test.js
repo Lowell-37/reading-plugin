@@ -2,27 +2,38 @@ import { test } from 'vitest'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
-const ROOT_UI_LISTENERS = [
-  ['header collapse', /elements\.headerToggle\.addEventListener\('click'/g],
-  ['open button', /elements\.openButton\.addEventListener\('click'/g],
-  ['hero open button', /elements\.heroOpenButton\.addEventListener\('click'/g],
-  ['file input', /elements\.fileInput\.addEventListener\('change'/g],
-  ['home button', /elements\.homeButton\.addEventListener\('click'/g],
-  ['table of contents panel', /elements\.sidebarButton\.addEventListener\('click'/g],
-  ['settings panel', /elements\.settingsButton\.addEventListener\('click'/g],
-  ['tools panel', /elements\.toolsButton\.addEventListener\('click'/g],
-  ['close settings', /elements\.closeSettings\.addEventListener\('click'/g],
-  ['close tools', /elements\.closeTools\.addEventListener\('click'/g],
-  ['panel scrim', /elements\.scrim\.addEventListener\('click'/g],
-  ['library backup', /elements\.backupLibrary\.addEventListener\('click'/g],
-  ['library restore picker', /elements\.restoreLibrary\.addEventListener\('click'/g],
-  ['library restore file', /elements\.backupFileInput\.addEventListener\('change'/g],
-  ['flow setting', /querySelectorAll\('\[data-flow\]'\)/g],
-  ['theme setting', /querySelectorAll\('\[data-theme\]'\)/g],
-  ['font setting', /elements\.fontSelect\.addEventListener\('change'/g],
-  ['font size setting', /elements\.fontSize\.addEventListener\('input'/g],
-  ['line height setting', /elements\.lineHeight\.addEventListener\('input'/g],
-  ['page width setting', /elements\.pageWidth\.addEventListener\('input'/g],
+const EXPECTED_ROOT_UI_LISTENERS = [
+  'open-button@openButton:click',
+  'hero-open-button@heroOpenButton:click',
+  'file-input@fileInput:change',
+  'home-button@homeButton:click',
+  'header-collapse@headerToggle:click',
+  'panel-toc@sidebarButton:click',
+  'panel-settings@settingsButton:click',
+  'panel-tools@toolsButton:click',
+  'panel-close-settings@closeSettings:click',
+  'panel-close-tools@closeTools:click',
+  'panel-scrim@scrim:click',
+  'library-backup@backupLibrary:click',
+  'library-restore-picker@restoreLibrary:click',
+  'library-restore-file@backupFileInput:change',
+  'settings-flow@[data-flow]:click',
+  'settings-theme@[data-theme]:click',
+  'settings-font@fontSelect:change',
+  'settings-font-size@fontSize:input',
+  'settings-line-height@lineHeight:input',
+  'settings-page-width@pageWidth:input',
+  'file-dragenter@window:dragenter',
+  'file-dragover@window:dragover',
+  'file-dragleave@window:dragleave',
+  'file-drop@window:drop',
+  'panel-escape@window:keydown',
+]
+
+const EXPECTED_ROOT_LIBRARY_LISTENERS = [
+  'library-card-open@card:click',
+  'library-card-keyboard@card:keydown',
+  'library-card-delete@remove:click',
 ]
 
 test('reader exposes search, annotation and PDF navigation controls', async () => {
@@ -64,27 +75,45 @@ test('root and Vue library shells expose versioned backup and restore controls',
   assert.match(source, /parseLibraryBackup/)
 })
 
-test('root reader owns exactly one listener for every migrated UI action', async () => {
-  const source = await readFile(new URL('../src/reader.js', import.meta.url), 'utf8')
-  const rootBindings = functionSource(source, 'bindRootUiControls')
-  const libraryRendering = functionSource(source, 'renderLibrary')
+test('root startup owns each migrated UI and library listener exactly once', async () => {
+  const ownership = await import('../src/reader-listener-registry.js').catch(() => null)
+  assert.ok(ownership, 'reader listener ownership must be represented by an importable production registry')
 
-  for (const [action, pattern] of ROOT_UI_LISTENERS) {
-    assert.equal(rootBindings.match(pattern)?.length || 0, 1, `${action} must have exactly one root listener`)
-  }
-  assert.equal(libraryRendering.match(/remove\.addEventListener\('click'/g)?.length || 0, 1, 'book deletion must have one root listener')
-  assert.equal(libraryRendering.match(/card\.addEventListener\('click'/g)?.length || 0, 1, 'book opening must have one root click listener')
+  assert.deepEqual(signatures(ownership.ROOT_UI_LISTENERS), EXPECTED_ROOT_UI_LISTENERS)
+  assert.deepEqual(signatures(ownership.ROOT_LIBRARY_LISTENERS), EXPECTED_ROOT_LIBRARY_LISTENERS)
+  assert.deepEqual(ownership.LISTENER_STARTUP.root, ['engine', 'rootUi', 'rootLibrary'])
+
+  const allBindings = [
+    ...ownership.ENGINE_LISTENERS,
+    ...ownership.ROOT_UI_LISTENERS,
+    ...ownership.ROOT_LIBRARY_LISTENERS,
+  ]
+  assert.equal(new Set(allBindings.map(binding => binding.action)).size, allBindings.length)
+  assert.deepEqual(
+    signatures(ownership.ROOT_UI_LISTENERS.filter(binding => binding.target === 'window')),
+    EXPECTED_ROOT_UI_LISTENERS.filter(signature => signature.includes('@window:')),
+  )
+
+  assert.equal(typeof ownership.bindRegisteredListeners, 'function')
+  const registrations = []
+  const handlers = Object.fromEntries(allBindings.map(binding => [binding.action, () => undefined]))
+  ownership.bindRegisteredListeners(allBindings, handlers, binding => [{
+    addEventListener(event, handler) {
+      registrations.push(`${binding.action}@${binding.target}:${event}`)
+      assert.equal(handler, handlers[binding.action])
+    },
+  }])
+  assert.deepEqual(registrations, signatures(allBindings))
+
+  const started = []
+  ownership.startReaderListenerMode('root', {
+    engine: () => started.push('engine'),
+    rootUi: () => started.push('rootUi'),
+    rootLibrary: () => started.push('rootLibrary'),
+  })
+  assert.deepEqual(started, ['engine', 'rootUi', 'rootLibrary'])
 })
 
-function functionSource(source, name) {
-  const start = source.indexOf(`function ${name}(`)
-  assert.notEqual(start, -1, `${name} must exist`)
-  const bodyStart = source.indexOf('{', source.indexOf(') {', start))
-  let depth = 0
-  for (let index = bodyStart; index < source.length; index += 1) {
-    if (source[index] === '{') depth += 1
-    if (source[index] === '}') depth -= 1
-    if (depth === 0) return source.slice(start, index + 1)
-  }
-  assert.fail(`${name} must have a complete function body`)
+function signatures(bindings) {
+  return bindings.map(binding => `${binding.action}@${binding.target}:${binding.event}`)
 }
