@@ -1,6 +1,6 @@
 # 渐进式架构迁移
 
-本文档记录架构迁移的代码实现情况。阶段 1、2、阶段 A“双入口等价基线”和阶段 B“同 ID 数据连续性门禁”已完成；WXT 构建版已通过自动化真实 Edge 四格式与双向数据验收，但在 Vue 接管主要领域前仍不作为日常稳定入口。
+本文档记录架构迁移的代码实现情况。阶段 1、2、阶段 A“双入口等价基线”、阶段 B“同 ID 数据连续性门禁”和阶段 C“Vue 接管书架、面板与设置”的自动化验收已完成；WXT 构建版已通过真实 Edge 四格式、双向数据和 Vue 书架验收，但电子书/PDF 会话、搜索和批注仍由旧阅读核心驱动，因此暂不作为日常稳定入口。
 
 当前稳定版本仍是在 Edge 中直接加载项目根目录的原生 JavaScript 阅读器。总体进度、产品阶段与最终验收标准统一以 [ROADMAP.md](ROADMAP.md) 为准。
 
@@ -34,13 +34,15 @@
 - 构建契约自动校验固定扩展密钥、名称、版本、权限、CSP、图标和 PDF 运行资源
 - 当前 WXT Chrome MV3 构建通过契约校验，共包含 223 个文件
 
-### 阶段 4：Vue 3 + Pinia（🟡 外壳基线通过，完整接管未完成）
+### 阶段 4：Vue 3 + Pinia（🟡 阶段 C 已完成，完整接管未完成）
 
 - 顶部栏、书架、目录、阅读区、设置、工具和浮层已组件化
-- Pinia 只保存运行时 UI 状态，持久化仍由 Repository 负责
+- Pinia 接管 WXT 的书架投影、文件选择/拖放、删除、备份恢复、设置、面板、顶部栏和运行时界面状态
+- Pinia 只保存运行时 UI 状态与 Repository 投影；持久化仍由 Repository 负责，IndexedDB schema v2 和既有备份格式未改变
 - Vue 组件不直接依赖 Foliate.js 或 PDF.js 内部实现
 - Vue 模板已补齐旧控制器依赖的加载、筛选、导入导出节点，四种格式不再因空引用停止初始化
-- 旧 `reader.js` 仍负责阅读会话，后续阶段将按领域逐块由 Vue/TypeScript 接管
+- WXT 已迁移控件不再由旧控制器注册重复监听器；`legacy-bridge.ts` 只通过结构化回调和端口投射运行时状态
+- 旧 `reader.js` 仍负责 EPUB/MOBI/AZW3、PDF、搜索和批注阅读会话，后续阶段将按领域逐块由 Vue/TypeScript 接管
 
 ### 阶段 5：真实扩展端到端验证（✅ 阶段 A、B 自动化门禁完成）
 
@@ -75,7 +77,19 @@
 - WXT 对进度、主题和批注的修改可由回滚后的根目录版继续读取
 - 预检损坏 schema 后确认数据库版本、schema 记录和书籍记录没有被自动改写
 
-下一阶段是阶段 C“Vue 接管书架、面板与设置”。在阶段 C、D、E 完成前，用户仍应加载项目根目录。
+## 阶段 C 验收记录（2026-08-31）
+
+- `npm run check`：通过，包含变更日志、核心构建、TypeScript、Vue TypeScript 和 JavaScript 语法检查。
+- `npm test`：36 个测试文件、185 项测试通过。
+- `npm run build:wxt:verify`：通过，WXT 构建身份与运行资源契约确认 223 个文件；唯一已知构建提示是既有的压缩后大于 500 kB chunk 警告。
+- `npm run test:e2e:wxt:baseline`：6 项真实 Edge 基线通过，覆盖同扩展 ID、EPUB、MOBI、AZW3、PDF 以及 EPUB 设置/进度恢复。
+- `npm run test:e2e:wxt:continuity`：2 项真实 Edge 数据连续性与损坏 schema 只读门禁通过。
+- `tests/e2e/wxt-vue-shell.spec.ts`：1 项真实 Edge Vue 书架验收通过，覆盖导入、重新打开、删除、备份恢复、进度和批注。
+- `npm run test:e2e`：25 项根目录稳定入口 Edge 回归通过，包含发布 ZIP、升级和回滚；旧 CFI 修复与覆盖层创建的竞态已由独立协调器和回归测试固定。
+- `npm run release`：通过；`quiet-reader-0.2.0.zip` 含 303 个文件，SHA-256 为 `a4beb7bdb1879d026cf697ed18e10ce112d801a0fcb25261fdde7014ead9dc9e`，包内 Manifest 保留固定扩展身份。
+- AI 产品入口和请求路由继续关闭。
+
+后续是阶段 D：由 Vue/TypeScript 接管电子书阅读会话，再依次处理 PDF 会话、搜索与批注。文件选择标签的显式键盘激活，以及架构测试改用 AST/扩展导入守卫，均为非阻断的后续可访问性/测试健壮性工作。在阶段 D、E 完成前，用户仍应加载项目根目录。
 
 ## 后续产品阶段
 

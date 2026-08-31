@@ -17,6 +17,7 @@ import {
 } from './annotation-export.js'
 import { annotationImportMatchesBook, mergeAnnotationImports, parseAnnotationImport } from './annotation-import.js'
 import { recoverTextAnchor } from './anchor-recovery.js'
+import { createEbookAnnotationRehydrator } from './ebook-annotation-rehydration.js'
 import { buildAiMessages, CHAPTER_AI_ACTIONS, getAiPermissionOrigin, SELECTION_AI_ACTIONS, streamAiCompletion } from './ai.js'
 import { bookRepository } from './book-repository.js'
 import { ContinuousEbookScroller } from './continuous-ebook.js'
@@ -1309,12 +1310,18 @@ async function openEbook(file) {
 
   ebookView = document.createElement('foliate-view')
   elements.ebookHost.append(ebookView)
+  const annotationRehydrator = createEbookAnnotationRehydrator({
+    repair: repairEbookAnnotationAnchors,
+    hydrate: index => Promise.all(annotations
+      .filter(item => item.kind === 'ebook' && item.anchorStatus !== 'unresolved' && (item.section == null || item.section === index))
+      .map(annotation => ebookView.addAnnotation({ value: annotation.locator, color: annotation.color, note: annotation.note }))),
+  })
   ebookView.addEventListener('relocate', ({ detail }) => {
     if (!continuousEbook) handleEbookRelocate(detail)
   })
   ebookView.addEventListener('draw-annotation', ({ detail: { draw, annotation } }) => draw(Overlayer.highlight, { color: annotation.color || '#f4c95d' }))
   ebookView.addEventListener('create-overlay', ({ detail: { index } }) => {
-    for (const annotation of annotations.filter(item => item.kind === 'ebook' && item.anchorStatus !== 'unresolved' && (item.section == null || item.section === index))) ebookView.addAnnotation({ value: annotation.locator, color: annotation.color, note: annotation.note })
+    annotationRehydrator.onOverlay(index).catch(console.error)
   })
   ebookView.addEventListener('show-annotation', ({ detail }) => {
     const annotation = annotations.find(item => item.locator === detail.value)
@@ -1326,7 +1333,7 @@ async function openEbook(file) {
   ebookView.addEventListener('load', ({ detail: { doc, index } }) => {
     doc.addEventListener('mouseup', () => captureEbookSelection(doc, index))
     doc.addEventListener('selectionchange', () => captureEbookSelection(doc, index))
-    repairEbookAnnotationAnchors(doc, index).catch(console.error)
+    annotationRehydrator.onLoad(doc, index)
   })
 
   await ebookView.open(file)
