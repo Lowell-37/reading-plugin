@@ -51,6 +51,18 @@ const setStylesImportant = (el, styles) => {
         if (!layout || !this.document?.documentElement || !getBody(this.document)) return`,
     'render lifecycle guard')
   source = replaceOnce(source,
+    `    #replaceBackground(background, columnCount) {
+        const doc = this.#view?.document
+        if (!doc) return
+        const htmlStyle = doc.defaultView.getComputedStyle(doc.documentElement)`,
+    `    #replaceBackground(background, columnCount) {
+        const doc = this.#view?.document
+        const view = doc?.defaultView
+        const documentElement = doc?.documentElement
+        if (!view || !documentElement || !(documentElement instanceof view.Element)) return
+        const htmlStyle = view.getComputedStyle(documentElement)`,
+    'background render lifecycle guard')
+  source = replaceOnce(source,
     `    expand() {
         const { documentElement } = this.document`,
     `    expand() {

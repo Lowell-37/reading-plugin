@@ -2,9 +2,11 @@
 import { storeToRefs } from 'pinia'
 import { useReaderStore } from '../stores/reader'
 import { useSettingsStore } from '../stores/settings'
+import { useLibraryStore } from '../stores/library'
 
 const reader = useReaderStore()
 const settings = useSettingsStore()
+const library = useLibraryStore()
 const { title } = storeToRefs(reader)
 const { headerCollapsed } = storeToRefs(settings)
 </script>
@@ -15,7 +17,7 @@ const { headerCollapsed } = storeToRefs(settings)
       <button id="sidebar-button" class="icon-button reader-only" aria-label="打开目录" title="目录" @click="reader.togglePanel('toc')">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
       </button>
-      <button id="home-button" class="brand" title="返回书架">
+      <button id="home-button" class="brand" title="返回书架" @click="library.closeSession().catch(console.error)">
         <span class="brand-mark">静</span><span class="brand-name">静读</span>
       </button>
       <div class="book-heading reader-only">
@@ -24,9 +26,9 @@ const { headerCollapsed } = storeToRefs(settings)
     </div>
     <div class="header-actions">
       <span class="privacy-note welcome-only">文件仅保存在此浏览器中</span>
-      <button id="open-button" class="soft-button">
+      <label id="open-button" class="soft-button" for="file-input" role="button" tabindex="0">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v12m-5-5 5 5 5-5M5 20h14" /></svg>打开书籍
-      </button>
+      </label>
       <button id="tools-button" class="icon-button header-icon-button reader-only" aria-label="搜索与批注" title="搜索与批注" @click="reader.togglePanel('tools')">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4 4" /></svg>
       </button>

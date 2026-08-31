@@ -6,6 +6,7 @@ import { connectLegacyReaderState } from './legacy-bridge'
 import type { LegacyReaderPort } from './legacy-reader-port'
 import { runMigrationPreflight } from './migration-preflight'
 import { useMigrationStore } from './stores/migration'
+import { useLibraryStore } from './stores/library'
 
 async function startReader() {
   const pinia = createPinia()
@@ -20,6 +21,8 @@ async function startReader() {
   }
   if (!preflight.ok) return
   migration.ready()
+  const library = useLibraryStore(pinia)
+  await library.load()
   const bridge = connectLegacyReaderState(pinia)
   document.documentElement.dataset.legacyController = 'loading'
   // The imperative controller remains JavaScript until its engine adapters move to TypeScript.

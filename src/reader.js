@@ -272,7 +272,7 @@ async function showLibrary() {
   elements.welcomeView.hidden = false
   document.title = '静读'
   emitLegacyState({ isReading: false })
-  await renderLibrary()
+  if (!vueOwnsMigratedControls) await renderLibrary()
 }
 
 function setHeaderCollapsed(collapsed, persist = true) {
@@ -1584,7 +1584,7 @@ async function openStoredBook(record, options) {
   const file = record.blob instanceof File
     ? record.blob
     : new File([record.blob], record.name, { type: record.type, lastModified: record.lastModified })
-  await bookRepository.update(record.id, { openedAt: Date.now() }).catch(console.error)
+  if (!vueOwnsMigratedControls) await bookRepository.update(record.id, { openedAt: Date.now() }).catch(console.error)
   await openBook(file, record, options)
 }
 
@@ -1708,26 +1708,26 @@ function navigate(direction) {
 }
 
 function bindControls() {
-  elements.openButton.addEventListener('click', openPicker)
-  elements.heroOpenButton.addEventListener('click', openPicker)
-  elements.fileInput.addEventListener('change', event => {
-    const [file] = event.target.files
-    if (file) openBook(file)
-  })
-  elements.homeButton.addEventListener('click', showLibrary)
   elements.loadingLibraryButton.addEventListener('click', showLibrary)
   elements.loadingRetryButton.addEventListener('click', openPicker)
   if (!vueOwnsMigratedControls) {
+    elements.openButton.addEventListener('click', openPicker)
+    elements.heroOpenButton.addEventListener('click', openPicker)
+    elements.fileInput.addEventListener('change', event => {
+      const [file] = event.target.files
+      if (file) openBook(file)
+    })
+    elements.homeButton.addEventListener('click', showLibrary)
     elements.headerToggle.addEventListener('click', () => setHeaderCollapsed(!document.body.classList.contains('header-collapsed')))
     elements.sidebarButton.addEventListener('click', () => openPanel(elements.sidebar))
     elements.settingsButton.addEventListener('click', () => openPanel(elements.settingsPanel))
+    elements.backupLibrary.addEventListener('click', exportLibraryBackup)
+    elements.restoreLibrary.addEventListener('click', openBackupPicker)
+    elements.backupFileInput.addEventListener('change', event => {
+      const [file] = event.target.files
+      if (file) restoreLibraryBackup(file)
+    })
   }
-  elements.backupLibrary.addEventListener('click', exportLibraryBackup)
-  elements.restoreLibrary.addEventListener('click', openBackupPicker)
-  elements.backupFileInput.addEventListener('change', event => {
-    const [file] = event.target.files
-    if (file) restoreLibraryBackup(file)
-  })
 
   if (!vueOwnsMigratedControls) elements.toolsButton.addEventListener('click', () => openPanel(elements.toolsPanel))
   elements.aiSettingsToggle.addEventListener('click', () => {
@@ -1806,17 +1806,19 @@ function bindControls() {
     elements.pageWidth.addEventListener('input', event => { settings.pageWidth = Number(event.target.value); applyReaderSettings() })
   }
 
-  for (const eventName of ['dragenter', 'dragover']) {
-    window.addEventListener(eventName, event => { event.preventDefault(); elements.dropZone.classList.add('dragging') })
+  if (!vueOwnsMigratedControls) {
+    for (const eventName of ['dragenter', 'dragover']) {
+      window.addEventListener(eventName, event => { event.preventDefault(); elements.dropZone.classList.add('dragging') })
+    }
+    for (const eventName of ['dragleave', 'drop']) {
+      window.addEventListener(eventName, event => { event.preventDefault(); elements.dropZone.classList.remove('dragging') })
+    }
+    window.addEventListener('drop', event => {
+      const [file] = event.dataTransfer.files
+      if (file) openBook(file)
+      else showToast('没有找到可打开的文件', 'error')
+    })
   }
-  for (const eventName of ['dragleave', 'drop']) {
-    window.addEventListener(eventName, event => { event.preventDefault(); elements.dropZone.classList.remove('dragging') })
-  }
-  window.addEventListener('drop', event => {
-    const [file] = event.dataTransfer.files
-    if (file) openBook(file)
-    else showToast('没有找到可打开的文件', 'error')
-  })
   window.addEventListener('keydown', event => {
     if (!vueOwnsMigratedControls && event.key === 'Escape') { closePanels(); elements.selectionAiMenu.hidden = true; return }
     if (!document.body.classList.contains('is-reading')) return
@@ -1834,7 +1836,7 @@ function initializeLegacyReaderController() {
   // Vue ownership moves listener groups in later migration tasks; until then the
   // explicit port owns the existing baseline-compatible controller bindings.
   bindControls()
-  renderLibrary()
+  if (!vueOwnsMigratedControls) renderLibrary()
 }
 
 export function createLegacyReaderPort(callbacks = {}) {

@@ -1,17 +1,21 @@
 // @vitest-environment jsdom
 import { createPinia } from 'pinia'
 import { mount } from '@vue/test-utils'
-import { afterEach, describe, expect, test } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 import App from '../entrypoints/reader/App.vue'
 import { connectLegacyReaderState } from '../entrypoints/reader/legacy-bridge'
 import { useReaderStore } from '../entrypoints/reader/stores/reader'
 import { useSettingsStore } from '../entrypoints/reader/stores/settings'
 import { useMigrationStore } from '../entrypoints/reader/stores/migration'
+import { useLibraryStore } from '../entrypoints/reader/stores/library'
+import type { BookRecord } from '../src/core/types'
 
 afterEach(() => {
   localStorage.clear()
   document.body.replaceChildren()
   document.body.className = ''
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
 })
 
 describe('Vue reader shell', () => {
@@ -79,6 +83,53 @@ describe('Vue reader shell', () => {
     expect(wrapper.find('#settings-panel').classes()).not.toContain('open')
     expect(wrapper.find('#scrim').classes()).not.toContain('show')
 
+    wrapper.unmount()
+  })
+
+  test('renders the real Pinia library projection and revokes cover URLs on updates and unmount', async () => {
+    const createObjectURL = vi.fn((_: Blob) => `blob:cover-${createObjectURL.mock.calls.length}`)
+    const revokeObjectURL = vi.fn()
+    vi.stubGlobal('URL', { ...URL, createObjectURL, revokeObjectURL })
+    const pinia = createPinia()
+    const library = useLibraryStore(pinia)
+    library.books = [libraryRecord('first.epub', 0.42, new Blob(['cover-one'], { type: 'image/png' }))]
+    const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
+
+    expect(wrapper.find('#library-section').attributes('hidden')).toBeUndefined()
+    expect(wrapper.findAll('.library-card')).toHaveLength(1)
+    expect(wrapper.find('.card-title').text()).toBe('First title')
+    expect(wrapper.find('.card-author').text()).toBe('First author')
+    expect(wrapper.find('.card-meta').text()).toMatch(/EPUB.*4 B/)
+    expect(wrapper.find('.card-progress span').attributes('style')).toContain('42%')
+    expect(wrapper.find('.mini-cover img').attributes('src')).toBe('blob:cover-1')
+
+    library.books = [libraryRecord('second.pdf', 0.1, new Blob(['cover-two'], { type: 'image/png' }))]
+    await wrapper.vm.$nextTick()
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:cover-1')
+    expect(wrapper.find('.card-title').text()).toBe('Second title')
+
+    wrapper.unmount()
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:cover-2')
+  })
+
+  test('routes hidden file input and drop events through the library store once', async () => {
+    const pinia = createPinia()
+    const library = useLibraryStore(pinia)
+    const openFile = vi.spyOn(library, 'openFile').mockResolvedValue(undefined as never)
+    const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
+    const selected = new File(['selected'], 'selected.epub', { type: 'application/epub+zip' })
+    const dropped = new File(['dropped'], 'dropped.pdf', { type: 'application/pdf' })
+    const input = wrapper.find('#file-input')
+    Object.defineProperty(input.element, 'files', { configurable: true, value: [selected] })
+
+    await input.trigger('change')
+    await wrapper.find('#drop-zone').trigger('drop', { dataTransfer: { files: [dropped] } })
+
+    expect(openFile).toHaveBeenCalledTimes(2)
+    expect(openFile).toHaveBeenNthCalledWith(1, selected)
+    expect(openFile).toHaveBeenNthCalledWith(2, dropped)
+    expect(wrapper.find('#open-button').attributes('for')).toBe('file-input')
+    expect(wrapper.find('#hero-open-button').attributes('for')).toBe('file-input')
     wrapper.unmount()
   })
 
@@ -172,3 +223,23 @@ describe('Vue reader shell', () => {
     wrapper.unmount()
   })
 })
+
+function libraryRecord(name: string, fraction: number, cover: Blob): BookRecord {
+  const format = name.endsWith('.pdf') ? 'pdf' : 'epub'
+  const first = name.startsWith('first')
+  return {
+    id: `id-${name}`,
+    name,
+    type: format === 'pdf' ? 'application/pdf' : 'application/epub+zip',
+    size: 4,
+    lastModified: 1,
+    format,
+    blob: new Blob(['book']),
+    openedAt: 10,
+    metadata: { title: first ? 'First title' : 'Second title', author: first ? 'First author' : 'Second author' },
+    cover,
+    progress: format === 'pdf'
+      ? { kind: 'pdf', page: 2, fraction }
+      : { kind: 'ebook', cfi: '/6/2', fraction },
+  }
+}
