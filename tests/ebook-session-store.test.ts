@@ -1,7 +1,8 @@
 import { createPinia } from 'pinia'
 import { describe, expect, test } from 'vitest'
-import { type EbookSessionCallbacks, type EbookSessionPort, type EbookSessionPortFactory, type EbookSessionSnapshot } from '../entrypoints/reader/ebook-session-port'
+import { type EbookSessionCallbacks, type EbookSessionPort, type EbookSessionPortFactory, type EbookSessionSnapshot, type EbookSessionTocItem } from '../entrypoints/reader/ebook-session-port'
 import { createEbookSessionStore } from '../entrypoints/reader/stores/ebook-session'
+import { useReaderStore } from '../entrypoints/reader/stores/reader'
 import type { BookRecord } from '../src/core/types'
 
 describe('ebook session store', () => {
@@ -65,6 +66,89 @@ describe('ebook session store', () => {
       status: 'idle',
     })
   })
+
+  test('rejects same-generation callbacks from a port replaced by another port', async () => {
+    const first = createFakePort()
+    const second = createFakePort()
+    const useStore = createEbookSessionStore()
+    const store = useStore(createPinia())
+
+    store.attachPort(first.factory)
+    await store.open(record('replacement.epub'), {})
+    first.emit(snapshot(1, { title: 'First port', chapter: 'First chapter', progress: 0.2 }))
+    store.attachPort(second.factory)
+    second.emit(snapshot(1, { title: 'Second port', chapter: 'Second chapter', progress: 0.8 }))
+
+    first.emit(snapshot(1, { title: 'Late first port', chapter: 'Late chapter', progress: 0.1 }))
+    first.emitError({ code: 'render', message: 'late first error' }, 1)
+
+    expect(store.$state).toMatchObject({
+      status: 'ready',
+      title: 'Second port',
+      chapter: 'Second chapter',
+      progress: 0.8,
+      error: null,
+    })
+  })
+
+  test('preserves the current reader projection when a current-generation error arrives', async () => {
+    const fake = createFakePort()
+    const useStore = createEbookSessionStore(fake.factory)
+    const pinia = createPinia()
+    const store = useStore(pinia)
+    const reader = useReaderStore(pinia)
+    const currentToc = [{ label: 'Current chapter', href: '/6/4' }]
+
+    await store.open(record('error.epub'), {})
+    fake.emit(snapshot(1, {
+      title: 'Current title',
+      toc: currentToc,
+      chapter: 'Current chapter',
+      progress: 0.4,
+      flow: 'scrolled',
+    }))
+    fake.emitError({ code: 'render', message: 'Cannot render chapter' }, 1)
+
+    expect(store.$state).toMatchObject({
+      status: 'error',
+      error: { code: 'render', message: 'Cannot render chapter' },
+      title: 'Current title',
+      toc: currentToc,
+      chapter: 'Current chapter',
+      progress: 0.4,
+      flow: 'scrolled',
+    })
+    expect(reader.$state).toMatchObject({
+      title: 'Current title',
+      chapter: 'Current chapter',
+      progress: 0.4,
+      isReading: false,
+    })
+  })
+
+  test('copies nested TOC snapshots so adapter mutation cannot change Pinia state', async () => {
+    const fake = createFakePort()
+    const useStore = createEbookSessionStore(fake.factory)
+    const store = useStore(createPinia())
+    const emittedToc: EbookSessionTocItem[] = [{
+      label: 'Top level',
+      href: '/6/2',
+      subitems: [{ label: 'Nested level', href: '/6/4' }],
+    }]
+
+    await store.open(record('toc.epub'), {})
+    fake.emit(snapshot(1, { toc: emittedToc }))
+    const topLevel = emittedToc[0]!
+    const nestedLevel = topLevel.subitems![0]!
+    topLevel.label = 'Mutated top level'
+    nestedLevel.label = 'Mutated nested level'
+
+    expect(store.toc).toEqual([{
+      label: 'Top level',
+      href: '/6/2',
+      subitems: [{ label: 'Nested level', href: '/6/4' }],
+    }])
+  })
 })
 
 function createFakePort() {
@@ -96,6 +180,9 @@ function createFakePort() {
     opens,
     emit(next: EbookSessionSnapshot) {
       callbacks?.onSnapshot(next)
+    },
+    emitError(error: { code: 'format' | 'parse' | 'restore' | 'render', message: string }, generation: number) {
+      callbacks?.onError(error, generation)
     },
   }
 }

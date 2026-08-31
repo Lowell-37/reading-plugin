@@ -40,26 +40,34 @@ export function createEbookSessionStore(initialPortFactory?: EbookSessionPortFac
     const error = shallowRef<EbookSessionError | null>(null)
     const generation = shallowRef(0)
     let port: EbookSessionPort | null = null
+    let portEpoch = 0
 
-    const callbacks: EbookSessionCallbacks = {
-      onSnapshot(snapshot) {
-        if (snapshot.generation !== generation.value) return
-        applySnapshot(snapshot)
-      },
-      onError(nextError, snapshotGeneration) {
-        if (snapshotGeneration !== generation.value) return
-        applySnapshot({
-          ...initialSnapshot(snapshotGeneration, flow.value),
-          status: 'error',
-          error: nextError,
-        })
-      },
+    function callbacksFor(epoch: number): EbookSessionCallbacks {
+      return {
+        onSnapshot(snapshot) {
+          if (epoch !== portEpoch || snapshot.generation !== generation.value) return
+          applySnapshot(snapshot)
+        },
+        onError(nextError, snapshotGeneration) {
+          if (epoch !== portEpoch || snapshotGeneration !== generation.value) return
+          applySnapshot({
+            status: 'error',
+            title: title.value,
+            toc: toc.value,
+            chapter: chapter.value,
+            progress: progress.value,
+            flow: flow.value,
+            error: nextError,
+            generation: snapshotGeneration,
+          })
+        },
+      }
     }
 
     function applySnapshot(snapshot: EbookSessionSnapshot) {
       status.value = snapshot.status
       title.value = snapshot.title
-      toc.value = snapshot.toc
+      toc.value = copyToc(snapshot.toc)
       chapter.value = snapshot.chapter
       progress.value = snapshot.progress
       flow.value = snapshot.flow
@@ -73,8 +81,9 @@ export function createEbookSessionStore(initialPortFactory?: EbookSessionPortFac
     }
 
     function attachPort(portFactory: EbookSessionPortFactory | null) {
+      portEpoch += 1
       port?.destroy()
-      port = portFactory?.(callbacks) ?? null
+      port = portFactory?.(callbacksFor(portEpoch)) ?? null
     }
 
     async function open(nextRecord: BookRecord, settings: ReaderSettings) {
@@ -149,3 +158,11 @@ export function createEbookSessionStore(initialPortFactory?: EbookSessionPortFac
 }
 
 export const useEbookSessionStore = createEbookSessionStore()
+
+function copyToc(items: EbookSessionTocItem[]): EbookSessionTocItem[] {
+  return items.map(item => ({
+    label: item.label,
+    href: item.href,
+    ...(item.subitems ? { subitems: copyToc(item.subitems) } : {}),
+  }))
+}
