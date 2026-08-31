@@ -3,10 +3,13 @@ import type { ReaderSettings } from './legacy-reader-port'
 
 export type EbookSessionStatus = 'idle' | 'loading' | 'ready' | 'error'
 export type EbookSessionFlow = 'paginated' | 'scrolled'
+export type EbookSessionNavigationTarget = string | number | boolean | null
+  | readonly EbookSessionNavigationTarget[]
+  | { readonly [key: string]: EbookSessionNavigationTarget }
 
 export interface EbookSessionTocItem {
   label: string
-  href: unknown
+  href: EbookSessionNavigationTarget
   subitems?: EbookSessionTocItem[]
 }
 

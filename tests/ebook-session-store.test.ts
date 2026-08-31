@@ -149,11 +149,32 @@ describe('ebook session store', () => {
       subitems: [{ label: 'Nested level', href: '/6/4' }],
     }])
   })
+
+  test('copies and freezes object-valued TOC targets before projecting them', async () => {
+    const fake = createFakePort()
+    const useStore = createEbookSessionStore(fake.factory)
+    const store = useStore(createPinia())
+    const emittedTarget = { fraction: 0.25, position: { index: 2 } }
+
+    await store.open(record('object-target.epub'), {})
+    fake.emit(snapshot(1, { toc: [{ label: 'Object target', href: emittedTarget }] }))
+    emittedTarget.fraction = 0.75
+    emittedTarget.position.index = 8
+
+    const storedTarget = store.toc[0]!.href as { fraction: number, position: { index: number } }
+    expect(storedTarget).toEqual({ fraction: 0.25, position: { index: 2 } })
+    expect(Object.isFrozen(storedTarget)).toBe(true)
+    expect(Object.isFrozen(storedTarget.position)).toBe(true)
+
+    await store.goTo(storedTarget)
+    expect(fake.goToTargets).toEqual([{ fraction: 0.25, position: { index: 2 } }])
+  })
 })
 
 function createFakePort() {
   let callbacks: EbookSessionCallbacks | null = null
   const calls: string[] = []
+  const goToTargets: unknown[] = []
   const opens: Array<{ record: BookRecord, settings: Record<string, unknown> }> = []
   const port: EbookSessionPort = {
     async open(record, settings) {
@@ -161,7 +182,10 @@ function createFakePort() {
       opens.push({ record, settings })
     },
     async close() { calls.push('close') },
-    async goTo(target) { calls.push(`goTo:${String(target)}`) },
+    async goTo(target) {
+      calls.push(`goTo:${String(target)}`)
+      goToTargets.push(target)
+    },
     async navigate(direction) { calls.push(`navigate:${direction}`) },
     async setFlow(flow) { calls.push(`setFlow:${flow}`) },
     async applySettings() {},
@@ -177,6 +201,7 @@ function createFakePort() {
   return {
     calls,
     factory,
+    goToTargets,
     opens,
     emit(next: EbookSessionSnapshot) {
       callbacks?.onSnapshot(next)

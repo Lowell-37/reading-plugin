@@ -6,6 +6,7 @@ import type {
   EbookSessionCallbacks,
   EbookSessionError,
   EbookSessionFlow,
+  EbookSessionNavigationTarget,
   EbookSessionPort,
   EbookSessionPortFactory,
   EbookSessionSnapshot,
@@ -162,7 +163,24 @@ export const useEbookSessionStore = createEbookSessionStore()
 function copyToc(items: EbookSessionTocItem[]): EbookSessionTocItem[] {
   return items.map(item => ({
     label: item.label,
-    href: item.href,
+    href: copyNavigationTarget(item.href),
     ...(item.subitems ? { subitems: copyToc(item.subitems) } : {}),
   }))
+}
+
+function copyNavigationTarget(target: unknown): EbookSessionNavigationTarget {
+  if (target === null || typeof target === 'string' || typeof target === 'boolean') return target
+  if (typeof target === 'number') return Number.isFinite(target) ? target : null
+  if (Array.isArray(target)) return Object.freeze(target.map(copyNavigationTarget))
+  if (!isPlainRecord(target)) return null
+
+  const copy: Record<string, EbookSessionNavigationTarget> = {}
+  for (const [key, value] of Object.entries(target)) copy[key] = copyNavigationTarget(value)
+  return Object.freeze(copy)
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const prototype = Object.getPrototypeOf(value)
+  return prototype === Object.prototype || prototype === null
 }
