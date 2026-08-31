@@ -6,6 +6,7 @@ import {
   interpolateSectionProgress,
   retainedSectionIndices,
 } from '../src/continuous-layout.js'
+import { ContinuousEbookScroller } from '../src/continuous-ebook.js'
 
 test('maps a local chapter position into whole-book progress', () => {
   const starts = [0, .1, .35, .8]
@@ -46,4 +47,25 @@ test('keeps a bounded section window around the active chapter', () => {
   assert.deepEqual([...retainedSectionIndices(indices, 8, 2)], [4, 5, 8, 9, 12])
   assert.deepEqual([...retainedSectionIndices(indices, 1, 3)], [1, 2, 4, 5])
   assert.deepEqual([...retainedSectionIndices(indices, 99, 3)], [])
+})
+
+test('continuous scroller teardown is safe before mount and remains idempotent', () => {
+  const originalDocument = globalThis.document
+  const element = {
+    addEventListener() {},
+    remove() {},
+  }
+  globalThis.document = {
+    createElement: () => element,
+  }
+  try {
+    const scroller = new ContinuousEbookScroller({
+      host: {},
+      view: { book: { sections: [] } },
+    })
+    scroller.destroy()
+    scroller.destroy()
+  } finally {
+    globalThis.document = originalDocument
+  }
 })
