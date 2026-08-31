@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import type { EbookSessionSnapshot } from '../ebook-session-port'
 import type { LegacyReaderState, ReaderPanel } from '../legacy-reader-port'
 
 export const useReaderStore = defineStore('reader', {
@@ -15,6 +16,14 @@ export const useReaderStore = defineStore('reader', {
       if (state.chapter !== undefined) this.chapter = state.chapter
       if (state.progress !== undefined) this.progress = state.progress
       if (state.isReading !== undefined) this.isReading = state.isReading
+    },
+    applyEbookSessionSnapshot(snapshot: EbookSessionSnapshot) {
+      this.applyLegacyState({
+        title: snapshot.title,
+        chapter: snapshot.chapter,
+        progress: snapshot.progress,
+        isReading: snapshot.status === 'loading' || snapshot.status === 'ready',
+      })
     },
     requestPanel(panel: ReaderPanel) {
       this.activePanel = panel

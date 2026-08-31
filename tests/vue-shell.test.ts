@@ -8,6 +8,7 @@ import { useReaderStore } from '../entrypoints/reader/stores/reader'
 import { useSettingsStore } from '../entrypoints/reader/stores/settings'
 import { useMigrationStore } from '../entrypoints/reader/stores/migration'
 import { useLibraryStore } from '../entrypoints/reader/stores/library'
+import type { EbookSessionSnapshot } from '../entrypoints/reader/ebook-session-port'
 import type { BookRecord } from '../src/core/types'
 
 afterEach(() => {
@@ -58,6 +59,27 @@ describe('Vue reader shell', () => {
       title: '海边的卡夫卡',
       chapter: '第一章',
       progress: 0.375,
+      isReading: true,
+      activePanel: 'toc',
+    })
+  })
+
+  test('projects ebook snapshots into the legacy reader shell without changing its active panel', () => {
+    const pinia = createPinia()
+    const store = useReaderStore(pinia)
+    store.requestPanel('toc')
+
+    store.applyEbookSessionSnapshot(ebookSnapshot({
+      title: 'WXT ebook',
+      chapter: 'Chapter two',
+      progress: 0.5,
+      status: 'ready',
+    }))
+
+    expect(store.$state).toEqual({
+      title: 'WXT ebook',
+      chapter: 'Chapter two',
+      progress: 0.5,
       isReading: true,
       activePanel: 'toc',
     })
@@ -282,5 +304,19 @@ function libraryRecord(name: string, fraction: number, cover: Blob): BookRecord 
     progress: format === 'pdf'
       ? { kind: 'pdf', page: 2, fraction }
       : { kind: 'ebook', cfi: '/6/2', fraction },
+  }
+}
+
+function ebookSnapshot(overrides: Partial<EbookSessionSnapshot> = {}): EbookSessionSnapshot {
+  return {
+    status: 'idle',
+    title: 'Untitled',
+    toc: [],
+    chapter: '开始',
+    progress: 0,
+    flow: 'paginated',
+    error: null,
+    generation: 1,
+    ...overrides,
   }
 }
