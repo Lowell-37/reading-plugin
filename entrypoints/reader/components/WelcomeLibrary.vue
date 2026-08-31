@@ -37,6 +37,10 @@ function progress(record: BookRecord) {
   return Math.round((record.progress?.fraction || 0) * 100)
 }
 
+function openFilePicker() {
+  document.getElementById('file-input')?.click()
+}
+
 async function handleDrop(event: DragEvent) {
   dragging.value = false
   const [file] = Array.from(event.dataTransfer?.files || [])
@@ -74,7 +78,7 @@ async function restoreBackup(event: Event) {
       <p class="eyebrow">LOCAL-FIRST READER</p>
       <h1>把书交给浏览器，<br><em>把注意力留给阅读。</em></h1>
       <p class="hero-copy">打开 PDF、EPUB、MOBI 或 AZW3。无需上传，无需注册，阅读进度安静地留在本机。</p>
-      <label id="hero-open-button" class="primary-button" for="file-input" role="button" tabindex="0">
+      <label id="hero-open-button" class="primary-button" for="file-input" role="button" tabindex="0" @keydown.enter.prevent="openFilePicker" @keydown.space.prevent="openFilePicker">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H10l2 2h5.5A2.5 2.5 0 0 1 20 9.5v7A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5Z" /></svg>
         选择一本书
       </label>

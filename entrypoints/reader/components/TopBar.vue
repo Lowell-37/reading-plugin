@@ -9,6 +9,10 @@ const settings = useSettingsStore()
 const library = useLibraryStore()
 const { title } = storeToRefs(reader)
 const { headerCollapsed } = storeToRefs(settings)
+
+function openFilePicker() {
+  document.getElementById('file-input')?.click()
+}
 </script>
 
 <template>
@@ -26,7 +30,7 @@ const { headerCollapsed } = storeToRefs(settings)
     </div>
     <div class="header-actions">
       <span class="privacy-note welcome-only">文件仅保存在此浏览器中</span>
-      <label id="open-button" class="soft-button" for="file-input" role="button" tabindex="0">
+      <label id="open-button" class="soft-button" for="file-input" role="button" tabindex="0" @keydown.enter.prevent="openFilePicker" @keydown.space.prevent="openFilePicker">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v12m-5-5 5 5 5-5M5 20h14" /></svg>打开书籍
       </label>
       <button id="tools-button" class="icon-button header-icon-button reader-only" aria-label="搜索与批注" title="搜索与批注" @click="reader.togglePanel('tools')">

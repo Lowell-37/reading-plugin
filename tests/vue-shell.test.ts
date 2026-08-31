@@ -133,6 +133,28 @@ describe('Vue reader shell', () => {
     wrapper.unmount()
   })
 
+  test('opens the file picker once and prevents default for keyboard file-open controls', async () => {
+    const pinia = createPinia()
+    const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
+    const input = wrapper.find<HTMLInputElement>('#file-input')
+    const click = vi.spyOn(input.element, 'click')
+
+    for (const selector of ['#open-button', '#hero-open-button']) {
+      for (const key of ['Enter', ' ']) {
+        const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+        const clicksBefore = click.mock.calls.length
+
+        wrapper.find(selector).element.dispatchEvent(event)
+        await wrapper.vm.$nextTick()
+
+        expect(event.defaultPrevented).toBe(true)
+        expect(click).toHaveBeenCalledTimes(clicksBefore + 1)
+      }
+    }
+
+    wrapper.unmount()
+  })
+
   test('clears the hidden file input on click before the next selection change', async () => {
     const pinia = createPinia()
     const library = useLibraryStore(pinia)
