@@ -35,6 +35,8 @@ export function createFoliateEbookSession(
   let currentSettings: ReaderSettings = { ...DEFAULT_SETTINGS }
   let currentSnapshot: EbookSessionSnapshot | null = null
   let currentView: EbookViewLike | null = null
+  let desiredFlow: EbookSessionFlow = 'paginated'
+  let flowOperationToken = 0
   let acceptRelocations = false
   let viewRelocateListener: EventListener | null = null
   let scrollerRelocateListener: EventListener | null = null
@@ -45,13 +47,14 @@ export function createFoliateEbookSession(
     activeGeneration = generation
     acceptRelocations = false
     flowQueue = Promise.resolve()
+    currentSettings = { ...DEFAULT_SETTINGS, ...settings }
+    requestDesiredFlow(settingFlow(currentSettings), true)
     let phase: EbookSessionError['code'] = 'render'
     try {
       await releaseResources()
       if (generation !== activeGeneration) return
 
       currentRecord = record
-      currentSettings = { ...DEFAULT_SETTINGS, ...settings }
       currentFlow = 'paginated'
       currentSnapshot = createLoadingSnapshot(record, currentSettings, generation)
       dependencies.onSnapshot(currentSnapshot)
@@ -73,9 +76,13 @@ export function createFoliateEbookSession(
       await restorePosition(view, record.progress)
       if (generation !== activeGeneration || currentView !== view) return
 
-      if (settingFlow(currentSettings) === 'scrolled') {
+      if (desiredFlow === 'scrolled') {
         phase = 'render'
-        await enterScrolledFlow(view.lastLocation ?? record.progress ?? null, generation)
+        await enterScrolledFlow(
+          view.lastLocation ?? record.progress ?? null,
+          generation,
+          flowOperationToken,
+        )
         if (generation !== activeGeneration || currentView !== view) return
       }
 
@@ -107,6 +114,7 @@ export function createFoliateEbookSession(
     activeGeneration = dependencies.nextGeneration()
     acceptRelocations = false
     flowQueue = Promise.resolve()
+    flowOperationToken += 1
     await releaseResources()
   }
 
@@ -123,23 +131,25 @@ export function createFoliateEbookSession(
 
   async function setFlow(flow: EbookSessionFlow): Promise<void> {
     const generation = activeGeneration
+    const operationToken = requestDesiredFlow(flow)
     const operation = flowQueue.catch(() => {}).then(async () => {
       if (generation !== activeGeneration || !currentView) return
+      if (operationToken !== flowOperationToken || flow !== desiredFlow) return
       if (flow === currentFlow) {
         currentSettings = { ...currentSettings, flow }
         return
       }
       try {
         if (flow === 'scrolled') {
-          await enterScrolledFlow(currentView.lastLocation ?? null, generation)
-          if (generation === activeGeneration && currentFlow === 'scrolled') {
+          await enterScrolledFlow(currentView.lastLocation ?? null, generation, operationToken)
+          if (isActiveFlowRequest('scrolled', generation, operationToken) && currentFlow === 'scrolled') {
             publishFlowSnapshot('scrolled', generation)
           }
         } else {
           await leaveScrolledFlow(generation)
         }
       } catch (cause) {
-        if (generation === activeGeneration) {
+        if (isActiveFlowRequest(flow, generation, operationToken)) {
           const phase: EbookSessionError['code'] = flow === 'paginated' ? 'restore' : 'render'
           dependencies.onError(sessionError(phase, cause), generation)
         }
@@ -152,11 +162,14 @@ export function createFoliateEbookSession(
 
   async function applySettings(settings: ReaderSettings): Promise<void> {
     currentSettings = { ...DEFAULT_SETTINGS, ...settings }
-    if (!currentView) return
+    const flow = settingFlow(currentSettings)
+    if (!currentView) {
+      requestDesiredFlow(flow)
+      return
+    }
     applyPaginatedSettings(currentView, currentSettings)
     currentScroller?.setStyles(createBookStyles(currentSettings, true))
-    const flow = settingFlow(currentSettings)
-    if (flow !== currentFlow) await setFlow(flow)
+    await setFlow(flow)
   }
 
   async function flushProgress(): Promise<void> {
@@ -168,6 +181,7 @@ export function createFoliateEbookSession(
     const teardownGeneration = activeGeneration
     acceptRelocations = false
     flowQueue = Promise.resolve()
+    flowOperationToken += 1
     const resources = takeResources()
     if (!resources.hadResources) return
     void progressService.flush().catch(cause => {
@@ -197,9 +211,13 @@ export function createFoliateEbookSession(
     }) as EventListener
   }
 
-  async function enterScrolledFlow(target: unknown, generation: number): Promise<void> {
+  async function enterScrolledFlow(
+    target: unknown,
+    generation: number,
+    operationToken: number,
+  ): Promise<void> {
     const view = currentView
-    if (!view || currentScroller) return
+    if (!view || currentScroller || !isActiveFlowRequest('scrolled', generation, operationToken)) return
     acceptRelocations = false
     view.style.display = 'none'
     const scroller = dependencies.createScroller({
@@ -213,12 +231,16 @@ export function createFoliateEbookSession(
     scroller.addEventListener('relocate', listener)
     try {
       await scroller.mount(target)
-      if (generation !== activeGeneration || currentScroller !== scroller) {
+      if (!isActiveFlowRequest('scrolled', generation, operationToken) || currentScroller !== scroller) {
         if (currentScroller === scroller) {
           scroller.removeEventListener('relocate', listener)
           currentScroller = null
           if (scrollerRelocateListener === listener) scrollerRelocateListener = null
           scroller.destroy()
+          if (generation === activeGeneration && currentView === view) {
+            view.style.removeProperty('display')
+            acceptRelocations = currentSnapshot?.status === 'ready'
+          }
         }
         return
       }
@@ -331,6 +353,22 @@ export function createFoliateEbookSession(
     if (!currentSnapshot) return
     currentSnapshot = snapshotAtLocation({ ...currentSnapshot, flow }, location)
     dependencies.onSnapshot(currentSnapshot)
+  }
+
+  function isActiveFlowRequest(
+    flow: EbookSessionFlow,
+    generation: number,
+    operationToken: number,
+  ) {
+    return generation === activeGeneration
+      && operationToken === flowOperationToken
+      && flow === desiredFlow
+  }
+
+  function requestDesiredFlow(flow: EbookSessionFlow, forceNewOperation = false) {
+    if (forceNewOperation || flow !== desiredFlow) flowOperationToken += 1
+    desiredFlow = flow
+    return flowOperationToken
   }
 
   return {

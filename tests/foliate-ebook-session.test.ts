@@ -227,6 +227,37 @@ describe('Foliate ebook session', () => {
     expect(harness.scroller.destroyCalls).toBe(1)
   })
 
+  test.each([
+    ['setFlow', (session: ReturnType<typeof createFoliateEbookSession>) => session.setFlow('paginated')],
+    ['applySettings', (session: ReturnType<typeof createFoliateEbookSession>) => (
+      session.applySettings(readerSettings({ flow: 'paginated' }))
+    )],
+  ] as const)('%s reverses a deferred initial scrolled mount before it can commit', async (
+    _operation,
+    requestPaginated,
+  ) => {
+    const harness = createHarness()
+    const session = createFoliateEbookSession(harness.dependencies)
+    const mountGate = deferred<void>()
+    const mountStarted = harness.deferNextScrollerMount(mountGate.promise)
+
+    const opening = session.open(
+      record('initial-flow-race.epub'),
+      readerSettings({ flow: 'scrolled' }),
+    )
+    await mountStarted
+    const staleScroller = harness.scroller
+    const reversing = requestPaginated(session)
+    mountGate.resolve()
+    await Promise.all([opening, reversing])
+    await session.navigate(1)
+
+    expect(harness.snapshots.at(-1)).toMatchObject({ status: 'ready', flow: 'paginated' })
+    expect(harness.view.style.display).toBe('')
+    expect(staleScroller.destroyCalls).toBe(1)
+    expect(harness.view.rightCalls).toBe(1)
+  })
+
   test('close and reopen own teardown when they supersede a suspended scroller mount', async () => {
     const harness = createHarness()
     const session = createFoliateEbookSession(harness.dependencies)
