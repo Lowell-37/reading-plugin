@@ -258,6 +258,42 @@ describe('Foliate ebook session', () => {
     expect(harness.view.rightCalls).toBe(1)
   })
 
+  test.each([
+    ['setFlow', (session: ReturnType<typeof createFoliateEbookSession>, flow: 'paginated' | 'scrolled') => (
+      session.setFlow(flow)
+    )],
+    ['applySettings', (session: ReturnType<typeof createFoliateEbookSession>, flow: 'paginated' | 'scrolled') => (
+      session.applySettings(readerSettings({ flow }))
+    )],
+  ] as const)('%s fulfills a final scrolled request after invalidating a deferred initial mount', async (
+    _operation,
+    requestFlow,
+  ) => {
+    const harness = createHarness()
+    const session = createFoliateEbookSession(harness.dependencies)
+    const mountGate = deferred<void>()
+    const mountStarted = harness.deferNextScrollerMount(mountGate.promise)
+
+    const opening = session.open(
+      record('overlapping-initial-flow.epub'),
+      readerSettings({ flow: 'scrolled' }),
+    )
+    await mountStarted
+    const staleScroller = harness.scroller
+    await requestFlow(session, 'paginated')
+    await requestFlow(session, 'scrolled')
+    mountGate.resolve()
+    await opening
+    await session.navigate(1)
+
+    expect(harness.snapshots.at(-1)).toMatchObject({ status: 'ready', flow: 'scrolled' })
+    expect(harness.view.style.display).toBe('none')
+    expect(harness.scrollers).toHaveLength(2)
+    expect(staleScroller.destroyCalls).toBe(1)
+    expect(harness.scrollers[1]?.destroyCalls).toBe(0)
+    expect(harness.scrollers[1]?.pageDirections).toEqual([1])
+  })
+
   test('close and reopen own teardown when they supersede a suspended scroller mount', async () => {
     const harness = createHarness()
     const session = createFoliateEbookSession(harness.dependencies)
@@ -606,6 +642,7 @@ class FakeScroller extends EventTarget {
   destroyCalls = 0
   location: FakeLocation | null = null
   mountTargets: unknown[] = []
+  pageDirections: Array<-1 | 1> = []
 
   constructor(
     private readonly events: string[],
@@ -628,7 +665,7 @@ class FakeScroller extends EventTarget {
   currentLocation() { return this.location }
   async goTo() {}
   async goToFraction() {}
-  async scrollByPage() {}
+  async scrollByPage(direction: -1 | 1) { this.pageDirections.push(direction) }
   setStyles() {}
 
   destroy() {

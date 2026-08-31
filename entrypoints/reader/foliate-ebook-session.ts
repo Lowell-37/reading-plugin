@@ -76,10 +76,11 @@ export function createFoliateEbookSession(
       await restorePosition(view, record.progress)
       if (generation !== activeGeneration || currentView !== view) return
 
-      if (desiredFlow === 'scrolled') {
+      const initialFlowTarget = view.lastLocation ?? record.progress ?? null
+      while (desiredFlow === 'scrolled' && !currentScroller) {
         phase = 'render'
         await enterScrolledFlow(
-          view.lastLocation ?? record.progress ?? null,
+          initialFlowTarget,
           generation,
           flowOperationToken,
         )
