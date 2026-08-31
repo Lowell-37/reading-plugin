@@ -17,6 +17,7 @@ export interface LegacyReaderCallbacks {
   onLibraryChanged(): void | Promise<void>
 }
 
+/** Engine-only boundary. In WXT mode, Vue owns all migrated UI listeners. */
 export interface LegacyReaderPort {
   openRecord(record: BookRecord, options?: { newlySaved?: boolean }): Promise<void>
   closeSession(): Promise<void>

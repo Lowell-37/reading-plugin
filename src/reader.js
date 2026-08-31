@@ -1707,29 +1707,9 @@ function navigate(direction) {
   readerAdapter?.navigate(direction)
 }
 
-function bindControls() {
+function bindEngineControls() {
   elements.loadingLibraryButton.addEventListener('click', showLibrary)
   elements.loadingRetryButton.addEventListener('click', openPicker)
-  if (!vueOwnsMigratedControls) {
-    elements.openButton.addEventListener('click', openPicker)
-    elements.heroOpenButton.addEventListener('click', openPicker)
-    elements.fileInput.addEventListener('change', event => {
-      const [file] = event.target.files
-      if (file) openBook(file)
-    })
-    elements.homeButton.addEventListener('click', showLibrary)
-    elements.headerToggle.addEventListener('click', () => setHeaderCollapsed(!document.body.classList.contains('header-collapsed')))
-    elements.sidebarButton.addEventListener('click', () => openPanel(elements.sidebar))
-    elements.settingsButton.addEventListener('click', () => openPanel(elements.settingsPanel))
-    elements.backupLibrary.addEventListener('click', exportLibraryBackup)
-    elements.restoreLibrary.addEventListener('click', openBackupPicker)
-    elements.backupFileInput.addEventListener('change', event => {
-      const [file] = event.target.files
-      if (file) restoreLibraryBackup(file)
-    })
-  }
-
-  if (!vueOwnsMigratedControls) elements.toolsButton.addEventListener('click', () => openPanel(elements.toolsPanel))
   elements.aiSettingsToggle.addEventListener('click', () => {
     elements.aiSettings.hidden = !elements.aiSettings.hidden
     if (!elements.aiSettings.hidden) elements.aiEndpoint.focus()
@@ -1738,7 +1718,6 @@ function bindControls() {
   elements.aiStop.addEventListener('click', () => aiAbortController?.abort())
   elements.closeSelectionAiMenu.addEventListener('click', () => { elements.selectionAiMenu.hidden = true })
   elements.aiActionButtons.forEach(button => button.addEventListener('click', () => runAiAction(button.dataset.aiScope, button.dataset.aiAction)))
-  if (!vueOwnsMigratedControls) elements.closeTools.addEventListener('click', closePanels)
   elements.searchForm.addEventListener('submit', runSearch)
   elements.highlightSelection.addEventListener('click', () => annotateSelection(false))
   elements.noteSelection.addEventListener('click', () => annotateSelection(true))
@@ -1766,10 +1745,6 @@ function bindControls() {
   })
   elements.exportAnnotationsMarkdown.addEventListener('click', () => exportAnnotations('md'))
   elements.exportAnnotationsJson.addEventListener('click', () => exportAnnotations('json'))
-  if (!vueOwnsMigratedControls) {
-    elements.closeSettings.addEventListener('click', closePanels)
-    elements.scrim.addEventListener('click', closePanels)
-  }
   elements.prevButton.addEventListener('click', () => navigate(-1))
   elements.nextButton.addEventListener('click', () => navigate(1))
   elements.pdfZoomOut.addEventListener('click', () => setPdfZoom(pdfZoom - .1))
@@ -1785,42 +1760,7 @@ function bindControls() {
     readerAdapter?.goToFraction(fraction)
   })
 
-  if (!vueOwnsMigratedControls) {
-    document.querySelectorAll('[data-flow]').forEach(button => button.addEventListener('click', async () => {
-      settings.flow = button.dataset.flow
-      applyReaderSettings()
-      try {
-        await setEbookFlow(settings.flow)
-      } catch (error) {
-        console.error(error)
-        showToast('阅读模式切换失败', 'error')
-      }
-    }))
-    document.querySelectorAll('[data-theme]').forEach(button => button.addEventListener('click', () => {
-      settings.theme = button.dataset.theme
-      applyReaderSettings()
-    }))
-    elements.fontSelect.addEventListener('change', event => { settings.font = event.target.value; applyReaderSettings() })
-    elements.fontSize.addEventListener('input', event => { settings.fontSize = Number(event.target.value); applyReaderSettings() })
-    elements.lineHeight.addEventListener('input', event => { settings.lineHeight = Number(event.target.value); applyReaderSettings() })
-    elements.pageWidth.addEventListener('input', event => { settings.pageWidth = Number(event.target.value); applyReaderSettings() })
-  }
-
-  if (!vueOwnsMigratedControls) {
-    for (const eventName of ['dragenter', 'dragover']) {
-      window.addEventListener(eventName, event => { event.preventDefault(); elements.dropZone.classList.add('dragging') })
-    }
-    for (const eventName of ['dragleave', 'drop']) {
-      window.addEventListener(eventName, event => { event.preventDefault(); elements.dropZone.classList.remove('dragging') })
-    }
-    window.addEventListener('drop', event => {
-      const [file] = event.dataTransfer.files
-      if (file) openBook(file)
-      else showToast('没有找到可打开的文件', 'error')
-    })
-  }
   window.addEventListener('keydown', event => {
-    if (!vueOwnsMigratedControls && event.key === 'Escape') { closePanels(); elements.selectionAiMenu.hidden = true; return }
     if (!document.body.classList.contains('is-reading')) return
     if (!vueOwnsMigratedControls && (elements.settingsPanel.classList.contains('open') || elements.toolsPanel.classList.contains('open'))) return
     if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return
@@ -1829,14 +1769,72 @@ function bindControls() {
   })
 }
 
-function initializeLegacyReaderController() {
+function bindRootUiControls() {
+  elements.openButton.addEventListener('click', openPicker)
+  elements.heroOpenButton.addEventListener('click', openPicker)
+  elements.fileInput.addEventListener('change', event => {
+    const [file] = event.target.files
+    if (file) openBook(file)
+  })
+  elements.homeButton.addEventListener('click', showLibrary)
+  elements.headerToggle.addEventListener('click', () => setHeaderCollapsed(!document.body.classList.contains('header-collapsed')))
+  elements.sidebarButton.addEventListener('click', () => openPanel(elements.sidebar))
+  elements.settingsButton.addEventListener('click', () => openPanel(elements.settingsPanel))
+  elements.toolsButton.addEventListener('click', () => openPanel(elements.toolsPanel))
+  elements.closeSettings.addEventListener('click', closePanels)
+  elements.closeTools.addEventListener('click', closePanels)
+  elements.scrim.addEventListener('click', closePanels)
+  elements.backupLibrary.addEventListener('click', exportLibraryBackup)
+  elements.restoreLibrary.addEventListener('click', openBackupPicker)
+  elements.backupFileInput.addEventListener('change', event => {
+    const [file] = event.target.files
+    if (file) restoreLibraryBackup(file)
+  })
+
+  document.querySelectorAll('[data-flow]').forEach(button => button.addEventListener('click', async () => {
+    settings.flow = button.dataset.flow
+    applyReaderSettings()
+    try {
+      await setEbookFlow(settings.flow)
+    } catch (error) {
+      console.error(error)
+      showToast('阅读模式切换失败', 'error')
+    }
+  }))
+  document.querySelectorAll('[data-theme]').forEach(button => button.addEventListener('click', () => {
+    settings.theme = button.dataset.theme
+    applyReaderSettings()
+  }))
+  elements.fontSelect.addEventListener('change', event => { settings.font = event.target.value; applyReaderSettings() })
+  elements.fontSize.addEventListener('input', event => { settings.fontSize = Number(event.target.value); applyReaderSettings() })
+  elements.lineHeight.addEventListener('input', event => { settings.lineHeight = Number(event.target.value); applyReaderSettings() })
+  elements.pageWidth.addEventListener('input', event => { settings.pageWidth = Number(event.target.value); applyReaderSettings() })
+
+  for (const eventName of ['dragenter', 'dragover']) {
+    window.addEventListener(eventName, event => { event.preventDefault(); elements.dropZone.classList.add('dragging') })
+  }
+  for (const eventName of ['dragleave', 'drop']) {
+    window.addEventListener(eventName, event => { event.preventDefault(); elements.dropZone.classList.remove('dragging') })
+  }
+  window.addEventListener('drop', event => {
+    const [file] = event.dataTransfer.files
+    if (file) openBook(file)
+    else showToast('没有找到可打开的文件', 'error')
+  })
+  window.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { closePanels(); elements.selectionAiMenu.hidden = true }
+  })
+}
+
+function initializeLegacyReaderController({ rootUi = true } = {}) {
   if (controllerInitialized) return
   controllerInitialized = true
   applySettingsToControls()
-  // Vue ownership moves listener groups in later migration tasks; until then the
-  // explicit port owns the existing baseline-compatible controller bindings.
-  bindControls()
-  if (!vueOwnsMigratedControls) renderLibrary()
+  bindEngineControls()
+  if (rootUi) {
+    bindRootUiControls()
+    renderLibrary()
+  }
 }
 
 export function createLegacyReaderPort(callbacks = {}) {
@@ -1846,7 +1844,7 @@ export function createLegacyReaderPort(callbacks = {}) {
     onPanelRequest: typeof callbacks.onPanelRequest === 'function' ? callbacks.onPanelRequest : emptyLegacyCallbacks.onPanelRequest,
     onLibraryChanged: typeof callbacks.onLibraryChanged === 'function' ? callbacks.onLibraryChanged : emptyLegacyCallbacks.onLibraryChanged,
   }
-  initializeLegacyReaderController()
+  initializeLegacyReaderController({ rootUi: false })
   emitLegacyState({})
 
   let destroyed = false
@@ -1886,5 +1884,5 @@ export function createLegacyReaderPort(callbacks = {}) {
 }
 
 if (document.documentElement.dataset.legacyController !== 'loading') {
-  initializeLegacyReaderController()
+  initializeLegacyReaderController({ rootUi: true })
 }

@@ -2,6 +2,30 @@ import { test } from 'vitest'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
+const WXT_PROHIBITED_UI_BINDINGS = [
+  'headerToggle',
+  'openButton',
+  'heroOpenButton',
+  'fileInput',
+  'homeButton',
+  'sidebarButton',
+  'settingsButton',
+  'toolsButton',
+  'closeSettings',
+  'closeTools',
+  'scrim',
+  'backupLibrary',
+  'restoreLibrary',
+  'backupFileInput',
+  'fontSelect',
+  'fontSize',
+  'lineHeight',
+  'pageWidth',
+  '[data-flow]',
+  '[data-theme]',
+  'dropZone',
+]
+
 test('WXT owns the background and reader entrypoints', async () => {
   const [config, background, reader, pkg] = await Promise.all([
     readFile(new URL('../wxt.config.ts', import.meta.url), 'utf8'),
@@ -32,3 +56,33 @@ test('WXT completes the read-only migration preflight before loading the legacy 
   assert.ok(legacyImport > preflight, 'legacy controller must load only after the preflight')
   assert.match(source, /if \(!preflight\.ok\) return/)
 })
+
+test('WXT starts engine listeners without binding any Vue-owned UI control', async () => {
+  const source = await readFile(new URL('../src/reader.js', import.meta.url), 'utf8')
+  const engineBindings = functionSource(source, 'bindEngineControls')
+  const portFactory = functionSource(source, 'createLegacyReaderPort')
+
+  for (const binding of WXT_PROHIBITED_UI_BINDINGS) {
+    assert.doesNotMatch(engineBindings, new RegExp(escapeRegExp(binding)), `${binding} must not be bound by the WXT engine`)
+  }
+  assert.match(engineBindings, /elements\.prevButton\.addEventListener/)
+  assert.match(engineBindings, /elements\.searchForm\.addEventListener/)
+  assert.match(portFactory, /initializeLegacyReaderController\(\{ rootUi: false \}\)/)
+})
+
+function functionSource(source, name) {
+  const start = source.indexOf(`function ${name}(`)
+  assert.notEqual(start, -1, `${name} must exist`)
+  const bodyStart = source.indexOf('{', source.indexOf(') {', start))
+  let depth = 0
+  for (let index = bodyStart; index < source.length; index += 1) {
+    if (source[index] === '{') depth += 1
+    if (source[index] === '}') depth -= 1
+    if (depth === 0) return source.slice(start, index + 1)
+  }
+  assert.fail(`${name} must have a complete function body`)
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
