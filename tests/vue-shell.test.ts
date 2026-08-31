@@ -133,6 +133,25 @@ describe('Vue reader shell', () => {
     wrapper.unmount()
   })
 
+  test('clears the hidden file input on click before the next selection change', async () => {
+    const pinia = createPinia()
+    const library = useLibraryStore(pinia)
+    const openFile = vi.spyOn(library, 'openFile')
+    const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
+    const input = wrapper.find<HTMLInputElement>('#file-input')
+    Object.defineProperty(input.element, 'value', {
+      configurable: true,
+      writable: true,
+      value: 'C:\\fakepath\\same.epub',
+    })
+
+    await input.trigger('click')
+
+    expect(input.element.value).toBe('')
+    expect(openFile).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   test('closes the active panel from the scrim and Escape key', async () => {
     const pinia = createPinia()
     const store = useReaderStore(pinia)
