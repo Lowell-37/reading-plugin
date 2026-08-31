@@ -38,27 +38,31 @@ export function createFoliateEbookSession(
   let acceptRelocations = false
   let viewRelocateListener: EventListener | null = null
   let scrollerRelocateListener: EventListener | null = null
+  let flowQueue: Promise<void> = Promise.resolve()
 
   async function open(record: BookRecord, settings: ReaderSettings): Promise<void> {
     const generation = dependencies.nextGeneration()
     activeGeneration = generation
-    await releaseResources()
-    if (generation !== activeGeneration) return
-
-    currentRecord = record
-    currentSettings = { ...DEFAULT_SETTINGS, ...settings }
-    currentFlow = 'paginated'
-    currentSnapshot = createLoadingSnapshot(record, currentSettings, generation)
-    dependencies.onSnapshot(currentSnapshot)
-
-    const view = dependencies.createView()
-    currentView = view
-    dependencies.host.append(view)
-    viewRelocateListener = createRelocateListener('view', generation)
-    view.addEventListener('relocate', viewRelocateListener)
-
-    let phase: EbookSessionError['code'] = 'parse'
+    acceptRelocations = false
+    flowQueue = Promise.resolve()
+    let phase: EbookSessionError['code'] = 'render'
     try {
+      await releaseResources()
+      if (generation !== activeGeneration) return
+
+      currentRecord = record
+      currentSettings = { ...DEFAULT_SETTINGS, ...settings }
+      currentFlow = 'paginated'
+      currentSnapshot = createLoadingSnapshot(record, currentSettings, generation)
+      dependencies.onSnapshot(currentSnapshot)
+
+      const view = dependencies.createView()
+      currentView = view
+      dependencies.host.append(view)
+      viewRelocateListener = createRelocateListener('view', generation)
+      view.addEventListener('relocate', viewRelocateListener)
+
+      phase = 'parse'
       await view.open(record.blob)
       if (generation !== activeGeneration || currentView !== view) return
 
@@ -94,14 +98,15 @@ export function createFoliateEbookSession(
       if (generation !== activeGeneration) return
       const error = sessionError(phase, cause)
       acceptRelocations = false
-      dependencies.onError(error, generation)
-      await releaseResources()
+      await releaseResources(false)
+      if (generation === activeGeneration) dependencies.onError(error, generation)
     }
   }
 
   async function close(): Promise<void> {
     activeGeneration = dependencies.nextGeneration()
-    if (!hasResources()) return
+    acceptRelocations = false
+    flowQueue = Promise.resolve()
     await releaseResources()
   }
 
@@ -117,21 +122,32 @@ export function createFoliateEbookSession(
   }
 
   async function setFlow(flow: EbookSessionFlow): Promise<void> {
-    if (!currentView || flow === currentFlow) return
     const generation = activeGeneration
-    try {
-      if (flow === 'scrolled') await enterScrolledFlow(currentView.lastLocation ?? null, generation)
-      else await leaveScrolledFlow(generation)
-    } catch (cause) {
-      if (generation === activeGeneration) {
-        dependencies.onError(sessionError('render', cause), generation)
+    const operation = flowQueue.catch(() => {}).then(async () => {
+      if (generation !== activeGeneration || !currentView) return
+      if (flow === currentFlow) {
+        currentSettings = { ...currentSettings, flow }
+        return
       }
-      throw cause
-    }
-    if (generation !== activeGeneration || !currentSnapshot) return
-    currentSettings = { ...currentSettings, flow }
-    currentSnapshot = snapshotAtActiveLocation({ ...currentSnapshot, flow })
-    dependencies.onSnapshot(currentSnapshot)
+      try {
+        if (flow === 'scrolled') {
+          await enterScrolledFlow(currentView.lastLocation ?? null, generation)
+          if (generation === activeGeneration && currentFlow === 'scrolled') {
+            publishFlowSnapshot('scrolled', generation)
+          }
+        } else {
+          await leaveScrolledFlow(generation)
+        }
+      } catch (cause) {
+        if (generation === activeGeneration) {
+          const phase: EbookSessionError['code'] = flow === 'paginated' ? 'restore' : 'render'
+          dependencies.onError(sessionError(phase, cause), generation)
+        }
+        throw cause
+      }
+    })
+    flowQueue = operation
+    return operation
   }
 
   async function applySettings(settings: ReaderSettings): Promise<void> {
@@ -148,22 +164,18 @@ export function createFoliateEbookSession(
   }
 
   function destroy(): void {
-    if (!hasResources()) return
     activeGeneration = dependencies.nextGeneration()
+    const teardownGeneration = activeGeneration
     acceptRelocations = false
-    detachListeners()
-    const scroller = currentScroller
-    const view = currentView
-    currentScroller = null
-    currentView = null
-    currentRecord = null
-    currentSnapshot = null
+    flowQueue = Promise.resolve()
+    const resources = takeResources()
+    if (!resources.hadResources) return
     void progressService.flush().catch(cause => {
-      dependencies.onError(sessionError('render', cause), activeGeneration)
+      if (teardownGeneration === activeGeneration) {
+        dependencies.onError(sessionError('render', cause), teardownGeneration)
+      }
     })
-    scroller?.destroy()
-    view?.close()
-    view?.remove()
+    destroyResources(resources)
   }
 
   function createRelocateListener(source: 'view' | 'scroller', generation: number): EventListener {
@@ -202,19 +214,25 @@ export function createFoliateEbookSession(
     try {
       await scroller.mount(target)
       if (generation !== activeGeneration || currentScroller !== scroller) {
-        scroller.removeEventListener('relocate', listener)
-        scroller.destroy()
+        if (currentScroller === scroller) {
+          scroller.removeEventListener('relocate', listener)
+          currentScroller = null
+          if (scrollerRelocateListener === listener) scrollerRelocateListener = null
+          scroller.destroy()
+        }
         return
       }
       currentFlow = 'scrolled'
       acceptRelocations = currentSnapshot?.status === 'ready'
     } catch (cause) {
-      scroller.removeEventListener('relocate', listener)
-      if (currentScroller === scroller) currentScroller = null
-      if (scrollerRelocateListener === listener) scrollerRelocateListener = null
-      scroller.destroy()
-      view.style.removeProperty('display')
-      acceptRelocations = currentSnapshot?.status === 'ready'
+      if (currentScroller === scroller) {
+        scroller.removeEventListener('relocate', listener)
+        currentScroller = null
+        if (scrollerRelocateListener === listener) scrollerRelocateListener = null
+        scroller.destroy()
+        view.style.removeProperty('display')
+        acceptRelocations = currentSnapshot?.status === 'ready'
+      }
       throw cause
     }
   }
@@ -230,15 +248,25 @@ export function createFoliateEbookSession(
     currentScroller = null
     scroller.destroy()
     view.style.removeProperty('display')
-    if (location?.cfi) await view.goTo(location.cfi)
-    else if (typeof location?.fraction === 'number') await view.goToFraction(normalizeFraction(location.fraction))
-    if (generation !== activeGeneration) return
     currentFlow = 'paginated'
     acceptRelocations = currentSnapshot?.status === 'ready'
+    publishFlowSnapshot('paginated', generation, location)
+    if (location?.cfi) await view.goTo(location.cfi)
+    else if (typeof location?.fraction === 'number') await view.goToFraction(normalizeFraction(location.fraction))
   }
 
-  async function releaseResources(): Promise<void> {
-    if (!hasResources()) return
+  async function releaseResources(flush = true): Promise<void> {
+    const resources = takeResources()
+    if (!resources.hadResources) return
+    try {
+      if (flush) await progressService.flush()
+    } finally {
+      destroyResources(resources)
+    }
+  }
+
+  function takeResources() {
+    const hadResources = hasResources()
     acceptRelocations = false
     detachListeners()
     const scroller = currentScroller
@@ -247,13 +275,16 @@ export function createFoliateEbookSession(
     currentView = null
     currentRecord = null
     currentSnapshot = null
-    try {
-      await progressService.flush()
-    } finally {
-      scroller?.destroy()
-      view?.close()
-      view?.remove()
-    }
+    return { hadResources, scroller, view }
+  }
+
+  function destroyResources(resources: {
+    scroller: EbookScrollerLike | null
+    view: EbookViewLike | null
+  }) {
+    resources.scroller?.destroy()
+    resources.view?.close()
+    resources.view?.remove()
   }
 
   function detachListeners() {
@@ -274,13 +305,32 @@ export function createFoliateEbookSession(
   }
 
   function snapshotAtActiveLocation(snapshot: EbookSessionSnapshot): EbookSessionSnapshot {
-    const location = activeLocation()
+    return snapshotAtLocation(snapshot, activeLocation())
+  }
+
+  function snapshotAtLocation(
+    snapshot: EbookSessionSnapshot,
+    location: EbookLocationLike | null,
+  ): EbookSessionSnapshot {
     if (!location) return snapshot
     return {
       ...snapshot,
       chapter: displayEngineValue(location.tocItem?.label) || snapshot.chapter,
       progress: normalizeFraction(location.fraction ?? snapshot.progress),
     }
+  }
+
+  function publishFlowSnapshot(
+    flow: EbookSessionFlow,
+    generation: number,
+    location: EbookLocationLike | null = activeLocation(),
+  ) {
+    if (generation !== activeGeneration) return
+    currentFlow = flow
+    currentSettings = { ...currentSettings, flow }
+    if (!currentSnapshot) return
+    currentSnapshot = snapshotAtLocation({ ...currentSnapshot, flow }, location)
+    dependencies.onSnapshot(currentSnapshot)
   }
 
   return {

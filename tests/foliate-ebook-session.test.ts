@@ -157,6 +157,170 @@ describe('Foliate ebook session', () => {
     expect(harness.snapshots).toEqual([])
     expect(harness.progress.scheduled).toEqual([])
   })
+
+  test('destroy during a suspended view open prevents a later ready snapshot', async () => {
+    const harness = createHarness()
+    const session = createFoliateEbookSession(harness.dependencies)
+    const openGate = deferred<void>()
+    const openStarted = harness.deferNextViewOpen(openGate.promise)
+
+    const opening = session.open(record('suspended.epub'), readerSettings())
+    await openStarted
+    session.destroy()
+    openGate.resolve()
+    await opening
+
+    expect(harness.snapshots.map(snapshot => snapshot.status)).toEqual(['loading'])
+    expect(harness.view.closeCalls).toBe(1)
+    expect(harness.view.removeCalls).toBe(1)
+  })
+
+  test('destroy while a prior-session flush is suspended prevents the waiting open from creating a view', async () => {
+    const harness = createHarness()
+    const session = createFoliateEbookSession(harness.dependencies)
+    await session.open(record('first.epub'), readerSettings())
+    const flushGate = deferred<boolean>()
+    const flushStarted = harness.progress.enqueueFlush(flushGate.promise)
+
+    const opening = session.open(record('second.epub'), readerSettings())
+    await flushStarted
+    session.destroy()
+    flushGate.resolve(true)
+    await opening
+
+    expect(harness.views).toHaveLength(1)
+    expect(harness.snapshots.map(snapshot => snapshot.generation)).toEqual([1, 1])
+  })
+
+  test('a rejected destroy flush cannot report an error to a newer session', async () => {
+    const harness = createHarness()
+    const session = createFoliateEbookSession(harness.dependencies)
+    await session.open(record('old.epub'), readerSettings())
+    const flushGate = deferred<boolean>()
+    const flushStarted = harness.progress.enqueueFlush(flushGate.promise)
+
+    session.destroy()
+    await flushStarted
+    await session.open(record('new.epub'), readerSettings())
+    flushGate.reject(new Error('old flush failed'))
+    await Promise.resolve()
+
+    expect(harness.errors).toEqual([])
+    expect(harness.snapshots.at(-1)).toMatchObject({ status: 'ready', generation: 3 })
+  })
+
+  test('the latest flow request wins when pagination is requested during a suspended mount', async () => {
+    const harness = createHarness()
+    const session = createFoliateEbookSession(harness.dependencies)
+    await session.open(record('latest-flow.epub'), readerSettings())
+    const mountGate = deferred<void>()
+    const mountStarted = harness.deferNextScrollerMount(mountGate.promise)
+
+    const scrolling = session.setFlow('scrolled')
+    await mountStarted
+    const paginating = session.setFlow('paginated')
+    mountGate.resolve()
+    await Promise.all([scrolling, paginating])
+
+    expect(harness.snapshots.at(-1)).toMatchObject({ flow: 'paginated' })
+    expect(harness.view.style.display).toBe('')
+    expect(harness.scroller.destroyCalls).toBe(1)
+  })
+
+  test('close and reopen own teardown when they supersede a suspended scroller mount', async () => {
+    const harness = createHarness()
+    const session = createFoliateEbookSession(harness.dependencies)
+    await session.open(record('old.epub'), readerSettings())
+    const mountGate = deferred<void>()
+    const mountStarted = harness.deferNextScrollerMount(mountGate.promise)
+    const scrolling = session.setFlow('scrolled')
+    await mountStarted
+    const staleScroller = harness.scroller
+
+    await session.close()
+    await session.open(record('new.epub'), readerSettings())
+    mountGate.resolve()
+    await scrolling
+
+    expect(staleScroller.destroyCalls).toBe(1)
+    expect(harness.snapshots.at(-1)).toMatchObject({ status: 'ready', generation: 3 })
+  })
+
+  test.each([
+    ['CFI', { cfi: 'epubcfi(/6/12)', fraction: 0.5 }, 'goTo'],
+    ['fraction', { cfi: null, fraction: 0.5 }, 'goToFraction'],
+  ] as const)('a rejected %s restoration still leaves a consistent paginated session', async (
+    _label,
+    location,
+    failingMethod,
+  ) => {
+    const harness = createHarness()
+    const session = createFoliateEbookSession(harness.dependencies)
+    await session.open(record('restore-error.epub'), readerSettings({ flow: 'scrolled' }))
+    const scroller = harness.scroller
+    scroller.location = location
+    harness.view.failNextNavigation(failingMethod, new Error('page restore failed'))
+
+    await expect(session.setFlow('paginated')).rejects.toThrow('page restore failed')
+    await session.navigate(1)
+
+    expect(harness.errors.at(-1)).toEqual({
+      error: { code: 'restore', message: 'page restore failed' },
+      generation: 1,
+    })
+    expect(harness.snapshots.at(-1)).toMatchObject({ flow: 'paginated', progress: 0.5 })
+    expect(harness.view.style.display).toBe('')
+    expect(scroller.destroyCalls).toBe(1)
+    expect(harness.view.rightCalls).toBe(1)
+  })
+
+  test.each([
+    ['create-view', 'render', 0, 0],
+    ['append', 'render', 1, 1],
+    ['listener', 'render', 1, 1],
+    ['view-open', 'parse', 1, 1],
+    ['settings', 'render', 1, 1],
+    ['restore', 'restore', 1, 1],
+  ] as const)('a %s failure emits one classified error and cleans partial resources', async (
+    stage,
+    code,
+    expectedViews,
+    expectedCloses,
+  ) => {
+    const harness = createHarness()
+    const session = createFoliateEbookSession(harness.dependencies)
+    harness.failNextOpenStage(stage, new Error(`${stage} failed`))
+
+    await session.open(record('setup-error.epub'), readerSettings())
+
+    expect(harness.errors).toEqual([{
+      error: { code, message: `${stage} failed` },
+      generation: 1,
+    }])
+    expect(harness.views).toHaveLength(expectedViews)
+    if (expectedViews) {
+      expect(harness.view.closeCalls).toBe(expectedCloses)
+      expect(harness.view.removeCalls).toBe(expectedCloses)
+    }
+    expect(harness.snapshots.filter(snapshot => snapshot.status === 'ready')).toEqual([])
+  })
+
+  test('a prior-session flush failure is contained by the new open boundary', async () => {
+    const harness = createHarness()
+    const session = createFoliateEbookSession(harness.dependencies)
+    await session.open(record('old.epub'), readerSettings())
+    harness.progress.enqueueFlush(Promise.reject(new Error('prior flush failed')))
+
+    await session.open(record('new.epub'), readerSettings())
+
+    expect(harness.errors).toEqual([{
+      error: { code: 'render', message: 'prior flush failed' },
+      generation: 2,
+    }])
+    expect(harness.views).toHaveLength(1)
+    expect(harness.views[0]!.closeCalls).toBe(1)
+    expect(harness.snapshots.filter(snapshot => snapshot.generation === 2)).toEqual([])
+  })
 })
 
 function createHarness() {
@@ -168,22 +332,53 @@ function createHarness() {
   const progress = new FakeProgressService(events)
   let generation = 0
   let nextScrollerMountError: Error | null = null
+  let nextScrollerMountPromise: Promise<void> | null = null
+  let nextScrollerMountStarted: (() => void) | null = null
+  let nextViewOpenPromise: Promise<void> | null = null
+  let nextViewOpenStarted: (() => void) | null = null
+  let nextOpenFailure: { stage: OpenFailureStage, error: Error } | null = null
 
   const dependencies = {
     host: {
       append(view: FakeView) {
+        if (nextOpenFailure?.stage === 'append') {
+          const { error } = nextOpenFailure
+          nextOpenFailure = null
+          throw error
+        }
         events.push('host:append')
         view.isConnected = true
       },
     } as unknown as HTMLElement,
     createView() {
-      const view = new FakeView(events)
+      if (nextOpenFailure?.stage === 'create-view') {
+        const { error } = nextOpenFailure
+        nextOpenFailure = null
+        throw error
+      }
+      const view = new FakeView(events, {
+        listenerError: consumeOpenFailure('listener'),
+        openError: consumeOpenFailure('view-open'),
+        openPromise: nextViewOpenPromise,
+        openStarted: nextViewOpenStarted,
+        restoreError: consumeOpenFailure('restore'),
+        settingsError: consumeOpenFailure('settings'),
+      })
+      nextViewOpenPromise = null
+      nextViewOpenStarted = null
       views.push(view)
       return view
     },
     createScroller() {
-      const scroller = new FakeScroller(events, nextScrollerMountError)
+      const scroller = new FakeScroller(
+        events,
+        nextScrollerMountError,
+        nextScrollerMountPromise,
+        nextScrollerMountStarted,
+      )
       nextScrollerMountError = null
+      nextScrollerMountPromise = null
+      nextScrollerMountStarted = null
       scrollers.push(scroller)
       return scroller
     },
@@ -193,26 +388,57 @@ function createHarness() {
     nextGeneration: () => ++generation,
   }
 
+  function consumeOpenFailure(stage: OpenFailureStage): Error | null {
+    if (nextOpenFailure?.stage !== stage) return null
+    const { error } = nextOpenFailure
+    nextOpenFailure = null
+    return error
+  }
+
   return {
     dependencies,
     errors,
     events,
     progress,
     snapshots,
+    deferNextScrollerMount(promise: Promise<void>) {
+      const started = deferred<void>()
+      nextScrollerMountPromise = promise
+      nextScrollerMountStarted = () => started.resolve()
+      return started.promise
+    },
+    deferNextViewOpen(promise: Promise<void>) {
+      const started = deferred<void>()
+      nextViewOpenPromise = promise
+      nextViewOpenStarted = () => started.resolve()
+      return started.promise
+    },
     failNextScrollerMount(error: Error) { nextScrollerMountError = error },
+    failNextOpenStage(stage: OpenFailureStage, error: Error) { nextOpenFailure = { stage, error } },
     get scroller() { return scrollers.at(-1)! },
     get view() { return views.at(-1)! },
+    scrollers,
     views,
   }
 }
+
+type OpenFailureStage = 'create-view' | 'append' | 'listener' | 'view-open' | 'settings' | 'restore'
 
 class FakeRenderer {
   attributes: Record<string, string> = {}
   styles = ''
 
-  constructor(private readonly events: string[]) {}
+  constructor(
+    private readonly events: string[],
+    private settingsError: Error | null = null,
+  ) {}
 
   setAttribute(name: string, value: string) {
+    if (this.settingsError) {
+      const error = this.settingsError
+      this.settingsError = null
+      throw error
+    }
     this.attributes[name] = value
     this.events.push(`renderer:attribute:${name}=${value}`)
   }
@@ -250,35 +476,83 @@ class FakeView extends EventTarget {
   lastLocation: FakeLocation | null = null
   closeCalls = 0
   removeCalls = 0
+  rightCalls = 0
+  private listenerError: Error | null
+  private readonly navigationFailures = new Map<string, Error>()
 
-  constructor(private readonly events: string[]) {
+  constructor(
+    private readonly events: string[],
+    private readonly options: {
+      listenerError: Error | null
+      openError: Error | null
+      openPromise: Promise<void> | null
+      openStarted: (() => void) | null
+      restoreError: Error | null
+      settingsError: Error | null
+    } = {
+      listenerError: null,
+      openError: null,
+      openPromise: null,
+      openStarted: null,
+      restoreError: null,
+      settingsError: null,
+    },
+  ) {
     super()
-    this.renderer = new FakeRenderer(events)
+    this.listenerError = options.listenerError
+    this.renderer = new FakeRenderer(events, options.settingsError)
+    if (options.restoreError) this.navigationFailures.set('goToTextStart', options.restoreError)
+  }
+
+  override addEventListener(type: string, callback: EventListenerOrEventListenerObject | null, options?: boolean | AddEventListenerOptions) {
+    if (type === 'relocate' && this.listenerError) {
+      const error = this.listenerError
+      this.listenerError = null
+      throw error
+    }
+    super.addEventListener(type, callback, options)
   }
 
   async open(blob: Blob) {
     this.events.push(`view:open:${blob.size}`)
+    this.options.openStarted?.()
+    if (this.options.openPromise) await this.options.openPromise
+    if (this.options.openError) throw this.options.openError
   }
 
   async goTo(target: unknown) {
+    this.throwNavigationFailure('goTo')
     this.targets.push(target)
     this.lastLocation = { cfi: String(target), fraction: this.lastLocation?.fraction ?? 0 }
     this.events.push(`view:goTo:${String(target)}`)
   }
 
   async goToFraction(fraction: number) {
+    this.throwNavigationFailure('goToFraction')
     this.fractionTargets.push(fraction)
     this.lastLocation = { cfi: null, fraction }
     this.events.push(`view:goToFraction:${fraction}`)
   }
 
   async goToTextStart() {
+    this.throwNavigationFailure('goToTextStart')
     this.lastLocation = { cfi: 'epubcfi(/6/2)', fraction: 0 }
     this.events.push('view:goToTextStart')
   }
 
   async goLeft() {}
-  async goRight() {}
+  async goRight() { this.rightCalls += 1 }
+
+  failNextNavigation(method: string, error: Error) {
+    this.navigationFailures.set(method, error)
+  }
+
+  private throwNavigationFailure(method: string) {
+    const error = this.navigationFailures.get(method)
+    if (!error) return
+    this.navigationFailures.delete(method)
+    throw error
+  }
 
   relocate(detail: FakeLocation) {
     this.lastLocation = detail
@@ -305,12 +579,16 @@ class FakeScroller extends EventTarget {
   constructor(
     private readonly events: string[],
     private readonly mountError: Error | null,
+    private readonly mountPromise: Promise<void> | null = null,
+    private readonly mountStarted: (() => void) | null = null,
   ) {
     super()
   }
 
   async mount(target: unknown) {
     this.mountTargets.push(target)
+    this.mountStarted?.()
+    if (this.mountPromise) await this.mountPromise
     if (this.mountError) throw this.mountError
     this.location = target as FakeLocation | null
     this.events.push('scroller:mount')
@@ -331,6 +609,10 @@ class FakeScroller extends EventTarget {
 class FakeProgressService {
   flushCalls = 0
   readonly scheduled: Array<{ bookId: string, progress: unknown }> = []
+  private readonly flushResults: Array<{
+    result: Promise<boolean>
+    started: () => void
+  }> = []
 
   constructor(private readonly events: string[]) {}
 
@@ -342,7 +624,18 @@ class FakeProgressService {
   async flush() {
     this.flushCalls += 1
     this.events.push('progress:flush')
+    const queued = this.flushResults.shift()
+    if (queued) {
+      queued.started()
+      return await queued.result
+    }
     return true
+  }
+
+  enqueueFlush(result: Promise<boolean>) {
+    const started = deferred<void>()
+    this.flushResults.push({ result, started: () => started.resolve() })
+    return started.promise
   }
 
   cancel() {}
@@ -378,4 +671,14 @@ function readerSettings(overrides: Record<string, unknown> = {}) {
     pageWidth: 760,
     ...overrides,
   }
+}
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
 }
