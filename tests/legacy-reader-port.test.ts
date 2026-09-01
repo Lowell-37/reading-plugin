@@ -1,8 +1,11 @@
 // @vitest-environment jsdom
-import { createPinia } from 'pinia'
+import { createPinia, setActivePinia } from 'pinia'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import App from '../entrypoints/reader/App.vue'
+import { createLibraryStore } from '../entrypoints/reader/stores/library'
+import type { EbookSessionPort } from '../entrypoints/reader/ebook-session-port'
+import type { LibraryDependencies } from '../entrypoints/reader/stores/library'
 import type { BookRecord } from '../src/core/types'
 
 vi.mock('../node_modules/foliate-js/view.js', () => ({}))
@@ -138,18 +141,73 @@ describe('legacy reader port lifecycle', () => {
     port.destroy()
   })
 
-  test('WXT legacy port rejects ebook records before it initializes a legacy ebook view', async () => {
+  test.each(['epub', 'mobi', 'azw3'] as const)('WXT routes %s sessions without legacy ebook open, relocation, or navigation', async format => {
     // @ts-expect-error JavaScript compatibility controller has no declaration file.
     const { createLegacyReaderPort } = await import('../src/reader.js')
+    const states: Array<Record<string, unknown>> = []
     const port = createLegacyReaderPort({
-      onState() {},
+      onState: state => states.push(state),
       onPanelRequest() {},
       onLibraryChanged() {},
     })
+    const legacyOpen = vi.spyOn(port, 'openRecord')
+    const ebookOpen = vi.fn(async () => undefined)
+    const library = createTestLibraryStore()
+    library.attachLegacyPort(port)
+    library.attachEbookPort({
+      open: ebookOpen,
+      close: async () => undefined,
+      goTo: async () => undefined,
+      navigate: async () => undefined,
+      setFlow: async () => undefined,
+      applySettings: async () => undefined,
+      flushProgress: async () => undefined,
+      destroy() {},
+    } satisfies EbookSessionPort)
 
-    await expect(port.openRecord(record('session.epub', 'epub')))
+    await library.openRecord(record(`session.${format}`, format))
+
+    expect(ebookOpen).toHaveBeenCalledWith(expect.objectContaining({ format }), expect.any(Object))
+    expect(legacyOpen).not.toHaveBeenCalled()
+
+    const stateCount = states.length
+    const view = document.createElement('foliate-view')
+    document.querySelector('#ebook-host')?.append(view)
+    view.dispatchEvent(new CustomEvent('relocate', { detail: { cfi: '/6/2', fraction: 0.75, tocItem: { label: 'Legacy chapter' } } }))
+    document.querySelector<HTMLElement>('#prev-button')?.click()
+    document.querySelector<HTMLElement>('#next-button')?.click()
+    const progress = document.querySelector<HTMLInputElement>('#progress-slider')!
+    progress.value = '0.75'
+    progress.dispatchEvent(new Event('input', { bubbles: true }))
+    document.body.classList.add('is-reading')
+    const keyboard = new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true })
+    window.dispatchEvent(keyboard)
+
+    expect(states).toHaveLength(stateCount)
+    expect(keyboard.defaultPrevented).toBe(false)
+    await expect(port.openRecord(record(`legacy.${format}`, format)))
       .rejects.toThrow('WXT legacy reader port cannot open ebook records')
-    expect(document.querySelector('#ebook-host')?.children).toHaveLength(0)
+    expect(view.isConnected).toBe(true)
+    expect(document.querySelector('#ebook-host')?.children).toHaveLength(1)
+
+    port.destroy()
+  })
+
+  test('WXT replacement PDF navigation bindings drive prev, next, and progress controls', async () => {
+    // @ts-expect-error JavaScript compatibility controller has no declaration file.
+    const { createLegacyReaderPort } = await import('../src/reader.js')
+    const port = createLegacyReaderPort({ onState() {}, onPanelRequest() {}, onLibraryChanged() {} })
+    await port.openRecord(record('controls.pdf', 'pdf'))
+
+    const page = document.querySelector<HTMLInputElement>('#pdf-page-input')!
+    document.querySelector<HTMLElement>('#next-button')?.click()
+    expect(page.value).toBe('2')
+    document.querySelector<HTMLElement>('#prev-button')?.click()
+    expect(page.value).toBe('1')
+    const progress = document.querySelector<HTMLInputElement>('#progress-slider')!
+    progress.value = '0.5'
+    progress.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(page.value).toBe('2')
 
     port.destroy()
   })
@@ -201,4 +259,23 @@ function rect(top: number, height: number): DOMRect {
     y: top,
     toJSON: () => ({}),
   }
+}
+
+function createTestLibraryStore() {
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  return createLibraryStore({
+    repository: {
+      save: async () => { throw new Error('not used') },
+      update: async () => undefined,
+      list: async () => [],
+      restore: async () => undefined,
+      delete: async () => undefined,
+    },
+    createBackup: async () => new Blob(),
+    parseBackup: async () => ({ settings: {}, records: [] }),
+    download() {},
+    now: () => 2,
+    backupName: () => 'library.quietreader',
+  } satisfies LibraryDependencies)(pinia)
 }
