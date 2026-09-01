@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, defineComponent, h, type Component, type PropType } from 'vue'
 import { storeToRefs } from 'pinia'
+import type { EbookSessionTocItem } from '../ebook-session-port'
 import { useEbookSessionStore } from '../stores/ebook-session'
 import { useReaderStore } from '../stores/reader'
 
@@ -14,6 +15,33 @@ function goTo(event: MouseEvent, href: unknown) {
   event.stopImmediatePropagation()
   void ebook.goTo(href)
 }
+
+const TocItems: Component = defineComponent({
+  name: 'EbookSessionTocItems',
+  props: {
+    items: { type: Array as PropType<EbookSessionTocItem[]>, required: true },
+    path: { type: String, default: '' },
+  },
+  emits: ['go-to'],
+  setup(props, { emit }) {
+    return () => h('ul', props.items.map((item, index) => {
+      const key = `${props.path}${index}-${item.label}`
+      return h('li', { key }, [
+        h('button', {
+          type: 'button',
+          onClick: (event: MouseEvent) => emit('go-to', event, item.href),
+        }, item.label),
+        item.subitems?.length
+          ? h(TocItems, {
+              items: item.subitems,
+              path: `${key}/`,
+              onGoTo: (event: MouseEvent, href: unknown) => emit('go-to', event, href),
+            })
+          : null,
+      ])
+    }))
+  },
+})
 </script>
 
 <template>
@@ -26,16 +54,7 @@ function goTo(event: MouseEvent, href: unknown) {
     </div>
     <div class="sidebar-label"><span>目录</span><span id="toc-count"><template v-if="ebookSessionActive">{{ toc.length }}</template></span></div>
     <nav id="toc" class="toc">
-      <ul v-if="ebookSessionActive">
-        <li v-for="(item, index) in toc" :key="`${index}-${item.label}`">
-          <button type="button" @click="goTo($event, item.href)">{{ item.label }}</button>
-          <ul v-if="item.subitems?.length">
-            <li v-for="(subitem, subindex) in item.subitems" :key="`${index}-${subindex}-${subitem.label}`">
-              <button type="button" @click="goTo($event, subitem.href)">{{ subitem.label }}</button>
-            </li>
-          </ul>
-        </li>
-      </ul>
+      <TocItems v-if="ebookSessionActive" :items="toc" @go-to="goTo" />
     </nav>
   </aside>
 </template>

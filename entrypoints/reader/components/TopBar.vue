@@ -17,6 +17,7 @@ function openFilePicker() {
 }
 
 async function closeReader() {
+  reader.closePanel()
   if (ebook.record) {
     await ebook.close()
     await library.load()

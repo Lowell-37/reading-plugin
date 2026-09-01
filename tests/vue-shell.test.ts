@@ -127,6 +127,57 @@ describe('Vue reader shell', () => {
     wrapper.unmount()
   })
 
+  test('closes an active ebook panel and scrim before returning to the library', async () => {
+    const pinia = createPinia()
+    const reader = useReaderStore(pinia)
+    const ebook = useEbookSessionStore(pinia)
+    const library = useLibraryStore(pinia)
+    vi.spyOn(library, 'load').mockResolvedValue(undefined)
+    ebook.record = { id: 'book', name: 'book.epub', format: 'epub' }
+    ebook.status = 'ready'
+    reader.applyEbookSessionSnapshot(ebookSnapshot({ status: 'ready' }))
+    reader.requestPanel('toc')
+    const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
+
+    expect(wrapper.find('#sidebar').classes()).toContain('open')
+    expect(wrapper.find('#scrim').classes()).toContain('show')
+
+    await wrapper.find('#home-button').trigger('click')
+
+    expect(reader.activePanel).toBeNull()
+    expect(wrapper.find('#sidebar').classes()).not.toContain('open')
+    expect(wrapper.find('#scrim').classes()).not.toContain('show')
+    wrapper.unmount()
+  })
+
+  test('renders and routes every nested ebook TOC level', async () => {
+    const pinia = createPinia()
+    const ebook = useEbookSessionStore(pinia)
+    ebook.record = { id: 'book', name: 'book.epub', format: 'epub' }
+    ebook.status = 'ready'
+    ebook.toc = [{
+      label: 'Part one',
+      href: '/6/2',
+      subitems: [{
+        label: 'Chapter one',
+        href: '/6/4',
+        subitems: [{ label: 'Section one', href: '/6/6' }],
+      }],
+    }]
+    const goTo = vi.spyOn(ebook, 'goTo').mockResolvedValue(undefined)
+    const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
+
+    const tocButtons = wrapper.findAll('#toc button')
+    expect(tocButtons).toHaveLength(3)
+    expect(tocButtons.map(button => button.text())).toEqual(['Part one', 'Chapter one', 'Section one'])
+
+    await tocButtons[2]!.trigger('click')
+
+    expect(goTo).toHaveBeenCalledTimes(1)
+    expect(goTo).toHaveBeenCalledWith('/6/6')
+    wrapper.unmount()
+  })
+
   test('renders panel classes from Pinia and closes panels through Vue controls', async () => {
     const pinia = createPinia()
     const store = useReaderStore(pinia)
