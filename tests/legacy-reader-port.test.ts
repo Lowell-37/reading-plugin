@@ -3,9 +3,10 @@ import { createPinia, setActivePinia } from 'pinia'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import App from '../entrypoints/reader/App.vue'
-import { createLibraryStore } from '../entrypoints/reader/stores/library'
-import type { EbookSessionPort } from '../entrypoints/reader/ebook-session-port'
-import type { LibraryDependencies } from '../entrypoints/reader/stores/library'
+import { createFoliateEbookSession } from '../entrypoints/reader/foliate-ebook-session'
+import { useEbookSessionStore } from '../entrypoints/reader/stores/ebook-session'
+import { useLibraryStore } from '../entrypoints/reader/stores/library'
+import { useSettingsStore } from '../entrypoints/reader/stores/settings'
 import type { BookRecord } from '../src/core/types'
 
 vi.mock('../node_modules/foliate-js/view.js', () => ({}))
@@ -42,13 +43,16 @@ vi.mock('../node_modules/pdfjs-dist/build/pdf.mjs', () => ({
 
 describe('legacy reader port lifecycle', () => {
   let wrapper: VueWrapper
+  let pinia: ReturnType<typeof createPinia>
 
   beforeEach(() => {
     vi.resetModules()
     document.documentElement.dataset.legacyController = 'loading'
+    pinia = createPinia()
+    setActivePinia(pinia)
     wrapper = mount(App, {
       attachTo: document.body,
-      global: { plugins: [createPinia()] },
+      global: { plugins: [pinia] },
     })
     vi.stubGlobal('IntersectionObserver', class {
       observe() {}
@@ -141,41 +145,70 @@ describe('legacy reader port lifecycle', () => {
     port.destroy()
   })
 
-  test.each(['epub', 'mobi', 'azw3'] as const)('WXT routes %s sessions without legacy ebook open, relocation, or navigation', async format => {
+  test.each(['epub', 'mobi', 'azw3'] as const)('WXT routes %s through its mounted ebook session without legacy ebook ownership', async format => {
     // @ts-expect-error JavaScript compatibility controller has no declaration file.
     const { createLegacyReaderPort } = await import('../src/reader.js')
     const states: Array<Record<string, unknown>> = []
+    const prevBinding = vi.spyOn(document.querySelector<HTMLElement>('#prev-button')!, 'addEventListener')
+    const nextBinding = vi.spyOn(document.querySelector<HTMLElement>('#next-button')!, 'addEventListener')
+    const progressBinding = vi.spyOn(document.querySelector<HTMLInputElement>('#progress-slider')!, 'addEventListener')
+    const keyboardBinding = vi.spyOn(window, 'addEventListener')
     const port = createLegacyReaderPort({
       onState: state => states.push(state),
       onPanelRequest() {},
       onLibraryChanged() {},
     })
     const legacyOpen = vi.spyOn(port, 'openRecord')
-    const ebookOpen = vi.fn(async () => undefined)
-    const library = createTestLibraryStore()
+    expect(prevBinding).toHaveBeenCalledTimes(1)
+    expect(nextBinding).toHaveBeenCalledTimes(1)
+    expect(progressBinding).toHaveBeenCalledTimes(1)
+    expect(keyboardBinding).toHaveBeenCalledTimes(1)
+    const ebook = useEbookSessionStore(pinia)
+    const library = useLibraryStore(pinia)
+    Object.assign(useSettingsStore(pinia).settings, { flow: 'paginated' })
+    const progressWrites: Array<{ id: string, fraction: number }> = []
+    const views: MountedEbookView[] = []
+    let generation = 0
+    ebook.attachPort(callbacks => createFoliateEbookSession({
+      ...callbacks,
+      host: document.querySelector('#ebook-host')!,
+      createView: () => {
+        const view = createMountedEbookView()
+        views.push(view)
+        return view
+      },
+      createScroller: () => { throw new Error('scrolled mode is not used in this test') },
+      createProgressService: () => ({
+        schedule(id, progress) {
+          progressWrites.push({ id, fraction: progress.fraction })
+          return true
+        },
+        flush: async () => false,
+        cancel() {},
+      }),
+      nextGeneration: () => ++generation,
+    }))
     library.attachLegacyPort(port)
-    library.attachEbookPort({
-      open: ebookOpen,
-      close: async () => undefined,
-      goTo: async () => undefined,
-      navigate: async () => undefined,
-      setFlow: async () => undefined,
-      applySettings: async () => undefined,
-      flushProgress: async () => undefined,
-      destroy() {},
-    } satisfies EbookSessionPort)
+    library.attachEbookPort(ebook)
 
     await library.openRecord(record(`session.${format}`, format))
 
-    expect(ebookOpen).toHaveBeenCalledWith(expect.objectContaining({ format }), expect.any(Object))
+    expect(ebook.error).toBeNull()
+    expect(ebook.status).toBe('ready')
+    const view = views[0]!
+    expect(view).toBeTruthy()
+    expect(view.parentElement).toBe(document.querySelector('#ebook-host'))
     expect(legacyOpen).not.toHaveBeenCalled()
 
     const stateCount = states.length
-    const view = document.createElement('foliate-view')
-    document.querySelector('#ebook-host')?.append(view)
-    view.dispatchEvent(new CustomEvent('relocate', { detail: { cfi: '/6/2', fraction: 0.75, tocItem: { label: 'Legacy chapter' } } }))
+    view.relocate({ cfi: '/6/2', fraction: 0.75, tocItem: { label: 'Session chapter' } })
+    expect(ebook.progress).toBe(0.75)
+    expect(progressWrites).toEqual([{ id: `session.${format}`, fraction: 0.75 }])
     document.querySelector<HTMLElement>('#prev-button')?.click()
     document.querySelector<HTMLElement>('#next-button')?.click()
+    await Promise.resolve()
+    expect(view.goLeftCalls).toBe(1)
+    expect(view.goRightCalls).toBe(1)
     const progress = document.querySelector<HTMLInputElement>('#progress-slider')!
     progress.value = '0.75'
     progress.dispatchEvent(new Event('input', { bubbles: true }))
@@ -185,6 +218,7 @@ describe('legacy reader port lifecycle', () => {
 
     expect(states).toHaveLength(stateCount)
     expect(keyboard.defaultPrevented).toBe(false)
+    expect(view.goToFractionCalls).toBe(0)
     await expect(port.openRecord(record(`legacy.${format}`, format)))
       .rejects.toThrow('WXT legacy reader port cannot open ebook records')
     expect(view.isConnected).toBe(true)
@@ -261,21 +295,29 @@ function rect(top: number, height: number): DOMRect {
   }
 }
 
-function createTestLibraryStore() {
-  const pinia = createPinia()
-  setActivePinia(pinia)
-  return createLibraryStore({
-    repository: {
-      save: async () => { throw new Error('not used') },
-      update: async () => undefined,
-      list: async () => [],
-      restore: async () => undefined,
-      delete: async () => undefined,
-    },
-    createBackup: async () => new Blob(),
-    parseBackup: async () => ({ settings: {}, records: [] }),
-    download() {},
-    now: () => 2,
-    backupName: () => 'library.quietreader',
-  } satisfies LibraryDependencies)(pinia)
+class MountedEbookView extends HTMLElement {
+  book = { metadata: { title: 'Mounted session' }, toc: [], sections: [] }
+  renderer = { setAttribute() {}, setStyles() {} }
+  lastLocation = { fraction: 0 }
+  goLeftCalls = 0
+  goRightCalls = 0
+  goToFractionCalls = 0
+
+  async open() {}
+  async goTo() {}
+  async goToFraction() { this.goToFractionCalls += 1 }
+  async goToTextStart() {}
+  async goLeft() { this.goLeftCalls += 1 }
+  async goRight() { this.goRightCalls += 1 }
+  async close() {}
+
+  relocate(detail: { cfi: string, fraction: number, tocItem: { label: string } }) {
+    this.lastLocation = detail
+    this.dispatchEvent(new CustomEvent('relocate', { detail }))
+  }
+}
+
+function createMountedEbookView() {
+  if (!customElements.get('mounted-ebook-view')) customElements.define('mounted-ebook-view', MountedEbookView)
+  return document.createElement('mounted-ebook-view') as MountedEbookView
 }
