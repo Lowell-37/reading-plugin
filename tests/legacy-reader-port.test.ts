@@ -138,6 +138,22 @@ describe('legacy reader port lifecycle', () => {
     port.destroy()
   })
 
+  test('WXT legacy port rejects ebook records before it initializes a legacy ebook view', async () => {
+    // @ts-expect-error JavaScript compatibility controller has no declaration file.
+    const { createLegacyReaderPort } = await import('../src/reader.js')
+    const port = createLegacyReaderPort({
+      onState() {},
+      onPanelRequest() {},
+      onLibraryChanged() {},
+    })
+
+    await expect(port.openRecord(record('session.epub', 'epub')))
+      .rejects.toThrow('WXT legacy reader port cannot open ebook records')
+    expect(document.querySelector('#ebook-host')?.children).toHaveLength(0)
+
+    port.destroy()
+  })
+
   test('applying settings through the WXT port synchronizes the legacy header body class', async () => {
     // @ts-expect-error JavaScript compatibility controller has no declaration file.
     const { createLegacyReaderPort } = await import('../src/reader.js')

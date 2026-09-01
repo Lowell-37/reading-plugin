@@ -36,6 +36,13 @@ const EXPECTED_ROOT_LIBRARY_LISTENERS = [
   'library-card-delete@remove:click',
 ]
 
+const EXPECTED_ROOT_EBOOK_LISTENERS = [
+  'reader-prev@prevButton:click',
+  'reader-next@nextButton:click',
+  'reader-progress@progressSlider:input',
+  'reader-keyboard@window:keydown',
+]
+
 test('reader exposes search, annotation and PDF navigation controls', async () => {
   const html = await readFile(new URL('../reader.html', import.meta.url), 'utf8')
   for (const id of ['header-toggle', 'tools-button', 'search-form', 'highlight-selection', 'note-selection', 'annotation-filter-query', 'annotation-filter-type', 'annotation-sort', 'annotation-select-all', 'annotation-delete-selected', 'import-annotations-json', 'annotation-import-input', 'export-annotations-markdown', 'export-annotations-json', 'ai-settings', 'ai-result', 'selection-ai-menu', 'pdf-toolbar', 'pdf-page-input']) {
@@ -75,13 +82,20 @@ test('root and Vue library shells expose versioned backup and restore controls',
   assert.match(source, /parseLibraryBackup/)
 })
 
-test('root startup owns each migrated UI and library listener exactly once', async () => {
+test('root startup retains ebook listeners while WXT startup excludes them', async () => {
   const ownership = await import('../src/reader-listener-registry.js').catch(() => null)
   assert.ok(ownership, 'reader listener ownership must be represented by an importable production registry')
 
   assert.deepEqual(signatures(ownership.ROOT_UI_LISTENERS), EXPECTED_ROOT_UI_LISTENERS)
   assert.deepEqual(signatures(ownership.ROOT_LIBRARY_LISTENERS), EXPECTED_ROOT_LIBRARY_LISTENERS)
+  assert.deepEqual(signatures(ownership.ROOT_EBOOK_LISTENERS), EXPECTED_ROOT_EBOOK_LISTENERS)
+  assert.deepEqual(ownership.LISTENER_STARTUP.wxt, ['engine'])
   assert.deepEqual(ownership.LISTENER_STARTUP.root, ['engine', 'rootUi', 'rootLibrary'])
+  assert.deepEqual(
+    ownership.WXT_ENGINE_LISTENERS.filter(binding => EXPECTED_ROOT_EBOOK_LISTENERS
+      .some(signature => signature.startsWith(`${binding.action}@`))),
+    [],
+  )
 
   const allBindings = [
     ...ownership.ENGINE_LISTENERS,

@@ -25,6 +25,8 @@ import {
   ENGINE_LISTENERS,
   ROOT_LIBRARY_LISTENERS,
   ROOT_UI_LISTENERS,
+  WXT_ENGINE_LISTENERS,
+  WXT_PDF_NAVIGATION_LISTENERS,
   bindRegisteredListeners,
   startReaderListenerMode,
 } from './reader-listener-registry.js'
@@ -191,6 +193,7 @@ let legacyReaderState = {
   isReading: false,
 }
 let controllerInitialized = false
+let controllerMode = 'root'
 let vueOwnsMigratedControls = false
 
 function emitLegacyState(state) {
@@ -297,15 +300,17 @@ function closeReader() {
   readerAdapter?.destroy?.()
   readerAdapter = null
   closePanels()
-  continuousEbook?.destroy()
-  continuousEbook = null
   searchAbortController?.abort()
   searchAbortController = null
-  ebookSearchIndex?.clear()
-  ebookSearchIndex = null
-  ebookView?.close?.()
-  ebookView?.remove()
-  ebookView = null
+  if (controllerMode === 'root') {
+    continuousEbook?.destroy()
+    continuousEbook = null
+    ebookSearchIndex?.clear()
+    ebookSearchIndex = null
+    ebookView?.close?.()
+    ebookView?.remove()
+    ebookView = null
+  }
   pdfObserver?.disconnect()
   pdfObserver = null
   pdfLoadingTask?.destroy?.()
@@ -325,7 +330,7 @@ function closeReader() {
   elements.searchStatus.textContent = '输入关键词搜索整本书'
   elements.pdfToolbar.hidden = true
   elements.pdfPageJump.hidden = true
-  elements.ebookHost.replaceChildren()
+  if (controllerMode === 'root') elements.ebookHost.replaceChildren()
   elements.pdfPages.replaceChildren()
   if (coverObjectUrl) URL.revokeObjectURL(coverObjectUrl)
   coverObjectUrl = null
@@ -387,7 +392,7 @@ function getContinuousBookStyles() {
 function applyReaderSettings(persist = true) {
   applySettingsToControls()
   if (persist) saveSettings(settings)
-  if (!ebookView?.renderer) return
+  if (controllerMode !== 'root' || !ebookView?.renderer) return
   ebookView.renderer.setAttribute('flow', 'paginated')
   ebookView.renderer.setAttribute('animated', '')
   ebookView.renderer.setAttribute('margin', '64px')
@@ -1735,7 +1740,9 @@ function bindReaderListeners(bindings, handlers, elementLookup = elements) {
 
 function bindEngineControls() {
   const jumpToInputPage = () => goToPdfPage(Number(elements.pdfPageInput.value))
-  bindReaderListeners(ENGINE_LISTENERS, {
+  bindReaderListeners(controllerMode === 'wxt'
+    ? [...WXT_ENGINE_LISTENERS, ...WXT_PDF_NAVIGATION_LISTENERS]
+    : ENGINE_LISTENERS, {
     'loading-return-library': showLibrary,
     'loading-retry-file': openPicker,
     'ai-settings-toggle': () => {
@@ -1789,6 +1796,17 @@ function bindEngineControls() {
     'reader-keyboard': event => {
       if (!document.body.classList.contains('is-reading')) return
       if (!vueOwnsMigratedControls && (elements.settingsPanel.classList.contains('open') || elements.toolsPanel.classList.contains('open'))) return
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return
+      if (event.key === 'ArrowLeft' || event.key === 'PageUp') { event.preventDefault(); navigate(-1) }
+      if (event.key === 'ArrowRight' || event.key === 'PageDown') { event.preventDefault(); navigate(1) }
+    },
+    'pdf-reader-prev': () => { if (currentFormat === 'pdf') navigate(-1) },
+    'pdf-reader-next': () => { if (currentFormat === 'pdf') navigate(1) },
+    'pdf-reader-progress': event => {
+      if (currentFormat === 'pdf') readerAdapter?.goToFraction(Number(event.target.value))
+    },
+    'pdf-reader-keyboard': event => {
+      if (currentFormat !== 'pdf' || !document.body.classList.contains('is-reading')) return
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return
       if (event.key === 'ArrowLeft' || event.key === 'PageUp') { event.preventDefault(); navigate(-1) }
       if (event.key === 'ArrowRight' || event.key === 'PageDown') { event.preventDefault(); navigate(1) }
@@ -1856,6 +1874,7 @@ function bindRootUiControls() {
 function initializeLegacyReaderController({ mode = 'root' } = {}) {
   if (controllerInitialized) return
   controllerInitialized = true
+  controllerMode = mode
   applySettingsToControls()
   startReaderListenerMode(mode, {
     engine: bindEngineControls,
@@ -1882,6 +1901,7 @@ export function createLegacyReaderPort(callbacks = {}) {
   return {
     async openRecord(record, options) {
       ensureActive()
+      if (record.format !== 'pdf') throw new Error('WXT legacy reader port cannot open ebook records')
       await openStoredBook(record, options)
     },
     async closeSession() {
@@ -1894,7 +1914,7 @@ export function createLegacyReaderPort(callbacks = {}) {
       settings = { ...settings, ...nextSettings }
       applyReaderSettings(false)
       setHeaderCollapsed(Boolean(settings.headerCollapsed), false)
-      if (settings.flow !== previousFlow) await setEbookFlow(settings.flow)
+      if (controllerMode === 'root' && settings.flow !== previousFlow) await setEbookFlow(settings.flow)
     },
     async flushProgress() {
       ensureActive()

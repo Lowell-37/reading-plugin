@@ -33,6 +33,26 @@ export const ENGINE_LISTENERS = Object.freeze([
   listener('reader-keyboard', 'window', 'keydown', 'window'),
 ])
 
+export const ROOT_EBOOK_LISTENERS = Object.freeze([
+  listener('reader-prev', 'prevButton', 'click'),
+  listener('reader-next', 'nextButton', 'click'),
+  listener('reader-progress', 'progressSlider', 'input'),
+  listener('reader-keyboard', 'window', 'keydown', 'window'),
+])
+
+const ROOT_EBOOK_ACTIONS = new Set(ROOT_EBOOK_LISTENERS.map(binding => binding.action))
+
+export const WXT_ENGINE_LISTENERS = Object.freeze(
+  ENGINE_LISTENERS.filter(binding => !ROOT_EBOOK_ACTIONS.has(binding.action)),
+)
+
+export const WXT_PDF_NAVIGATION_LISTENERS = Object.freeze([
+  listener('pdf-reader-prev', 'prevButton', 'click'),
+  listener('pdf-reader-next', 'nextButton', 'click'),
+  listener('pdf-reader-progress', 'progressSlider', 'input'),
+  listener('pdf-reader-keyboard', 'window', 'keydown', 'window'),
+])
+
 export const ROOT_UI_LISTENERS = Object.freeze([
   listener('open-button', 'openButton', 'click'),
   listener('hero-open-button', 'heroOpenButton', 'click'),

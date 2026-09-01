@@ -10,15 +10,16 @@ test('legacy reader state bridge has no DOM reverse-synchronization path', async
   expect(source).toMatch(/destroy/)
 })
 
-test('Vue components cannot import legacy reader, persistence, Foliate or PDF.js', async () => {
+test('WXT components and stores cannot import legacy reader, persistence, or ebook engines', async () => {
   const componentRoot = new URL('../entrypoints/reader/', import.meta.url)
   const componentPaths = (await readdir(componentRoot, { recursive: true }))
-    .filter(path => path.endsWith('.vue'))
+    .filter(path => (path.startsWith('components/') || path.startsWith('components\\') || path.startsWith('stores/') || path.startsWith('stores\\'))
+      && (path.endsWith('.vue') || path.endsWith('.ts')))
 
   expect(componentPaths.length).toBeGreaterThan(0)
   for (const path of componentPaths) {
     const source = await readFile(new URL(path, componentRoot), 'utf8')
-    expect(source, path).not.toMatch(/from\s+['"][^'"]*(?:src\/reader\.js|book-repository|storage\.js|foliate-js|pdfjs-dist)[^'"]*['"]/)
+    expect(source, path).not.toMatch(/from\s+['"][^'"]*(?:src\/reader\.js|foliate-js|continuous-ebook)[^'"]*['"]/)
     expect(source, path).not.toMatch(/\bindexedDB\b/)
   }
 })
