@@ -8,6 +8,7 @@ import { useReaderStore } from '../entrypoints/reader/stores/reader'
 import { useSettingsStore } from '../entrypoints/reader/stores/settings'
 import { useMigrationStore } from '../entrypoints/reader/stores/migration'
 import { useLibraryStore } from '../entrypoints/reader/stores/library'
+import { useEbookSessionStore } from '../entrypoints/reader/stores/ebook-session'
 import type { EbookSessionSnapshot } from '../entrypoints/reader/ebook-session-port'
 import type { BookRecord } from '../src/core/types'
 
@@ -83,6 +84,47 @@ describe('Vue reader shell', () => {
       isReading: true,
       activePanel: 'toc',
     })
+  })
+
+  test('routes ebook TOC, navigation, close, and flow controls through the ebook session store', async () => {
+    const pinia = createPinia()
+    const reader = useReaderStore(pinia)
+    const ebook = useEbookSessionStore(pinia)
+    ebook.record = { id: 'book', name: 'book.epub', format: 'epub' }
+    ebook.status = 'ready'
+    ebook.flow = 'paginated'
+    ebook.toc = [{ label: 'First chapter', href: '/6/2' }]
+    reader.applyEbookSessionSnapshot(ebookSnapshot({ status: 'ready', toc: ebook.toc }))
+    const goTo = vi.spyOn(ebook, 'goTo').mockResolvedValue(undefined)
+    const navigate = vi.spyOn(ebook, 'navigate').mockResolvedValue(undefined)
+    const close = vi.spyOn(ebook, 'close').mockResolvedValue(undefined)
+    const setFlow = vi.spyOn(ebook, 'setFlow').mockResolvedValue(undefined)
+    const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
+
+    expect(wrapper.find('#reader-view').classes()).toContain('ebook-session-active')
+    expect(wrapper.find('#reader-view').attributes('hidden')).toBeUndefined()
+    expect(wrapper.find('#welcome-view').attributes('hidden')).toBeDefined()
+    expect(document.body.classList).toContain('is-reading')
+    expect(wrapper.find('#ebook-host').attributes('hidden')).toBeUndefined()
+    expect(wrapper.find('#pdf-viewport').attributes('hidden')).toBeDefined()
+    expect(wrapper.findAll('#toc button')).toHaveLength(1)
+
+    await wrapper.find('#sidebar-button').trigger('click')
+    await wrapper.find('#toc button').trigger('click')
+    await wrapper.find('#prev-button').trigger('click')
+    await wrapper.find('#next-button').trigger('click')
+    await wrapper.find('[data-flow="scrolled"]').trigger('click')
+    await wrapper.find('#home-button').trigger('click')
+
+    expect(goTo).toHaveBeenCalledTimes(1)
+    expect(goTo).toHaveBeenCalledWith('/6/2')
+    expect(navigate).toHaveBeenCalledTimes(2)
+    expect(navigate).toHaveBeenNthCalledWith(1, -1)
+    expect(navigate).toHaveBeenNthCalledWith(2, 1)
+    expect(setFlow).toHaveBeenCalledTimes(1)
+    expect(setFlow).toHaveBeenCalledWith('scrolled')
+    expect(close).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
   })
 
   test('renders panel classes from Pinia and closes panels through Vue controls', async () => {

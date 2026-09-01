@@ -2,11 +2,18 @@ import { createPinia } from 'pinia'
 import { createApp, nextTick } from 'vue'
 import '../../styles/reader.css'
 import App from './App.vue'
+// @ts-expect-error JavaScript compatibility repository has no declaration file yet.
+import { bookRepository } from '../../src/book-repository.js'
+// @ts-expect-error JavaScript compatibility progress service has no declaration file yet.
+import { ProgressService } from '../../src/progress-service.js'
+import { createFoliateEbookSessionDependencies } from './ebook-session-dependencies'
+import { createFoliateEbookSession } from './foliate-ebook-session'
 import { connectLegacyReaderState } from './legacy-bridge'
 import type { LegacyReaderPort } from './legacy-reader-port'
 import { runMigrationPreflight } from './migration-preflight'
 import { useMigrationStore } from './stores/migration'
 import { useLibraryStore } from './stores/library'
+import { useEbookSessionStore } from './stores/ebook-session'
 
 async function startReader() {
   const pinia = createPinia()
@@ -24,12 +31,23 @@ async function startReader() {
   const library = useLibraryStore(pinia)
   await library.load()
   const bridge = connectLegacyReaderState(pinia)
+  const ebookSession = useEbookSessionStore(pinia)
+  const ebookHost = document.getElementById('ebook-host')
+  if (!ebookHost) throw new Error('Ebook session host is unavailable')
+  let ebookGeneration = 0
+  ebookSession.attachPort(callbacks => createFoliateEbookSession(createFoliateEbookSessionDependencies({
+    ...callbacks,
+    host: ebookHost,
+    createProgressService: () => new ProgressService(bookRepository),
+    nextGeneration: () => ++ebookGeneration,
+  })))
   document.documentElement.dataset.legacyController = 'loading'
   // The imperative controller remains JavaScript until its engine adapters move to TypeScript.
   // @ts-expect-error JavaScript compatibility controller has no declaration file yet.
   const legacyReader = await import('../../src/reader.js')
   const port: LegacyReaderPort = legacyReader.createLegacyReaderPort(bridge.callbacks)
-  bridge.attachPort(port)
+  bridge.attachLegacyPort(port)
+  bridge.attachEbookPort(ebookSession)
   document.documentElement.dataset.legacyController = 'ready'
 }
 

@@ -1,9 +1,46 @@
 <script setup lang="ts">
+import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
+import { storeToRefs } from 'pinia'
 import TocSidebar from './TocSidebar.vue'
+import { useEbookSessionStore } from '../stores/ebook-session'
+import { useReaderStore } from '../stores/reader'
+import { useSettingsStore } from '../stores/settings'
+
+const reader = useReaderStore()
+const settings = useSettingsStore()
+const ebook = useEbookSessionStore()
+const { isReading } = storeToRefs(reader)
+const { record, flow } = storeToRefs(ebook)
+const ebookSessionActive = computed(() => record.value !== null)
+
+watch(() => settings.flow, nextFlow => {
+  if (ebookSessionActive.value && flow.value !== nextFlow) void ebook.setFlow(nextFlow)
+})
+
+watch(isReading, reading => {
+  document.body.classList.toggle('is-reading', reading)
+  document.getElementById('welcome-view')?.toggleAttribute('hidden', reading)
+}, { immediate: true })
+
+function syncEbookHost(active: boolean) {
+  document.getElementById('ebook-host')?.toggleAttribute('hidden', !active)
+  document.getElementById('pdf-viewport')?.toggleAttribute('hidden', active)
+}
+
+watch(ebookSessionActive, syncEbookHost, { immediate: true })
+onMounted(() => syncEbookHost(ebookSessionActive.value))
+
+onBeforeUnmount(() => document.body.classList.remove('is-reading'))
+
+function navigate(event: MouseEvent, direction: -1 | 1) {
+  if (!ebookSessionActive.value) return
+  event.stopImmediatePropagation()
+  void ebook.navigate(direction)
+}
 </script>
 
 <template>
-  <main id="reader-view" class="reader-view" hidden>
+  <main id="reader-view" class="reader-view" :class="{ 'ebook-session-active': ebookSessionActive }" :hidden="!isReading">
     <TocSidebar />
     <div id="reader-stage" class="reader-stage">
       <div id="loading-view" class="loading-view">
@@ -15,8 +52,8 @@ import TocSidebar from './TocSidebar.vue'
       </div>
       <div id="ebook-host" class="ebook-host" />
       <div id="pdf-viewport" class="pdf-viewport"><div id="pdf-pages" class="pdf-pages" /></div>
-      <button id="prev-button" class="page-zone page-zone-left" aria-label="上一页"><span>‹</span></button>
-      <button id="next-button" class="page-zone page-zone-right" aria-label="下一页"><span>›</span></button>
+      <button id="prev-button" class="page-zone page-zone-left" aria-label="上一页" @click="navigate($event, -1)"><span>‹</span></button>
+      <button id="next-button" class="page-zone page-zone-right" aria-label="下一页" @click="navigate($event, 1)"><span>›</span></button>
     </div>
     <footer class="reader-footer">
       <span id="chapter-label">开始</span>

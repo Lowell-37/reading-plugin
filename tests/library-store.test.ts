@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 // @ts-expect-error JavaScript compatibility backup module has no declaration file yet.
 import { createLibraryBackup, parseLibraryBackup } from '../src/library-backup.js'
 import type { BookFormat, BookRecord } from '../src/core/types'
+import type { EbookSessionPort } from '../entrypoints/reader/ebook-session-port'
 import type { LegacyReaderPort } from '../entrypoints/reader/legacy-reader-port'
 import {
   createLibraryStore,
@@ -50,18 +51,55 @@ describe('reader library store', () => {
     expect(repository.calls.list).toBe(1)
   })
 
-  test('openFile detects the shared format, saves once, then opens the saved record as newly saved', async () => {
+  test('openFile detects the shared format, saves once, then opens the saved PDF record as newly saved', async () => {
     const store = useStore()
-    store.attachPort(port)
-    const file = bookFile('fresh.epub', 'application/epub+zip')
+    store.attachLegacyPort(port)
+    const file = bookFile('fresh.pdf', 'application/pdf')
 
     await store.openFile(file)
 
     expect(repository.calls.save).toBe(1)
-    expect(repository.savedFormats).toEqual(['epub'])
+    expect(repository.savedFormats).toEqual(['pdf'])
     expect(port.opened).toHaveLength(1)
-    expect(port.opened[0]).toMatchObject({ record: { name: 'fresh.epub' }, options: { newlySaved: true } })
-    expect(repository.events).toEqual(['save:fresh.epub', 'open:fresh.epub'])
+    expect(port.opened[0]).toMatchObject({ record: { name: 'fresh.pdf' }, options: { newlySaved: true } })
+    expect(repository.events).toEqual(['save:fresh.pdf', 'open:fresh.pdf'])
+  })
+
+  test.each([
+    ['epub', 'application/epub+zip'],
+    ['mobi', 'application/x-mobipocket-ebook'],
+    ['azw3', 'application/octet-stream'],
+  ] as const)('openFile sends %s records only to the ebook session', async (format, type) => {
+    const ebook = new RecordingEbookPort(repository.events)
+    const store = useStore()
+    store.attachLegacyPort(port)
+    store.attachEbookPort(ebook)
+
+    await store.openFile(bookFile(`fresh.${format}`, type))
+
+    expect(ebook.opened).toHaveLength(1)
+    expect(ebook.opened[0]).toMatchObject({
+      record: { name: `fresh.${format}`, format },
+      settings: expect.objectContaining({ flow: 'paginated' }),
+    })
+    expect(port.opened).toHaveLength(0)
+    expect(repository.events).toEqual([`save:fresh.${format}`, `ebook-open:fresh.${format}`])
+  })
+
+  test.each(['epub', 'mobi', 'azw3'] as const)('openRecord sends stored %s records only to the ebook session', async format => {
+    const ebook = new RecordingEbookPort(repository.events)
+    const source = record(`stored.${format}`, 100)
+    repository.seed(source)
+    const store = useStore()
+    store.attachLegacyPort(port)
+    store.attachEbookPort(ebook)
+
+    await store.openRecord(source)
+
+    expect(ebook.opened).toHaveLength(1)
+    expect(ebook.opened[0]?.record).toMatchObject({ id: source.id, format, openedAt: 9000 })
+    expect(port.opened).toHaveLength(0)
+    expect(repository.events).toEqual([`update:stored.${format}`, `ebook-open:stored.${format}`])
   })
 
   test('openFile waits for the asynchronously attached engine port instead of abandoning a saved record', async () => {
@@ -71,16 +109,18 @@ describe('reader library store', () => {
 
     expect(repository.calls.save).toBe(1)
     expect(port.opened).toHaveLength(0)
-    store.attachPort(port)
+    const ebook = new RecordingEbookPort(repository.events)
+    store.attachEbookPort(ebook)
     await pending
 
-    expect(port.opened).toHaveLength(1)
-    expect(repository.events).toEqual(['save:startup.epub', 'open:startup.epub'])
+    expect(ebook.opened).toHaveLength(1)
+    expect(port.opened).toHaveLength(0)
+    expect(repository.events).toEqual(['save:startup.epub', 'ebook-open:startup.epub'])
   })
 
   test('openFile rejects an unsupported file before persistence or engine work', async () => {
     const store = useStore()
-    store.attachPort(port)
+    store.attachLegacyPort(port)
 
     await expect(store.openFile(bookFile('notes.txt', 'text/plain'))).rejects.toThrow(/不支持|unsupported/i)
 
@@ -92,14 +132,16 @@ describe('reader library store', () => {
     const source = record('stored.azw3', 100)
     repository.seed(source)
     const store = useStore()
-    store.attachPort(port)
+    const ebook = new RecordingEbookPort(repository.events)
+    store.attachEbookPort(ebook)
 
     await store.openRecord(source)
 
     expect(repository.calls.update).toBe(1)
     expect(repository.updated).toEqual([{ id: source.id, changes: { openedAt: 9000 } }])
-    expect(port.opened[0]?.record.openedAt).toBe(9000)
-    expect(repository.events).toEqual(['update:stored.azw3', 'open:stored.azw3'])
+    expect(ebook.opened[0]?.record.openedAt).toBe(9000)
+    expect(port.opened).toHaveLength(0)
+    expect(repository.events).toEqual(['update:stored.azw3', 'ebook-open:stored.azw3'])
   })
 
   test('remove deletes only the requested record once and refreshes the repository projection', async () => {
@@ -122,7 +164,7 @@ describe('reader library store', () => {
     repository.seed(record('backup.epub', 25, { progress: { kind: 'ebook', cfi: '/6/2', fraction: 0.4 } }))
     localStorage.setItem('quiet-reader-settings', JSON.stringify({ theme: 'dark', aiApiKey: 'never-export' }))
     const store = useStore()
-    store.attachPort(port)
+    store.attachLegacyPort(port)
 
     await store.backup()
 
@@ -265,6 +307,31 @@ class RecordingPort implements LegacyReaderPort {
     this.calls.flushProgress += 1
     this.events.push('flush')
   }
+
+  destroy() {}
+}
+
+class RecordingEbookPort implements EbookSessionPort {
+  opened: Array<{ record: BookRecord, settings: Record<string, unknown> }> = []
+
+  constructor(private readonly events: string[]) {}
+
+  async open(record: BookRecord, settings: Record<string, unknown>) {
+    this.events.push(`ebook-open:${record.name}`)
+    this.opened.push({ record, settings })
+  }
+
+  async close() {}
+
+  async goTo() {}
+
+  async navigate() {}
+
+  async setFlow() {}
+
+  async applySettings() {}
+
+  async flushProgress() {}
 
   destroy() {}
 }

@@ -2,6 +2,7 @@ import { shallowRef } from 'vue'
 import { defineStore } from 'pinia'
 import type { BookRecord } from '../../../src/core/types'
 import { detectFormat } from '../../../src/core/formats'
+import type { EbookSessionPort } from '../ebook-session-port'
 import type { LegacyReaderPort } from '../legacy-reader-port'
 import { useSettingsStore } from './settings'
 import {
@@ -17,28 +18,67 @@ export function createLibraryStore(dependencies: LibraryDependencies = defaultLi
     const books = shallowRef<BookRecord[]>([])
     const backupState = shallowRef<'idle' | 'working' | 'exported' | 'restored' | 'error'>('idle')
     const backupStatus = shallowRef('备份包含书籍、进度、高亮、批注和设置，不包含 API 密钥')
-    let port: LegacyReaderPort | null = null
-    let resolvePortReady: (port: LegacyReaderPort) => void = () => undefined
-    let portReady: Promise<LegacyReaderPort>
+    let legacyPort: LegacyReaderPort | null = null
+    let ebookPort: EbookSessionPort | null = null
+    let activePort: 'legacy' | 'ebook' | null = null
+    let resolveLegacyPortReady: (port: LegacyReaderPort) => void = () => undefined
+    let legacyPortReady: Promise<LegacyReaderPort>
+    let resolveEbookPortReady: (port: EbookSessionPort) => void = () => undefined
+    let ebookPortReady: Promise<EbookSessionPort>
 
-    function resetPortReady() {
-      portReady = new Promise(resolve => { resolvePortReady = resolve })
+    function resetLegacyPortReady() {
+      legacyPortReady = new Promise(resolve => { resolveLegacyPortReady = resolve })
     }
 
-    resetPortReady()
+    function resetEbookPortReady() {
+      ebookPortReady = new Promise(resolve => { resolveEbookPortReady = resolve })
+    }
+
+    resetLegacyPortReady()
+    resetEbookPortReady()
+
+    function attachLegacyPort(nextPort: LegacyReaderPort | null) {
+      legacyPort = nextPort
+      if (nextPort) resolveLegacyPortReady(nextPort)
+      else resetLegacyPortReady()
+    }
+
+    function attachEbookPort(nextPort: EbookSessionPort | null) {
+      ebookPort = nextPort
+      if (nextPort) resolveEbookPortReady(nextPort)
+      else resetEbookPortReady()
+    }
 
     function attachPort(nextPort: LegacyReaderPort | null) {
-      port = nextPort
-      if (nextPort) resolvePortReady(nextPort)
-      else resetPortReady()
+      attachLegacyPort(nextPort)
     }
 
     function sorted(records: BookRecord[]) {
       return [...records].sort((left, right) => right.openedAt - left.openedAt)
     }
 
-    function requirePort() {
-      return port ? Promise.resolve(port) : portReady
+    function requireLegacyPort() {
+      return legacyPort ? Promise.resolve(legacyPort) : legacyPortReady
+    }
+
+    function requireEbookPort() {
+      return ebookPort ? Promise.resolve(ebookPort) : ebookPortReady
+    }
+
+    function isEbookFormat(format: BookRecord['format']) {
+      return format === 'epub' || format === 'mobi' || format === 'azw3'
+    }
+
+    async function openRecordWithPort(record: BookRecord, options?: { newlySaved?: boolean }) {
+      if (isEbookFormat(record.format)) {
+        if (activePort === 'legacy') await (await requireLegacyPort()).closeSession()
+        activePort = 'ebook'
+        await (await requireEbookPort()).open(record, { ...useSettingsStore().settings })
+        return
+      }
+      if (activePort === 'ebook') await (await requireEbookPort()).close()
+      activePort = 'legacy'
+      await (await requireLegacyPort()).openRecord(record, options)
     }
 
     async function load() {
@@ -50,18 +90,20 @@ export function createLibraryStore(dependencies: LibraryDependencies = defaultLi
       if (!format) throw new Error('不支持这个文件格式')
       const record = await dependencies.repository.save(file, format)
       books.value = sorted([...books.value.filter(book => book.id !== record.id), record])
-      await (await requirePort()).openRecord(record, { newlySaved: true })
+      await openRecordWithPort(record, { newlySaved: true })
     }
 
     async function openRecord(record: BookRecord) {
       const updated = { ...record, openedAt: dependencies.now() }
       await dependencies.repository.update(record.id, { openedAt: updated.openedAt })
       books.value = sorted(books.value.map(book => book.id === record.id ? updated : book))
-      await (await requirePort()).openRecord(updated)
+      await openRecordWithPort(updated)
     }
 
     async function closeSession() {
-      await (await requirePort()).closeSession()
+      if (activePort === 'ebook') await (await requireEbookPort()).close()
+      else await (await requireLegacyPort()).closeSession()
+      activePort = null
       await load()
     }
 
@@ -74,7 +116,8 @@ export function createLibraryStore(dependencies: LibraryDependencies = defaultLi
       backupState.value = 'working'
       backupStatus.value = '正在校验并打包本地书库…'
       try {
-        await (await requirePort()).flushProgress()
+        if (activePort === 'ebook') await (await requireEbookPort()).flushProgress()
+        else await (await requireLegacyPort()).flushProgress()
         const records = await dependencies.repository.list()
         books.value = sorted(records)
         const settings = useSettingsStore()
@@ -111,6 +154,8 @@ export function createLibraryStore(dependencies: LibraryDependencies = defaultLi
       backupState,
       backupStatus,
       attachPort,
+      attachLegacyPort,
+      attachEbookPort,
       load,
       openFile,
       openRecord,

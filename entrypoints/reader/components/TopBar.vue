@@ -3,15 +3,26 @@ import { storeToRefs } from 'pinia'
 import { useReaderStore } from '../stores/reader'
 import { useSettingsStore } from '../stores/settings'
 import { useLibraryStore } from '../stores/library'
+import { useEbookSessionStore } from '../stores/ebook-session'
 
 const reader = useReaderStore()
 const settings = useSettingsStore()
 const library = useLibraryStore()
+const ebook = useEbookSessionStore()
 const { title } = storeToRefs(reader)
 const { headerCollapsed } = storeToRefs(settings)
 
 function openFilePicker() {
   document.getElementById('file-input')?.click()
+}
+
+async function closeReader() {
+  if (ebook.record) {
+    await ebook.close()
+    await library.load()
+    return
+  }
+  await library.closeSession()
 }
 </script>
 
@@ -21,7 +32,7 @@ function openFilePicker() {
       <button id="sidebar-button" class="icon-button reader-only" aria-label="打开目录" title="目录" @click="reader.togglePanel('toc')">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
       </button>
-      <button id="home-button" class="brand" title="返回书架" @click="library.closeSession().catch(console.error)">
+      <button id="home-button" class="brand" title="返回书架" @click="closeReader().catch(console.error)">
         <span class="brand-mark">静</span><span class="brand-name">静读</span>
       </button>
       <div class="book-heading reader-only">
