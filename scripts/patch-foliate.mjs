@@ -34,6 +34,26 @@ const setStylesImportant = (el, styles) => {
   source = source.replaceAll('doc.body', 'getBody(doc)')
   source = source.replaceAll('this.document.body', 'getBody(this.document)')
   source = replaceOnce(source,
+    `const getVisibleRange = (doc, start, end, mapRect) => {
+    // first get all visible nodes`,
+    `const getVisibleRange = (doc, start, end, mapRect) => {
+    const body = getBody(doc)
+    if (!body) return null
+    // first get all visible nodes`,
+    'skip visible-range work after a chapter document is released')
+  source = source.replace(
+    `const walker = doc.createTreeWalker(getBody(doc), filter, { acceptNode })`,
+    `const walker = doc.createTreeWalker(body, filter, { acceptNode })`)
+  source = replaceOnce(source,
+    `    #afterScroll(reason) {
+        const range = this.#getVisibleRange()
+        this.#lastVisibleRange = range`,
+    `    #afterScroll(reason) {
+        const range = this.#getVisibleRange()
+        if (!range) return
+        this.#lastVisibleRange = range`,
+    'ignore pending scroll work after a chapter document is released')
+  source = replaceOnce(source,
     `                const doc = this.document
                 afterLoad?.(doc)`,
     `                const doc = this.document

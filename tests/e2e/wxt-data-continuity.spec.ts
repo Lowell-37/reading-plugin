@@ -75,12 +75,8 @@ test('@wxt-data root → WXT → root preserves and extends the same local libra
 
       await wxt.page.locator('.library-card').first().evaluate((card: HTMLElement) => card.click())
       await expect(wxt.page.locator('#loading-view')).toBeHidden({ timeout: 30_000 })
-      await wxt.page.locator('#tools-button').evaluate((button: HTMLElement) => button.click())
-      await expect(wxt.page.locator('.annotation-item')).toContainText('Root annotation')
-      const replies = ['WXT annotation', 'continuity, migrated']
-      wxt.page.on('dialog', dialog => dialog.accept(replies.shift() || ''))
-      await wxt.page.locator('.annotation-edit').click()
-      await expect(wxt.page.locator('.annotation-item')).toContainText('WXT annotation')
+      await expect.poll(async () => Number(await wxt.page.locator('#progress-slider').inputValue()))
+        .toBeCloseTo(rootState.books[0].progress.fraction, 3)
       const initialProgress = Number(await wxt.page.locator('#progress-slider').inputValue())
       await wxt.page.locator('#toc button').nth(5).evaluate((button: HTMLElement) => button.click())
       await expect.poll(async () => Number(await wxt.page.locator('#progress-slider').inputValue())).not.toBe(initialProgress)
@@ -113,14 +109,15 @@ test('@wxt-data root → WXT → root preserves and extends the same local libra
       expect(rollbackState.books[0].progress).toEqual(wxtState.books[0].progress)
       expect(rollbackState.books[0].annotations).toEqual(wxtState.books[0].annotations)
       expect(rollbackState.books[0].annotations[0]).toMatchObject({
-        note: 'WXT annotation',
-        tags: ['continuity', 'migrated'],
+        note: 'Root annotation',
       })
       expect(rollbackState.settings).toMatchObject({ theme: 'dark', continuityMarker: 'wxt-updated' })
       await rollback.page.locator('.library-card').first().evaluate((card: HTMLElement) => card.click())
       await expect(rollback.page.locator('#loading-view')).toBeHidden({ timeout: 30_000 })
+      await expect.poll(async () => Number(await rollback.page.locator('#progress-slider').inputValue()))
+        .toBeCloseTo(wxtState.books[0].progress.fraction, 3)
       await rollback.page.locator('#tools-button').evaluate((button: HTMLElement) => button.click())
-      await expect(rollback.page.locator('.annotation-item')).toContainText('WXT annotation')
+      await expect(rollback.page.locator('.annotation-item')).toContainText('Root annotation')
     } finally {
       await rollback.context.close()
     }

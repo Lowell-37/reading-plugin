@@ -7,6 +7,7 @@ import { createFoliateEbookSession } from '../entrypoints/reader/foliate-ebook-s
 import { useEbookSessionStore } from '../entrypoints/reader/stores/ebook-session'
 import { useLibraryStore } from '../entrypoints/reader/stores/library'
 import { useSettingsStore } from '../entrypoints/reader/stores/settings'
+import type { LegacyReaderState } from '../entrypoints/reader/legacy-reader-port'
 import type { BookRecord } from '../src/core/types'
 
 vi.mock('../node_modules/foliate-js/view.js', () => ({}))
@@ -148,13 +149,13 @@ describe('legacy reader port lifecycle', () => {
   test.each(['epub', 'mobi', 'azw3'] as const)('WXT routes %s through its mounted ebook session without legacy ebook ownership', async format => {
     // @ts-expect-error JavaScript compatibility controller has no declaration file.
     const { createLegacyReaderPort } = await import('../src/reader.js')
-    const states: Array<Record<string, unknown>> = []
+    const states: Array<Partial<LegacyReaderState>> = []
     const prevBinding = vi.spyOn(document.querySelector<HTMLElement>('#prev-button')!, 'addEventListener')
     const nextBinding = vi.spyOn(document.querySelector<HTMLElement>('#next-button')!, 'addEventListener')
     const progressBinding = vi.spyOn(document.querySelector<HTMLInputElement>('#progress-slider')!, 'addEventListener')
     const keyboardBinding = vi.spyOn(window, 'addEventListener')
     const port = createLegacyReaderPort({
-      onState: state => states.push(state),
+      onState: (state: Partial<LegacyReaderState>) => states.push(state),
       onPanelRequest() {},
       onLibraryChanged() {},
     })

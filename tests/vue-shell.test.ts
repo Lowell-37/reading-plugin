@@ -127,6 +127,67 @@ describe('Vue reader shell', () => {
     wrapper.unmount()
   })
 
+  test('uses the Vue ebook session status to hide its ready loader without taking over the legacy loader', async () => {
+    const pinia = createPinia()
+    const reader = useReaderStore(pinia)
+    const ebook = useEbookSessionStore(pinia)
+    ebook.record = { id: 'book', name: 'book.epub', format: 'epub' }
+    ebook.status = 'loading'
+    reader.applyEbookSessionSnapshot(ebookSnapshot({ status: 'loading' }))
+    const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
+
+    expect(wrapper.find('#loading-view').attributes('hidden')).toBeUndefined()
+    ebook.status = 'ready'
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('#loading-view').attributes('hidden')).toBeDefined()
+
+    ebook.record = null
+    await wrapper.vm.$nextTick()
+    const loader = wrapper.find('#loading-view').element as HTMLElement
+    loader.hidden = false
+    reader.applyLegacyState({ isReading: true })
+    await wrapper.vm.$nextTick()
+    expect(loader.hidden).toBe(false)
+    loader.hidden = true
+    reader.applyLegacyState({ chapter: 'PDF page 2' })
+    await wrapper.vm.$nextTick()
+    expect(loader.hidden).toBe(true)
+    wrapper.unmount()
+  })
+
+  test('uses the Vue ebook session reader state for footer progress without taking over the legacy footer', async () => {
+    const pinia = createPinia()
+    const reader = useReaderStore(pinia)
+    const ebook = useEbookSessionStore(pinia)
+    ebook.record = { id: 'book', name: 'book.epub', format: 'epub' }
+    ebook.status = 'ready'
+    reader.applyEbookSessionSnapshot(ebookSnapshot({
+      status: 'ready',
+      chapter: 'Chapter five',
+      progress: 0.375,
+    }))
+    const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
+
+    expect(wrapper.find('#chapter-label').text()).toBe('Chapter five')
+    expect((wrapper.find('#progress-slider').element as HTMLInputElement).value).toBe('0.375')
+    expect(wrapper.find('#progress-label').text()).toBe('38%')
+
+    ebook.record = null
+    await wrapper.vm.$nextTick()
+    const chapter = wrapper.find('#chapter-label').element
+    const slider = wrapper.find('#progress-slider').element as HTMLInputElement
+    const label = wrapper.find('#progress-label').element
+    chapter.textContent = '第 7 页'
+    slider.value = '0.7'
+    label.textContent = '70%'
+    reader.applyLegacyState({ chapter: 'legacy store update', progress: 0.2 })
+    await wrapper.vm.$nextTick()
+    expect(chapter.textContent).toBe('第 7 页')
+    expect(slider.value).toBe('0.7')
+    expect(label.textContent).toBe('70%')
+    wrapper.unmount()
+  })
+
   test('closes an active ebook panel and scrim before returning to the library', async () => {
     const pinia = createPinia()
     const reader = useReaderStore(pinia)

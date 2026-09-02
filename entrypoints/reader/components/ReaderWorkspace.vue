@@ -9,8 +9,8 @@ import { useSettingsStore } from '../stores/settings'
 const reader = useReaderStore()
 const settings = useSettingsStore()
 const ebook = useEbookSessionStore()
-const { isReading } = storeToRefs(reader)
-const { record, flow } = storeToRefs(ebook)
+const { isReading, chapter, progress } = storeToRefs(reader)
+const { record, flow, status } = storeToRefs(ebook)
 const ebookSessionActive = computed(() => record.value !== null)
 
 watch(() => settings.flow, nextFlow => {
@@ -27,8 +27,30 @@ function syncEbookHost(active: boolean) {
   document.getElementById('pdf-viewport')?.toggleAttribute('hidden', active)
 }
 
+function syncEbookLoadingView(active: boolean, nextStatus: typeof status.value) {
+  if (!active) return
+  document.getElementById('loading-view')?.toggleAttribute('hidden', nextStatus !== 'loading')
+}
+
+function syncEbookFooter(active: boolean) {
+  if (!active) return
+  const normalizedProgress = Math.max(0, Math.min(1, Number(progress.value) || 0))
+  const progressText = `${Math.round(normalizedProgress * 100)}%`
+  const progressSlider = document.getElementById('progress-slider') as HTMLInputElement | null
+  const progressLabel = document.getElementById('progress-label')
+  document.getElementById('chapter-label')?.replaceChildren(chapter.value)
+  if (progressSlider) progressSlider.value = String(normalizedProgress)
+  progressLabel?.replaceChildren(progressText)
+}
+
 watch(ebookSessionActive, syncEbookHost, { immediate: true })
-onMounted(() => syncEbookHost(ebookSessionActive.value))
+watch([ebookSessionActive, status], ([active, nextStatus]) => syncEbookLoadingView(active, nextStatus), { immediate: true })
+watch([ebookSessionActive, chapter, progress], ([active]) => syncEbookFooter(active), { immediate: true })
+onMounted(() => {
+  syncEbookHost(ebookSessionActive.value)
+  syncEbookLoadingView(ebookSessionActive.value, status.value)
+  syncEbookFooter(ebookSessionActive.value)
+})
 
 onBeforeUnmount(() => document.body.classList.remove('is-reading'))
 

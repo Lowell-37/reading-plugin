@@ -1,6 +1,6 @@
 # 渐进式架构迁移
 
-本文档记录架构迁移的代码实现情况。阶段 1、2、阶段 A“双入口等价基线”、阶段 B“同 ID 数据连续性门禁”和阶段 C“Vue 接管书架、面板与设置”的自动化验收已完成；WXT 构建版已通过真实 Edge 四格式、双向数据和 Vue 书架验收，但电子书/PDF 会话、搜索和批注仍由旧阅读核心驱动，因此暂不作为日常稳定入口。
+本文档记录架构迁移的代码实现情况。阶段 1、2、阶段 A“双入口等价基线”、阶段 B“同 ID 数据连续性门禁”、阶段 C“Vue 接管书架、面板与设置”和阶段 D“Vue 接管电子书会话”的自动化验收已完成；WXT 构建版已通过真实 Edge 四格式、双向数据、Vue 书架和电子书会话验收，但 PDF 会话、搜索和批注仍由旧阅读核心驱动，因此暂不作为日常稳定入口。
 
 当前稳定版本仍是在 Edge 中直接加载项目根目录的原生 JavaScript 阅读器。总体进度、产品阶段与最终验收标准统一以 [ROADMAP.md](ROADMAP.md) 为准。
 
@@ -42,9 +42,9 @@
 - Vue 组件不直接依赖 Foliate.js 或 PDF.js 内部实现
 - Vue 模板已补齐旧控制器依赖的加载、筛选、导入导出节点，四种格式不再因空引用停止初始化
 - WXT 已迁移控件不再由旧控制器注册重复监听器；`legacy-bridge.ts` 只通过结构化回调和端口投射运行时状态
-- 旧 `reader.js` 仍负责 EPUB/MOBI/AZW3、PDF、搜索和批注阅读会话，后续阶段将按领域逐块由 Vue/TypeScript 接管
+- Vue/TypeScript 已负责 EPUB/MOBI/AZW3 会话；旧 `reader.js` 保留 PDF、搜索和批注会话，后续阶段将按领域逐块接管
 
-### 阶段 5：真实扩展端到端验证（✅ 阶段 A、B 自动化门禁完成）
+### 阶段 5：真实扩展端到端验证（✅ 阶段 A、B、C、D 自动化门禁完成）
 
 - Playwright 在 Microsoft Edge 中加载 `.output/chrome-mv3`
 - 根目录与 WXT 构建已验证产生相同扩展 ID
@@ -89,7 +89,20 @@
 - `npm run release`：通过；`quiet-reader-0.2.0.zip` 含 303 个文件，SHA-256 为 `a4beb7bdb1879d026cf697ed18e10ce112d801a0fcb25261fdde7014ead9dc9e`，包内 Manifest 保留固定扩展身份。
 - AI 产品入口和请求路由继续关闭。
 
-后续是阶段 D：由 Vue/TypeScript 接管电子书阅读会话，再依次处理 PDF 会话、搜索与批注。文件选择标签的显式键盘激活，以及架构测试改用 AST/扩展导入守卫，均为非阻断的后续可访问性/测试健壮性工作。在阶段 D、E 完成前，用户仍应加载项目根目录。
+## 阶段 D 电子书会话验收记录（2026-09-02）
+
+- `npm run check`：通过。
+- `npm test`：38 个测试文件、234 项测试通过。
+- `npm run build:wxt:verify`：通过，WXT 构建身份与运行资源契约确认 223 个文件。
+- `npm run test:e2e:wxt:baseline`：6 项真实 Edge WXT 基线通过，保留 PDF 的旧会话行为。
+- `npm run test:e2e:wxt:continuity`：2 项真实 Edge 根目录→WXT→根目录数据连续性/故障只读门禁通过；WXT 写入的电子书进度由根目录稳定入口读取，反向方向亦已覆盖。
+- `tests/e2e/wxt-ebook-session.spec.ts`：4 项真实 Edge EPUB、MOBI、AZW3 和快速连续打开会话验收通过；每种格式覆盖目录、导航、流模式切换、持久进度和重开恢复，且无页面错误。
+- `npm run test:e2e`：25 项根目录稳定入口 Edge 回归通过。
+- `npm run release`：通过；`quiet-reader-0.2.0.zip` 含 303 个文件，SHA-256 为 `bf865c248b2d782fd48dd234fabc72f53193e0fb93dd1cd10837df446c2ccaa2`。
+- Foliate 分页器已防御章节释放后的异步可见范围计算；此前该竞争会在 EPUB 重开时偶发 `createTreeWalker` 页面错误。
+- PDF、搜索和批注仍保持根目录/旧控制器所有；WXT 不是稳定入口，直到后续阶段完成这些领域迁移。
+
+后续将依次接管 PDF 会话、搜索和批注。文件选择标签的显式键盘激活，以及架构测试改用 AST/扩展导入守卫，均为非阻断的后续可访问性/测试健壮性工作。在后续阶段完成前，用户仍应加载项目根目录。
 
 ## 后续产品阶段
 
