@@ -3,15 +3,18 @@ import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import TocSidebar from './TocSidebar.vue'
 import { useEbookSessionStore } from '../stores/ebook-session'
+import { useLibraryStore } from '../stores/library'
 import { useReaderStore } from '../stores/reader'
 import { useSettingsStore } from '../stores/settings'
 
 const reader = useReaderStore()
 const settings = useSettingsStore()
 const ebook = useEbookSessionStore()
+const library = useLibraryStore()
 const { isReading, chapter, progress } = storeToRefs(reader)
 const { record, flow, status, error } = storeToRefs(ebook)
 const ebookSessionActive = computed(() => record.value !== null)
+const ebookErrorActive = computed(() => ebookSessionActive.value && status.value === 'error')
 const workspaceVisible = computed(() => isReading.value || (ebookSessionActive.value && status.value === 'error'))
 
 watch(() => settings.flow, nextFlow => {
@@ -75,6 +78,15 @@ function navigate(event: MouseEvent, direction: -1 | 1) {
   event.stopImmediatePropagation()
   void ebook.navigate(direction)
 }
+
+async function recoverEbookError(event: MouseEvent, retry: boolean) {
+  if (!ebookErrorActive.value) return
+  event.stopImmediatePropagation()
+  reader.closePanel()
+  await ebook.close()
+  await library.load()
+  if (retry) document.getElementById('file-input')?.click()
+}
 </script>
 
 <template>
@@ -84,8 +96,8 @@ function navigate(event: MouseEvent, direction: -1 | 1) {
       <div id="loading-view" class="loading-view">
         <div id="loading-spinner" class="spinner" /><strong id="loading-title">正在打开书籍</strong><span id="loading-detail">解析内容与目录…</span>
         <div id="loading-actions" class="loading-actions" hidden>
-          <button id="loading-library-button" class="soft-button" type="button">返回书架</button>
-          <button id="loading-retry-button" class="primary-button" type="button">重新选择文件</button>
+          <button id="loading-library-button" class="soft-button" type="button" @click.capture="recoverEbookError($event, false).catch(console.error)">返回书架</button>
+          <button id="loading-retry-button" class="primary-button" type="button" @click.capture="recoverEbookError($event, true).catch(console.error)">重新选择文件</button>
         </div>
       </div>
       <div id="ebook-host" class="ebook-host" />

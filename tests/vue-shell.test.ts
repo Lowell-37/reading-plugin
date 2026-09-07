@@ -9,7 +9,7 @@ import { useSettingsStore } from '../entrypoints/reader/stores/settings'
 import { useMigrationStore } from '../entrypoints/reader/stores/migration'
 import { useLibraryStore } from '../entrypoints/reader/stores/library'
 import { useEbookSessionStore } from '../entrypoints/reader/stores/ebook-session'
-import type { EbookSessionSnapshot } from '../entrypoints/reader/ebook-session-port'
+import type { EbookSessionCallbacks, EbookSessionSnapshot } from '../entrypoints/reader/ebook-session-port'
 import type { BookRecord } from '../src/core/types'
 
 afterEach(() => {
@@ -175,6 +175,78 @@ describe('Vue reader shell', () => {
     expect(wrapper.find('#loading-actions').attributes('hidden')).toBeUndefined()
     expect(wrapper.find('#loading-library-button').exists()).toBe(true)
     expect(wrapper.find('#loading-retry-button').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  test('uses Vue recovery controls to clear an ebook error before returning or retrying', async () => {
+    const pinia = createPinia()
+    const reader = useReaderStore(pinia)
+    const ebook = useEbookSessionStore(pinia)
+    const library = useLibraryStore(pinia)
+    const settings = useSettingsStore(pinia)
+    const error = { code: 'parse' as const, message: 'EPUB manifest is unreadable' }
+    let callbacks!: EbookSessionCallbacks
+    let resolveOpening!: () => void
+    const open = vi.fn(() => new Promise<void>(resolve => { resolveOpening = resolve }))
+    ebook.attachPort(nextCallbacks => {
+      callbacks = nextCallbacks
+      return {
+        open,
+        close: vi.fn().mockResolvedValue(undefined),
+        goTo: vi.fn().mockResolvedValue(undefined),
+        navigate: vi.fn().mockResolvedValue(undefined),
+        setFlow: vi.fn().mockResolvedValue(undefined),
+        applySettings: vi.fn().mockResolvedValue(undefined),
+        flushProgress: vi.fn().mockResolvedValue(undefined),
+        destroy: vi.fn(),
+      }
+    })
+    const showError = () => {
+      ebook.record = { id: 'book', name: 'book.epub', format: 'epub' }
+      ebook.status = 'error'
+      ebook.error = error
+      reader.applyEbookSessionSnapshot(ebookSnapshot({ status: 'error', error }))
+    }
+    const load = vi.spyOn(library, 'load').mockResolvedValue(undefined)
+    showError()
+    reader.requestPanel('toc')
+    const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
+    const legacyReturn = vi.fn()
+    wrapper.find('#loading-library-button').element.addEventListener('click', legacyReturn)
+
+    await wrapper.find('#loading-library-button').trigger('click')
+
+    expect(legacyReturn).not.toHaveBeenCalled()
+    expect(ebook.record).toBeNull()
+    expect(ebook.status).toBe('idle')
+    expect(ebook.error).toBeNull()
+    expect(reader.activePanel).toBeNull()
+    expect(wrapper.find('#reader-view').attributes('hidden')).toBeDefined()
+    expect(wrapper.find('#welcome-view').attributes('hidden')).toBeUndefined()
+    await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(1))
+
+    const reopening = ebook.open(libraryRecord('reopened.epub', 0, new Blob(['reopened'])), settings.settings)
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('#loading-view').attributes('hidden')).toBeUndefined()
+    callbacks.onSnapshot(ebookSnapshot({ status: 'ready', generation: ebook.generation }))
+    resolveOpening()
+    await reopening
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('#loading-view').attributes('hidden')).toBeDefined()
+
+    showError()
+    await wrapper.vm.$nextTick()
+    const picker = vi.spyOn(wrapper.find<HTMLInputElement>('#file-input').element, 'click')
+    const legacyRetry = vi.fn()
+    wrapper.find('#loading-retry-button').element.addEventListener('click', legacyRetry)
+    await wrapper.find('#loading-retry-button').trigger('click')
+
+    expect(legacyRetry).not.toHaveBeenCalled()
+    expect(ebook.record).toBeNull()
+    expect(ebook.status).toBe('idle')
+    expect(ebook.error).toBeNull()
+    await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(2))
+    expect(picker).toHaveBeenCalledTimes(1)
     wrapper.unmount()
   })
 
