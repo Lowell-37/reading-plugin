@@ -10,16 +10,17 @@ const reader = useReaderStore()
 const settings = useSettingsStore()
 const ebook = useEbookSessionStore()
 const { isReading, chapter, progress } = storeToRefs(reader)
-const { record, flow, status } = storeToRefs(ebook)
+const { record, flow, status, error } = storeToRefs(ebook)
 const ebookSessionActive = computed(() => record.value !== null)
+const workspaceVisible = computed(() => isReading.value || (ebookSessionActive.value && status.value === 'error'))
 
 watch(() => settings.flow, nextFlow => {
   if (ebookSessionActive.value && flow.value !== nextFlow) void ebook.setFlow(nextFlow)
 })
 
-watch(isReading, reading => {
-  document.body.classList.toggle('is-reading', reading)
-  document.getElementById('welcome-view')?.toggleAttribute('hidden', reading)
+watch(workspaceVisible, visible => {
+  document.body.classList.toggle('is-reading', visible)
+  document.getElementById('welcome-view')?.toggleAttribute('hidden', visible)
 }, { immediate: true })
 
 function syncEbookHost(active: boolean) {
@@ -27,9 +28,24 @@ function syncEbookHost(active: boolean) {
   document.getElementById('pdf-viewport')?.toggleAttribute('hidden', active)
 }
 
-function syncEbookLoadingView(active: boolean, nextStatus: typeof status.value) {
+function syncEbookLoadingView(active: boolean, nextStatus: typeof status.value, nextError: typeof error.value) {
   if (!active) return
-  document.getElementById('loading-view')?.toggleAttribute('hidden', nextStatus !== 'loading')
+  const loadingView = document.getElementById('loading-view')
+  loadingView?.toggleAttribute('hidden', nextStatus !== 'loading' && nextStatus !== 'error')
+  if (nextStatus === 'loading') {
+    loadingView?.setAttribute('data-state', 'loading')
+    document.getElementById('loading-title')?.replaceChildren('正在打开书籍')
+    document.getElementById('loading-detail')?.replaceChildren('解析内容与目录…')
+    const loadingActions = document.getElementById('loading-actions') as HTMLElement | null
+    if (loadingActions) loadingActions.hidden = true
+  }
+  if (nextStatus === 'error') {
+    loadingView?.setAttribute('data-state', 'error')
+    document.getElementById('loading-title')?.replaceChildren(nextError?.code === 'format' ? '不支持这个文件' : '无法打开这本书')
+    document.getElementById('loading-detail')?.replaceChildren(nextError?.message || '无法打开电子书。请重新选择文件后重试。')
+    const loadingActions = document.getElementById('loading-actions') as HTMLElement | null
+    if (loadingActions) loadingActions.hidden = false
+  }
 }
 
 function syncEbookFooter(active: boolean) {
@@ -44,11 +60,11 @@ function syncEbookFooter(active: boolean) {
 }
 
 watch(ebookSessionActive, syncEbookHost, { immediate: true })
-watch([ebookSessionActive, status], ([active, nextStatus]) => syncEbookLoadingView(active, nextStatus), { immediate: true })
+watch([ebookSessionActive, status, error], ([active, nextStatus, nextError]) => syncEbookLoadingView(active, nextStatus, nextError), { immediate: true })
 watch([ebookSessionActive, chapter, progress], ([active]) => syncEbookFooter(active), { immediate: true })
 onMounted(() => {
   syncEbookHost(ebookSessionActive.value)
-  syncEbookLoadingView(ebookSessionActive.value, status.value)
+  syncEbookLoadingView(ebookSessionActive.value, status.value, error.value)
   syncEbookFooter(ebookSessionActive.value)
 })
 
@@ -62,7 +78,7 @@ function navigate(event: MouseEvent, direction: -1 | 1) {
 </script>
 
 <template>
-  <main id="reader-view" class="reader-view" :class="{ 'ebook-session-active': ebookSessionActive }" :hidden="!isReading">
+  <main id="reader-view" class="reader-view" :class="{ 'ebook-session-active': ebookSessionActive }" :hidden="!workspaceVisible">
     <TocSidebar />
     <div id="reader-stage" class="reader-stage">
       <div id="loading-view" class="loading-view">

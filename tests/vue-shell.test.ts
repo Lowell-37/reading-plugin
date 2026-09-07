@@ -155,6 +155,29 @@ describe('Vue reader shell', () => {
     wrapper.unmount()
   })
 
+  test('keeps an active ebook error visible with safe loader details and recovery actions', () => {
+    const pinia = createPinia()
+    const reader = useReaderStore(pinia)
+    const ebook = useEbookSessionStore(pinia)
+    const error = { code: 'parse' as const, message: 'EPUB manifest is unreadable' }
+    ebook.record = { id: 'book', name: 'book.epub', format: 'epub' }
+    ebook.status = 'error'
+    ebook.error = error
+    reader.applyEbookSessionSnapshot(ebookSnapshot({ status: 'error', error }))
+    const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
+
+    expect(reader.isReading).toBe(false)
+    expect(wrapper.find('#reader-view').attributes('hidden')).toBeUndefined()
+    expect(wrapper.find('#loading-view').attributes('hidden')).toBeUndefined()
+    expect(wrapper.find('#loading-view').attributes('data-state')).toBe('error')
+    expect(wrapper.find('#loading-title').text()).toBe('无法打开这本书')
+    expect(wrapper.find('#loading-detail').text()).toBe('EPUB manifest is unreadable')
+    expect(wrapper.find('#loading-actions').attributes('hidden')).toBeUndefined()
+    expect(wrapper.find('#loading-library-button').exists()).toBe(true)
+    expect(wrapper.find('#loading-retry-button').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
   test('uses the Vue ebook session reader state for footer progress without taking over the legacy footer', async () => {
     const pinia = createPinia()
     const reader = useReaderStore(pinia)
