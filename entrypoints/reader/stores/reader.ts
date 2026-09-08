@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import type { EbookSessionSnapshot } from '../ebook-session-port'
+import type { PdfSessionSnapshot } from '../pdf-session-port'
 import type { LegacyReaderState, ReaderPanel } from '../legacy-reader-port'
 
 export const useReaderStore = defineStore('reader', {
@@ -21,6 +22,14 @@ export const useReaderStore = defineStore('reader', {
       this.applyLegacyState({
         title: snapshot.title,
         chapter: snapshot.chapter,
+        progress: snapshot.progress,
+        isReading: snapshot.status === 'loading' || snapshot.status === 'ready',
+      })
+    },
+    applyPdfSessionSnapshot(snapshot: PdfSessionSnapshot) {
+      this.applyLegacyState({
+        title: snapshot.title,
+        chapter: `第 ${snapshot.page} 页 / 共 ${snapshot.pageCount} 页`,
         progress: snapshot.progress,
         isReading: snapshot.status === 'loading' || snapshot.status === 'ready',
       })

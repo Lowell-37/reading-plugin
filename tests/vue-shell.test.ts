@@ -10,6 +10,7 @@ import { useMigrationStore } from '../entrypoints/reader/stores/migration'
 import { useLibraryStore } from '../entrypoints/reader/stores/library'
 import { useEbookSessionStore } from '../entrypoints/reader/stores/ebook-session'
 import type { EbookSessionCallbacks, EbookSessionError, EbookSessionSnapshot } from '../entrypoints/reader/ebook-session-port'
+import type { PdfSessionSnapshot } from '../entrypoints/reader/pdf-session-port'
 import type { BookRecord } from '../src/core/types'
 
 afterEach(() => {
@@ -81,6 +82,28 @@ describe('Vue reader shell', () => {
       title: 'WXT ebook',
       chapter: 'Chapter two',
       progress: 0.5,
+      isReading: true,
+      activePanel: 'toc',
+    })
+  })
+
+  test('projects PDF snapshots into the legacy reader shell without changing its active panel', () => {
+    const pinia = createPinia()
+    const store = useReaderStore(pinia)
+    store.requestPanel('toc')
+
+    store.applyPdfSessionSnapshot(pdfSnapshot({
+      title: 'WXT PDF',
+      page: 7,
+      pageCount: 20,
+      progress: 0.32,
+      status: 'ready',
+    }))
+
+    expect(store.$state).toEqual({
+      title: 'WXT PDF',
+      chapter: '第 7 页 / 共 20 页',
+      progress: 0.32,
       isReading: true,
       activePanel: 'toc',
     })
@@ -594,6 +617,21 @@ function ebookSnapshot(overrides: Partial<EbookSessionSnapshot> = {}): EbookSess
     chapter: '开始',
     progress: 0,
     flow: 'paginated',
+    error: null,
+    generation: 1,
+    ...overrides,
+  }
+}
+
+function pdfSnapshot(overrides: Partial<PdfSessionSnapshot> = {}): PdfSessionSnapshot {
+  return {
+    status: 'idle',
+    title: 'Untitled PDF',
+    outline: [],
+    page: 1,
+    pageCount: 1,
+    zoom: 1,
+    progress: 0,
     error: null,
     generation: 1,
     ...overrides,
