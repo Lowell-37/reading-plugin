@@ -12,14 +12,10 @@ const settings = useSettingsStore()
 const ebook = useEbookSessionStore()
 const library = useLibraryStore()
 const { isReading, chapter, progress } = storeToRefs(reader)
-const { record, flow, status, error } = storeToRefs(ebook)
+const { record, status, error } = storeToRefs(ebook)
 const ebookSessionActive = computed(() => record.value !== null)
 const ebookErrorActive = computed(() => ebookSessionActive.value && status.value === 'error')
 const workspaceVisible = computed(() => isReading.value || (ebookSessionActive.value && status.value === 'error'))
-
-watch(() => settings.flow, nextFlow => {
-  if (ebookSessionActive.value && flow.value !== nextFlow) void ebook.setFlow(nextFlow)
-})
 
 watch(workspaceVisible, visible => {
   document.body.classList.toggle('is-reading', visible)
@@ -44,8 +40,8 @@ function syncEbookLoadingView(active: boolean, nextStatus: typeof status.value, 
   }
   if (nextStatus === 'error') {
     loadingView?.setAttribute('data-state', 'error')
-    document.getElementById('loading-title')?.replaceChildren(nextError?.code === 'format' ? '不支持这个文件' : '无法打开这本书')
-    document.getElementById('loading-detail')?.replaceChildren(nextError?.message || '无法打开电子书。请重新选择文件后重试。')
+    document.getElementById('loading-title')?.replaceChildren(nextError?.title || '无法打开这本书')
+    document.getElementById('loading-detail')?.replaceChildren(nextError?.detail || '无法打开电子书。请重新选择文件后重试。')
     const loadingActions = document.getElementById('loading-actions') as HTMLElement | null
     if (loadingActions) loadingActions.hidden = false
   }

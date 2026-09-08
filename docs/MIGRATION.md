@@ -102,6 +102,20 @@
 - Foliate 分页器已防御章节释放后的异步可见范围计算；此前该竞争会在 EPUB 重开时偶发 `createTreeWalker` 页面错误。
 - PDF、搜索和批注仍保持根目录/旧控制器所有；WXT 不是稳定入口，直到后续阶段完成这些领域迁移。
 
+## 阶段 D 最终复核记录（2026-09-08）
+
+- `npm run check`：通过。
+- `npm test`：38 个测试文件、245 项测试通过。
+- `npm run build:wxt:verify`：通过，WXT 构建身份与运行资源契约确认 223 个文件。
+- `npm run test:e2e:wxt:baseline`：通过 6 项真实 Edge WXT 基线；复核中先发现目录面板遮挡 `#home-button` 的测试路径超时，已改为关闭遮罩后再返回书架。
+- `npm run test:e2e:wxt:continuity`：通过 2 项真实 Edge 根目录/WXT 数据连续性和损坏 schema 只读门禁。
+- `tests/e2e/wxt-ebook-session.spec.ts`：通过 4 项真实 Edge 会话验收；内容断言读取 Foliate 实际渲染文档，避免由标题栏文本误判通过。
+- `npm run test:e2e`：通过 25 项根目录稳定入口 Edge 回归。
+- `npm run release`：通过；`quiet-reader-0.2.0.zip` 含 303 个文件，SHA-256 为 `bf865c248b2d782fd48dd234fabc72f53193e0fb93dd1cd10837df446c2ccaa2`。
+- 活跃 WXT 电子书会话现在通过设置 store 一次性向 legacy port 和 `EbookSessionStore` / Foliate 适配器传播主题、字体、字号、行距、栏宽和 flow；`ReaderWorkspace` 不再用单独 flow watcher 反向同步，避免重复路径。
+- Foliate/引擎原始异常仅保留为诊断字段；用户界面只显示按 `format`、`parse`、`restore`、`render` 代码映射的安全标题和详情。flow 切换失败由设置更新边界吸收 rejected promise，并投射为电子书错误态，不产生未处理 rejection。
+- PDF、搜索和批注仍保持根目录/旧控制器所有；WXT 不是稳定入口，直到后续阶段完成这些领域迁移。
+
 后续将依次接管 PDF 会话、搜索和批注。文件选择标签的显式键盘激活，以及架构测试改用 AST/扩展导入守卫，均为非阻断的后续可访问性/测试健壮性工作。在后续阶段完成前，用户仍应加载项目根目录。
 
 ## 后续产品阶段

@@ -1,6 +1,6 @@
 import { createPinia } from 'pinia'
 import { describe, expect, test } from 'vitest'
-import { type EbookSessionCallbacks, type EbookSessionPort, type EbookSessionPortFactory, type EbookSessionSnapshot, type EbookSessionTocItem } from '../entrypoints/reader/ebook-session-port'
+import { type EbookSessionCallbacks, type EbookSessionError, type EbookSessionPort, type EbookSessionPortFactory, type EbookSessionSnapshot, type EbookSessionTocItem } from '../entrypoints/reader/ebook-session-port'
 import { createEbookSessionStore } from '../entrypoints/reader/stores/ebook-session'
 import { useReaderStore } from '../entrypoints/reader/stores/reader'
 import type { BookRecord } from '../src/core/types'
@@ -80,7 +80,7 @@ describe('ebook session store', () => {
     second.emit(snapshot(1, { title: 'Second port', chapter: 'Second chapter', progress: 0.8 }))
 
     first.emit(snapshot(1, { title: 'Late first port', chapter: 'Late chapter', progress: 0.1 }))
-    first.emitError({ code: 'render', message: 'late first error' }, 1)
+    first.emitError(ebookError('render', 'late first error'), 1)
 
     expect(store.$state).toMatchObject({
       status: 'ready',
@@ -107,11 +107,11 @@ describe('ebook session store', () => {
       progress: 0.4,
       flow: 'scrolled',
     }))
-    fake.emitError({ code: 'render', message: 'Cannot render chapter' }, 1)
+    fake.emitError(ebookError('render', 'Cannot render chapter'), 1)
 
     expect(store.$state).toMatchObject({
       status: 'error',
-      error: { code: 'render', message: 'Cannot render chapter' },
+      error: ebookError('render', 'Cannot render chapter'),
       title: 'Current title',
       toc: currentToc,
       chapter: 'Current chapter',
@@ -206,7 +206,7 @@ function createFakePort() {
     emit(next: EbookSessionSnapshot) {
       callbacks?.onSnapshot(next)
     },
-    emitError(error: { code: 'format' | 'parse' | 'restore' | 'render', message: string }, generation: number) {
+    emitError(error: EbookSessionError, generation: number) {
       callbacks?.onError(error, generation)
     },
   }
@@ -237,4 +237,26 @@ function snapshot(generation: number, overrides: Partial<EbookSessionSnapshot> =
     generation,
     ...overrides,
   }
+}
+
+function ebookError(code: EbookSessionError['code'], diagnostic: string): EbookSessionError {
+  const presentation = {
+    format: {
+      title: '不支持这个文件',
+      detail: '请确认文件格式为 EPUB、MOBI 或 AZW3 后重试。',
+    },
+    parse: {
+      title: '无法解析这本书',
+      detail: '文件内容无法解析。请确认文件完整后重试。',
+    },
+    restore: {
+      title: '无法恢复阅读位置',
+      detail: '已保留这本书，请重新打开后从开头继续阅读。',
+    },
+    render: {
+      title: '无法显示这本书',
+      detail: '阅读视图无法建立。请重新打开书籍后重试。',
+    },
+  }[code]
+  return { code, ...presentation, diagnostic }
 }

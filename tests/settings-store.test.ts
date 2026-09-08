@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
-import { createPinia } from 'pinia'
+import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, describe, expect, test, vi } from 'vitest'
+import type { EbookSessionError, EbookSessionPort } from '../entrypoints/reader/ebook-session-port'
 import type { LegacyReaderPort, ReaderSettings } from '../entrypoints/reader/legacy-reader-port'
+import { useEbookSessionStore } from '../entrypoints/reader/stores/ebook-session'
 import { useSettingsStore } from '../entrypoints/reader/stores/settings'
 
 afterEach(() => {
@@ -56,6 +58,66 @@ describe('reader settings store', () => {
     expect(store.settings).toMatchObject({ [key]: value, customReaderFlag: 'keep-me' })
   })
 
+  test.each([
+    ['updateTheme', 'dark', 'theme'],
+    ['updateFlow', 'scrolled', 'flow'],
+    ['updateFont', 'sans', 'font'],
+    ['updateFontSize', 26, 'fontSize'],
+    ['updateLineHeight', 2, 'lineHeight'],
+    ['updatePageWidth', 900, 'pageWidth'],
+  ] as const)('applies %s exactly once to both legacy and active ebook sessions', async (action, value, key) => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useSettingsStore(pinia)
+    const ebook = useEbookSessionStore(pinia)
+    const legacyApply = vi.fn(async () => undefined)
+    const ebookApply = vi.fn(async () => undefined)
+    ebook.record = { id: 'active', name: 'active.epub', format: 'epub' }
+    ebook.attachPort(() => createEbookPort(ebookApply))
+    store.attachPort(createPort(legacyApply))
+
+    await store[action](value as never)
+
+    expect(legacyApply).toHaveBeenCalledTimes(1)
+    expect(legacyApply).toHaveBeenCalledWith(expect.objectContaining({ [key]: value }))
+    expect(ebookApply).toHaveBeenCalledTimes(1)
+    expect(ebookApply).toHaveBeenCalledWith(expect.objectContaining({ [key]: value }))
+  })
+
+  test('contains a projected flow failure without an unhandled rejection', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useSettingsStore(pinia)
+    const ebook = useEbookSessionStore(pinia)
+    const rawEngineMessage = 'untrusted engine failure: <img src=x onerror=alert(1)>'
+    const error = {
+      code: 'render',
+      title: '无法显示这本书',
+      detail: '阅读视图无法建立。请重新打开书籍后重试。',
+      diagnostic: rawEngineMessage,
+    } as unknown as EbookSessionError
+    const unhandled: PromiseRejectionEvent[] = []
+    const onUnhandled = (event: PromiseRejectionEvent) => unhandled.push(event)
+    window.addEventListener('unhandledrejection', onUnhandled)
+    ebook.record = { id: 'active', name: 'active.epub', format: 'epub' }
+    ebook.status = 'ready'
+    ebook.attachPort(callbacks => createEbookPort(async () => {
+      callbacks.onError(error, ebook.generation)
+      throw new Error(rawEngineMessage)
+    }))
+
+    try {
+      await expect(store.updateFlow('scrolled')).resolves.toBe(true)
+      await Promise.resolve()
+
+      expect(ebook.status).toBe('error')
+      expect(ebook.error).toEqual(error)
+      expect(unhandled).toEqual([])
+    } finally {
+      window.removeEventListener('unhandledrejection', onUnhandled)
+    }
+  })
+
   test('rejects invalid known updates without persisting or applying them', async () => {
     const store = useSettingsStore(createPinia())
     const applySettings = vi.fn(async () => undefined)
@@ -76,6 +138,19 @@ function createPort(applySettings: LegacyReaderPort['applySettings']): LegacyRea
   return {
     openRecord: async () => undefined,
     closeSession: async () => undefined,
+    applySettings,
+    flushProgress: async () => undefined,
+    destroy() {},
+  }
+}
+
+function createEbookPort(applySettings: EbookSessionPort['applySettings']): EbookSessionPort {
+  return {
+    open: async () => undefined,
+    close: async () => undefined,
+    goTo: async () => undefined,
+    navigate: async () => undefined,
+    setFlow: async () => undefined,
     applySettings,
     flushProgress: async () => undefined,
     destroy() {},

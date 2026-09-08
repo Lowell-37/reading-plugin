@@ -1,9 +1,9 @@
 import { computed, reactive } from 'vue'
 import { defineStore } from 'pinia'
 import { normalizeReaderSettings } from '../../../src/core/migration-preflight'
-// @ts-expect-error JavaScript compatibility storage has no declaration file yet.
-import { loadSettings, saveSettings } from '../../../src/storage.js'
 import type { LegacyReaderPort, ReaderSettings } from '../legacy-reader-port'
+import { loadReaderSettings, saveReaderSettings } from '../settings-persistence'
+import { useEbookSessionStore } from './ebook-session'
 
 export type ReaderTheme = 'paper' | 'light' | 'sepia' | 'dark'
 export type ReaderFlow = 'paginated' | 'scrolled'
@@ -12,7 +12,7 @@ export type ReaderFont = 'serif' | 'sans' | 'system'
 type SettingsKey = 'theme' | 'flow' | 'font' | 'fontSize' | 'lineHeight' | 'pageWidth' | 'headerCollapsed'
 
 export const useSettingsStore = defineStore('settings', () => {
-  const settings = reactive<ReaderSettings>({ ...loadSettings() })
+  const settings = reactive<ReaderSettings>({ ...loadReaderSettings() })
   let port: LegacyReaderPort | null = null
 
   const theme = computed(() => settings.theme as ReaderTheme)
@@ -32,9 +32,9 @@ export const useSettingsStore = defineStore('settings', () => {
     if (normalized.warnings.includes(key)) return false
 
     const nextSettings = normalized.settings
-    saveSettings(nextSettings)
+    saveReaderSettings(nextSettings)
     Object.assign(settings, nextSettings)
-    await port?.applySettings({ ...nextSettings })
+    await applyToReaders(nextSettings)
     return true
   }
 
@@ -42,10 +42,18 @@ export const useSettingsStore = defineStore('settings', () => {
     const { aiApiKey: _excludedApiKey, ...safeRestored } = restored
     const normalized = normalizeReaderSettings({ ...settings, ...safeRestored })
     const nextSettings = normalized.settings
-    saveSettings(nextSettings)
+    saveReaderSettings(nextSettings)
     Object.assign(settings, nextSettings)
-    await port?.applySettings({ ...nextSettings })
+    await applyToReaders(nextSettings)
     return { ...nextSettings }
+  }
+
+  async function applyToReaders(nextSettings: ReaderSettings) {
+    const applications: Promise<unknown>[] = []
+    if (port) applications.push(port.applySettings({ ...nextSettings }))
+    const ebook = useEbookSessionStore()
+    if (ebook.record) applications.push(ebook.applySettings({ ...nextSettings }))
+    await Promise.allSettled(applications)
   }
 
   return {

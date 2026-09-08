@@ -15,7 +15,9 @@ export interface EbookSessionTocItem {
 
 export interface EbookSessionError {
   code: 'format' | 'parse' | 'restore' | 'render'
-  message: string
+  title: string
+  detail: string
+  diagnostic: string
 }
 
 export interface EbookSessionSnapshot {

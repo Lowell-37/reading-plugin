@@ -467,8 +467,34 @@ function titleFromName(name: string): string {
 }
 
 function sessionError(code: EbookSessionError['code'], cause: unknown): EbookSessionError {
-  const message = cause instanceof Error && cause.message ? cause.message : '无法打开电子书'
-  return { code, message }
+  const presentation = {
+    format: {
+      title: '不支持这个文件',
+      detail: '请确认文件格式为 EPUB、MOBI 或 AZW3 后重试。',
+    },
+    parse: {
+      title: '无法解析这本书',
+      detail: '文件内容无法解析。请确认文件完整后重试。',
+    },
+    restore: {
+      title: '无法恢复阅读位置',
+      detail: '已保留这本书，请重新打开后从开头继续阅读。',
+    },
+    render: {
+      title: '无法显示这本书',
+      detail: '阅读视图无法建立。请重新打开书籍后重试。',
+    },
+  }[code]
+  return { code, ...presentation, diagnostic: diagnosticFor(cause) }
+}
+
+function diagnosticFor(cause: unknown): string {
+  if (cause instanceof Error && cause.message) return cause.message
+  try {
+    return String(cause)
+  } catch {
+    return 'Unknown ebook engine failure'
+  }
 }
 
 function copyTocForSnapshot(

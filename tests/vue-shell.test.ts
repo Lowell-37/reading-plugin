@@ -9,7 +9,7 @@ import { useSettingsStore } from '../entrypoints/reader/stores/settings'
 import { useMigrationStore } from '../entrypoints/reader/stores/migration'
 import { useLibraryStore } from '../entrypoints/reader/stores/library'
 import { useEbookSessionStore } from '../entrypoints/reader/stores/ebook-session'
-import type { EbookSessionCallbacks, EbookSessionSnapshot } from '../entrypoints/reader/ebook-session-port'
+import type { EbookSessionCallbacks, EbookSessionError, EbookSessionSnapshot } from '../entrypoints/reader/ebook-session-port'
 import type { BookRecord } from '../src/core/types'
 
 afterEach(() => {
@@ -90,6 +90,9 @@ describe('Vue reader shell', () => {
     const pinia = createPinia()
     const reader = useReaderStore(pinia)
     const ebook = useEbookSessionStore(pinia)
+    const library = useLibraryStore(pinia)
+    const load = vi.spyOn(library, 'load').mockResolvedValue(undefined)
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     ebook.record = { id: 'book', name: 'book.epub', format: 'epub' }
     ebook.status = 'ready'
     ebook.flow = 'paginated'
@@ -98,7 +101,7 @@ describe('Vue reader shell', () => {
     const goTo = vi.spyOn(ebook, 'goTo').mockResolvedValue(undefined)
     const navigate = vi.spyOn(ebook, 'navigate').mockResolvedValue(undefined)
     const close = vi.spyOn(ebook, 'close').mockResolvedValue(undefined)
-    const setFlow = vi.spyOn(ebook, 'setFlow').mockResolvedValue(undefined)
+    const applySettings = vi.spyOn(ebook, 'applySettings').mockResolvedValue(undefined)
     const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
 
     expect(wrapper.find('#reader-view').classes()).toContain('ebook-session-active')
@@ -115,15 +118,19 @@ describe('Vue reader shell', () => {
     await wrapper.find('#next-button').trigger('click')
     await wrapper.find('[data-flow="scrolled"]').trigger('click')
     await wrapper.find('#home-button').trigger('click')
+    await Promise.resolve()
+    await Promise.resolve()
 
     expect(goTo).toHaveBeenCalledTimes(1)
     expect(goTo).toHaveBeenCalledWith('/6/2')
     expect(navigate).toHaveBeenCalledTimes(2)
     expect(navigate).toHaveBeenNthCalledWith(1, -1)
     expect(navigate).toHaveBeenNthCalledWith(2, 1)
-    expect(setFlow).toHaveBeenCalledTimes(1)
-    expect(setFlow).toHaveBeenCalledWith('scrolled')
+    expect(applySettings).toHaveBeenCalledTimes(1)
+    expect(applySettings).toHaveBeenCalledWith(expect.objectContaining({ flow: 'scrolled' }))
     expect(close).toHaveBeenCalledTimes(1)
+    expect(load).toHaveBeenCalledTimes(1)
+    expect(consoleError).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
@@ -159,7 +166,7 @@ describe('Vue reader shell', () => {
     const pinia = createPinia()
     const reader = useReaderStore(pinia)
     const ebook = useEbookSessionStore(pinia)
-    const error = { code: 'parse' as const, message: 'EPUB manifest is unreadable' }
+    const error = ebookError('parse', 'EPUB manifest is unreadable')
     ebook.record = { id: 'book', name: 'book.epub', format: 'epub' }
     ebook.status = 'error'
     ebook.error = error
@@ -170,11 +177,34 @@ describe('Vue reader shell', () => {
     expect(wrapper.find('#reader-view').attributes('hidden')).toBeUndefined()
     expect(wrapper.find('#loading-view').attributes('hidden')).toBeUndefined()
     expect(wrapper.find('#loading-view').attributes('data-state')).toBe('error')
-    expect(wrapper.find('#loading-title').text()).toBe('无法打开这本书')
-    expect(wrapper.find('#loading-detail').text()).toBe('EPUB manifest is unreadable')
+    expect(wrapper.find('#loading-title').text()).toBe('无法解析这本书')
+    expect(wrapper.find('#loading-detail').text()).toBe('文件内容无法解析。请确认文件完整后重试。')
     expect(wrapper.find('#loading-actions').attributes('hidden')).toBeUndefined()
     expect(wrapper.find('#loading-library-button').exists()).toBe(true)
     expect(wrapper.find('#loading-retry-button').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  test('renders only code-mapped ebook error copy when diagnostics contain hostile engine text', () => {
+    const pinia = createPinia()
+    const reader = useReaderStore(pinia)
+    const ebook = useEbookSessionStore(pinia)
+    const rawEngineMessage = 'engine says <script>steal()</script> while parsing chapter 7'
+    const error = {
+      code: 'parse',
+      title: '无法解析这本书',
+      detail: '文件内容无法解析。请确认文件完整后重试。',
+      diagnostic: rawEngineMessage,
+    } as unknown as EbookSessionError
+    ebook.record = { id: 'book', name: 'book.epub', format: 'epub' }
+    ebook.status = 'error'
+    ebook.error = error
+    reader.applyEbookSessionSnapshot(ebookSnapshot({ status: 'error', error }))
+    const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
+
+    expect(wrapper.find('#loading-title').text()).toBe('无法解析这本书')
+    expect(wrapper.find('#loading-detail').text()).toBe('文件内容无法解析。请确认文件完整后重试。')
+    expect(wrapper.text()).not.toContain(rawEngineMessage)
     wrapper.unmount()
   })
 
@@ -184,7 +214,7 @@ describe('Vue reader shell', () => {
     const ebook = useEbookSessionStore(pinia)
     const library = useLibraryStore(pinia)
     const settings = useSettingsStore(pinia)
-    const error = { code: 'parse' as const, message: 'EPUB manifest is unreadable' }
+    const error = ebookError('parse', 'EPUB manifest is unreadable')
     let callbacks!: EbookSessionCallbacks
     let resolveOpening!: () => void
     const open = vi.fn(() => new Promise<void>(resolve => { resolveOpening = resolve }))
@@ -568,4 +598,26 @@ function ebookSnapshot(overrides: Partial<EbookSessionSnapshot> = {}): EbookSess
     generation: 1,
     ...overrides,
   }
+}
+
+function ebookError(code: EbookSessionError['code'], diagnostic: string): EbookSessionError {
+  const presentation = {
+    format: {
+      title: '不支持这个文件',
+      detail: '请确认文件格式为 EPUB、MOBI 或 AZW3 后重试。',
+    },
+    parse: {
+      title: '无法解析这本书',
+      detail: '文件内容无法解析。请确认文件完整后重试。',
+    },
+    restore: {
+      title: '无法恢复阅读位置',
+      detail: '已保留这本书，请重新打开后从开头继续阅读。',
+    },
+    render: {
+      title: '无法显示这本书',
+      detail: '阅读视图无法建立。请重新打开书籍后重试。',
+    },
+  }[code]
+  return { code, ...presentation, diagnostic }
 }

@@ -13,13 +13,14 @@ test.describe('@wxt-session', () => {
         await openBook(page, `alice.${format}`)
         await expect(page.locator('#reader-view')).toHaveClass(/ebook-session-active/)
         await expect(page.locator('#header-title')).toContainText(/Alice/i)
-        await expect.poll(() => renderedText(page)).toMatch(/Alice|Rabbit|Wonderland/i)
+        await expect.poll(() => foliateContentDocumentCount(page)).toBeGreaterThan(0)
 
         await page.locator('#sidebar-button').evaluate((button: HTMLElement) => button.click())
         await expect.poll(async () => page.locator('#toc button').count()).toBeGreaterThan(5)
         const initialProgress = await progress(page)
         await page.locator('#toc button').nth(5).evaluate((button: HTMLElement) => button.click())
         await expect.poll(() => progress(page)).toBeGreaterThan(initialProgress)
+        await expect.poll(() => foliateContentText(page)).toMatch(/Alice|Rabbit|Wonderland/i)
 
         const afterToc = await progress(page)
         await page.locator('#prev-button').evaluate((button: HTMLElement) => button.click())
@@ -85,8 +86,34 @@ async function progress(page: Page) {
   return Number(await page.locator('#progress-slider').inputValue())
 }
 
-async function renderedText(page: Page) {
-  return page.evaluate(() => document.body.innerText)
+async function foliateContentText(page: Page) {
+  return page.evaluate(() => {
+    type FoliateContent = { doc?: Document | null }
+    type FoliateViewElement = HTMLElement & {
+      getContents?: () => FoliateContent[]
+      renderer?: { getContents?: () => FoliateContent[] }
+    }
+    const view = document.querySelector<FoliateViewElement>('#ebook-host foliate-view')
+    const contents = view?.getContents?.() ?? view?.renderer?.getContents?.() ?? []
+    return contents
+      .map(content => content.doc?.body?.innerText || content.doc?.body?.textContent || '')
+      .join('\n')
+      .trim()
+  })
+}
+
+async function foliateContentDocumentCount(page: Page) {
+  return page.evaluate(() => {
+    type FoliateContent = { doc?: Document | null }
+    type FoliateViewElement = HTMLElement & {
+      getContents?: () => FoliateContent[]
+      renderer?: { getContents?: () => FoliateContent[] }
+    }
+    const view = document.querySelector<FoliateViewElement>('#ebook-host foliate-view')
+    return (view?.getContents?.() ?? view?.renderer?.getContents?.() ?? [])
+      .filter(content => content.doc?.documentElement)
+      .length
+  })
 }
 
 async function storedProgress(page: Page) {

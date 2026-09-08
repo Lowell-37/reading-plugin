@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import { createFoliateEbookSession } from '../entrypoints/reader/foliate-ebook-session'
-import type { EbookSessionSnapshot } from '../entrypoints/reader/ebook-session-port'
+import type { EbookSessionError, EbookSessionSnapshot } from '../entrypoints/reader/ebook-session-port'
 import type { BookRecord } from '../src/core/types'
 
 describe('Foliate ebook session', () => {
@@ -132,11 +132,30 @@ describe('Foliate ebook session', () => {
     await session.open(record('mount-error.epub'), readerSettings({ flow: 'scrolled' }))
 
     expect(harness.errors).toEqual([{
-      error: { code: 'render', message: 'continuous mount failed' },
+      error: expectedSessionError('render', 'continuous mount failed'),
       generation: 1,
     }])
     expect(harness.scroller.destroyCalls).toBe(1)
     expect(harness.view.closeCalls).toBe(1)
+  })
+
+  test('maps hostile engine failures to safe presentation while retaining diagnostics', async () => {
+    const harness = createHarness()
+    const session = createFoliateEbookSession(harness.dependencies)
+    const rawEngineMessage = 'engine says <script>steal()</script> while parsing chapter 7'
+    harness.failNextOpenStage('view-open', new Error(rawEngineMessage))
+
+    await session.open(record('hostile.epub'), readerSettings())
+
+    expect(harness.errors).toEqual([{
+      error: {
+        code: 'parse',
+        title: '无法解析这本书',
+        detail: '文件内容无法解析。请确认文件完整后重试。',
+        diagnostic: rawEngineMessage,
+      },
+      generation: 1,
+    }])
   })
 
   test('ignores relocate events from a view superseded by a newer open', async () => {
@@ -332,7 +351,7 @@ describe('Foliate ebook session', () => {
     await session.navigate(1)
 
     expect(harness.errors.at(-1)).toEqual({
-      error: { code: 'restore', message: 'page restore failed' },
+      error: expectedSessionError('restore', 'page restore failed'),
       generation: 1,
     })
     expect(harness.snapshots.at(-1)).toMatchObject({ flow: 'paginated', progress: 0.5 })
@@ -361,7 +380,7 @@ describe('Foliate ebook session', () => {
     await session.open(record('setup-error.epub'), readerSettings())
 
     expect(harness.errors).toEqual([{
-      error: { code, message: `${stage} failed` },
+      error: expectedSessionError(code, `${stage} failed`),
       generation: 1,
     }])
     expect(harness.views).toHaveLength(expectedViews)
@@ -381,7 +400,7 @@ describe('Foliate ebook session', () => {
     await session.open(record('new.epub'), readerSettings())
 
     expect(harness.errors).toEqual([{
-      error: { code: 'render', message: 'prior flush failed' },
+      error: expectedSessionError('render', 'prior flush failed'),
       generation: 2,
     }])
     expect(harness.views).toHaveLength(1)
@@ -739,6 +758,31 @@ function readerSettings(overrides: Record<string, unknown> = {}) {
     pageWidth: 760,
     ...overrides,
   }
+}
+
+function expectedSessionError(
+  code: EbookSessionError['code'],
+  diagnostic: string,
+): EbookSessionError {
+  const presentation = {
+    format: {
+      title: '不支持这个文件',
+      detail: '请确认文件格式为 EPUB、MOBI 或 AZW3 后重试。',
+    },
+    parse: {
+      title: '无法解析这本书',
+      detail: '文件内容无法解析。请确认文件完整后重试。',
+    },
+    restore: {
+      title: '无法恢复阅读位置',
+      detail: '已保留这本书，请重新打开后从开头继续阅读。',
+    },
+    render: {
+      title: '无法显示这本书',
+      detail: '阅读视图无法建立。请重新打开书籍后重试。',
+    },
+  }[code]
+  return { code, ...presentation, diagnostic }
 }
 
 function deferred<T>() {
