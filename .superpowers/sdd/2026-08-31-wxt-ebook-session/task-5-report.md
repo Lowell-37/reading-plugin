@@ -92,9 +92,27 @@ The initial root E2E retry was discarded because concurrent Playwright trace cle
 | `npm run test:e2e:wxt:continuity` | pass: 2 Edge tests |
 | `npx playwright test tests/e2e/wxt-ebook-session.spec.ts --reporter=line` | pass: 4 Edge tests |
 | `npm run test:e2e` | pass: 25 root stable-entry Edge tests |
-| `npm run release` | pass: 303-file ZIP, SHA-256 `bf865c248b2d782fd48dd234fabc72f53193e0fb93dd1cd10837df446c2ccaa2` |
+| `npm run release` | pass: 303-file ZIP, SHA-256 `420ca89623a33e2ae627b1aa0a5c8caa10eb7c52909c2c399d956742b70b1214` |
 
 ### Remaining boundary
 
 - WXT is still not the daily stable entry until PDF, search, and annotation ownership move out of the legacy reader with equivalent real-Edge coverage.
 - Playwright commands still emit the existing Node `NO_COLOR` / `FORCE_COLOR` warning; no WXT ebook page errors were reported by the acceptance scenarios.
+
+## Flow-progress baseline correction — 2026-09-08
+
+- Reproduced the final WXT flow/theme/progress baseline RED at head `9f626fd`: the test saved the first nonzero IndexedDB fraction (`0.0028698201821531436`) immediately after a continuous-mode TOC jump, then saw the correctly flushed/reopened location (`0.936242108192892`).
+- Boundary diagnostics showed that the Foliate adapter received every relocate, passed the active book ID, CFI and fraction to `ProgressService.schedule()`, and each schedule succeeded. Continuous smooth scrolling emits relocate events continuously, so the existing 350 ms debounce correctly postpones its write until the scroll becomes idle; `EbookSessionPort.close()` then flushes the latest pending location.
+- This was a test-oracle race, not lost position or an adapter/settings propagation defect. The baseline now captures the prior stored value, awaits the normal close/flush, verifies IndexedDB changed, and checks that reopening restores that actually persisted value. No WXT adapter, root, PDF, search or annotation production boundary changed.
+
+| Exact command | Result |
+| --- | --- |
+| focused `wxt-baseline` flow/theme/progress Edge test | pass: 1 test |
+| `npm run check` | pass |
+| `npm test` | pass: 38 files, 245 tests |
+| `npm run build:wxt:verify` | pass: 223 WXT output files |
+| `npm run test:e2e:wxt:baseline` | pass: 6 Edge tests |
+| `npm run test:e2e:wxt:continuity` | pass: 2 Edge tests |
+| `npx playwright test tests/e2e/wxt-ebook-session.spec.ts` | pass: 4 Edge tests |
+| `npm run test:e2e` | pass: 25 root stable-entry Edge tests |
+| `npm run release` | pass: 303-file ZIP, SHA-256 `420ca89623a33e2ae627b1aa0a5c8caa10eb7c52909c2c399d956742b70b1214` |

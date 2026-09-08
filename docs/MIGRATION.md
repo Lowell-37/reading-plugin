@@ -111,7 +111,8 @@
 - `npm run test:e2e:wxt:continuity`：通过 2 项真实 Edge 根目录/WXT 数据连续性和损坏 schema 只读门禁。
 - `tests/e2e/wxt-ebook-session.spec.ts`：通过 4 项真实 Edge 会话验收；内容断言读取 Foliate 实际渲染文档，避免由标题栏文本误判通过。
 - `npm run test:e2e`：通过 25 项根目录稳定入口 Edge 回归。
-- `npm run release`：通过；`quiet-reader-0.2.0.zip` 含 303 个文件，SHA-256 为 `bf865c248b2d782fd48dd234fabc72f53193e0fb93dd1cd10837df446c2ccaa2`。
+- `npm run release`：通过；`quiet-reader-0.2.0.zip` 含 303 个文件，SHA-256 为 `420ca89623a33e2ae627b1aa0a5c8caa10eb7c52909c2c399d956742b70b1214`。
+- 最终 head 进度复核：真实 Edge 已确认 Foliate 连续滚动的每个 relocate 均成功进入 `ProgressService`；滚动进行时会持续重置其 350 ms 防抖，关闭会话时再由 `flush()` 持久化最后位置。WXT 基线现在在关闭并完成该 flush 后读取 IndexedDB，再与重开位置比较，避免把先前的非零位置误当作最终保存位置。
 - 活跃 WXT 电子书会话现在通过设置 store 一次性向 legacy port 和 `EbookSessionStore` / Foliate 适配器传播主题、字体、字号、行距、栏宽和 flow；`ReaderWorkspace` 不再用单独 flow watcher 反向同步，避免重复路径。
 - Foliate/引擎原始异常仅保留为诊断字段；用户界面只显示按 `format`、`parse`、`restore`、`render` 代码映射的安全标题和详情。flow 切换失败由设置更新边界吸收 rejected promise，并投射为电子书错误态，不产生未处理 rejection。
 - PDF、搜索和批注仍保持根目录/旧控制器所有；WXT 不是稳定入口，直到后续阶段完成这些领域迁移。
