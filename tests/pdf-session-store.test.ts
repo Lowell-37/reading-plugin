@@ -116,7 +116,7 @@ describe('PDF session store', () => {
     })
   })
 
-  test('does not reset a replacement port session when the original close completes', async () => {
+  test('does not reset an opened replacement session when the original close completes', async () => {
     const first = createFakePort()
     const replacement = createFakePort()
     const useStore = createPdfSessionStore(first.factory)
@@ -128,18 +128,44 @@ describe('PDF session store', () => {
     first.emit(snapshot(1, { title: 'First PDF', page: 2, pageCount: 3, progress: 0.5 }))
     const closing = store.close()
     store.attachPort(replacement.factory)
-    replacement.emit(snapshot(2, { title: 'Replacement PDF', page: 6, pageCount: 8, progress: 0.75 }))
+    await store.open(record('replacement.pdf'), {})
+    replacement.emit(snapshot(3, { title: 'Replacement PDF', page: 6, pageCount: 8, progress: 0.75 }))
     releaseClose()
     await closing
 
     expect(store.$state).toMatchObject({
-      record: { id: 'first.pdf', name: 'first.pdf', format: 'pdf' },
+      record: { id: 'replacement.pdf', name: 'replacement.pdf', format: 'pdf' },
       status: 'ready',
       title: 'Replacement PDF',
       page: 6,
       pageCount: 8,
       progress: 0.75,
-      generation: 2,
+      generation: 3,
+    })
+  })
+
+  test('does not reset a newer generation on the same port when close completes', async () => {
+    const fake = createFakePort()
+    const useStore = createPdfSessionStore(fake.factory)
+    const store = useStore(createPinia())
+    let releaseClose!: () => void
+    fake.setClose(() => new Promise<void>(resolve => { releaseClose = resolve }))
+
+    await store.open(record('first.pdf'), {})
+    const closing = store.close()
+    await store.open(record('newer.pdf'), {})
+    fake.emit(snapshot(3, { title: 'Newer PDF', page: 5, pageCount: 7, progress: 0.6 }))
+    releaseClose()
+    await closing
+
+    expect(store.$state).toMatchObject({
+      record: { id: 'newer.pdf', name: 'newer.pdf', format: 'pdf' },
+      status: 'ready',
+      title: 'Newer PDF',
+      page: 5,
+      pageCount: 7,
+      progress: 0.6,
+      generation: 3,
     })
   })
 
@@ -147,7 +173,9 @@ describe('PDF session store', () => {
     const first = createFakePort()
     const second = createFakePort()
     const useStore = createPdfSessionStore()
-    const store = useStore(createPinia())
+    const pinia = createPinia()
+    const store = useStore(pinia)
+    const reader = useReaderStore(pinia)
     let releaseClose!: () => void
     second.setClose(() => new Promise<void>(resolve => { releaseClose = resolve }))
 
@@ -158,6 +186,22 @@ describe('PDF session store', () => {
     second.emit(snapshot(1, { title: 'Second PDF', page: 3, pageCount: 4, progress: 0.75 }))
     first.emitError(pdfError('render'), 1)
     first.emit(snapshot(1, { title: 'Late first PDF', page: 1, pageCount: 3, progress: 0 }))
+
+    expect(store.$state).toMatchObject({
+      record: { id: 'replacement.pdf', name: 'replacement.pdf', format: 'pdf' },
+      status: 'ready',
+      title: 'Second PDF',
+      page: 3,
+      pageCount: 4,
+      progress: 0.75,
+      error: null,
+    })
+    expect(reader.$state).toMatchObject({
+      title: 'Second PDF',
+      chapter: '第 3 页 / 共 4 页',
+      progress: 0.75,
+      isReading: true,
+    })
 
     const closing = store.close()
     expect(store.record?.name).toBe('replacement.pdf')
