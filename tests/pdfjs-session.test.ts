@@ -64,6 +64,27 @@ describe('PDF.js session adapter', () => {
     expect(harness.textLayerPages.filter(page => page === 1)).toEqual([1, 1, 1])
   })
 
+  test('ignores a rejected cancelled render from a previous zoom rendition', async () => {
+    const harness = createHarness({ renderDeferred: true, renderRejectOnCancel: true })
+    await harness.session.open(record('zoom-cancel.pdf'), {})
+    await harness.flushFrames()
+    await waitFor(() => harness.document.pages.get(1)?.renderTasks.length === 1)
+    const firstRender = harness.document.pages.get(1)?.renderTasks[0]
+
+    await harness.session.setZoom(1.5)
+    await harness.flushFrames()
+    await waitFor(() => harness.document.pages.get(1)?.renderTasks.length === 2)
+    const secondRender = harness.document.pages.get(1)?.renderTasks[1]
+    await settle()
+
+    expect(firstRender?.cancelCalls).toBe(1)
+    expect(harness.errors).toEqual([])
+    expect(harness.pages.querySelector<HTMLElement>('.pdf-page[data-page="1"]')?.dataset.state).toBe('rendering')
+
+    await harness.session.setZoom(1.8)
+    expect(secondRender?.cancelCalls).toBe(1)
+  })
+
   test('navigates by page, schedules PDF progress and flushes it', async () => {
     const harness = createHarness()
     await harness.session.open(record('navigation.pdf'), {})
@@ -103,6 +124,27 @@ describe('PDF.js session adapter', () => {
 
     expect(harness.snapshots.at(-1)).toMatchObject({ status: 'ready', page: 2, progress: 0.5 })
     expect(harness.scheduled).toEqual([{ bookId: 'restored.pdf', progress: { kind: 'pdf', page: 2, fraction: 0.5 } }])
+  })
+
+  test('does not publish ready after a stored-page restore failure', async () => {
+    const harness = createHarness({ scrollError: new Error('restore secret') })
+
+    await harness.session.open(record('restore-failure.pdf', { kind: 'pdf', page: 2, fraction: 0.5 }), {})
+
+    expect(harness.errors).toMatchObject([{ code: 'restore' }])
+    expect(harness.snapshots.some(snapshot => snapshot.status === 'ready')).toBe(false)
+    expect(harness.snapshots.at(-1)).toMatchObject({ status: 'loading', page: 1 })
+  })
+
+  test('maps a normal navigation scroll failure without making the session ready again', async () => {
+    const harness = createHarness()
+    await harness.session.open(record('navigation-failure.pdf'), {})
+    harness.setScrollError(new Error('navigation secret'))
+
+    await harness.session.goTo(2)
+
+    expect(harness.errors.at(-1)).toMatchObject({ code: 'render' })
+    expect(harness.snapshots.at(-1)).toMatchObject({ status: 'ready', page: 1 })
   })
 
   test.each([
@@ -168,12 +210,53 @@ describe('PDF.js session adapter', () => {
     expect(newDocument.pages.get(3)?.renderScales).toEqual([])
     expect(harness.pages.querySelector<HTMLElement>('.pdf-page[data-page="1"]')?.dataset.state).not.toBe('rendered')
   })
+
+  test.each(['close', 'destroy'] as const)('%s cancels a deferred load before its stale document can mutate the session', async operation => {
+    const harness = createHarness({ loadingDeferred: true })
+    const opening = harness.session.open(record(`${operation}-load.pdf`), {})
+    await waitFor(() => harness.loaderRequests.length === 1)
+    const snapshotCount = harness.snapshots.length
+
+    await cancelSession(harness, operation)
+    harness.loading.resolve(harness.document)
+    await opening
+    await waitFor(() => harness.document.destroyCalls === 1)
+
+    expect(harness.loading.destroyCalls).toBe(1)
+    expect(harness.snapshots).toHaveLength(snapshotCount)
+    expect(harness.errors).toEqual([])
+    expect(harness.pages.children).toHaveLength(0)
+  })
+
+  test.each(['close', 'destroy'] as const)('%s cancels a rejecting render without stale errors, snapshots, or DOM', async operation => {
+    const harness = createHarness({ renderDeferred: true, renderRejectOnCancel: true })
+    await harness.session.open(record(`${operation}-render.pdf`), {})
+    await harness.flushFrames()
+    await waitFor(() => harness.document.pages.get(1)?.renderTasks.length === 1)
+    const render = harness.document.pages.get(1)?.renderTasks[0]
+    const snapshotCount = harness.snapshots.length
+
+    await cancelSession(harness, operation)
+    await waitFor(() => harness.document.destroyCalls === 1)
+    await settle()
+
+    expect(render?.cancelCalls).toBe(1)
+    expect(harness.snapshots).toHaveLength(snapshotCount)
+    expect(harness.errors).toEqual([])
+    expect(harness.pages.children).toHaveLength(0)
+  })
 })
+
+async function cancelSession(harness: ReturnType<typeof createHarness>, operation: 'close' | 'destroy') {
+  if (operation === 'close') await harness.session.close()
+  else harness.session.destroy()
+}
 
 function createHarness(options: {
   loadingError?: unknown
   loadingDeferred?: boolean
   renderDeferred?: boolean
+  renderRejectOnCancel?: boolean
   renderError?: Error
   scrollError?: Error
 } = {}) {
@@ -183,9 +266,10 @@ function createHarness(options: {
   const pages = document.createElement('div')
   const viewport = document.createElement('div')
   Object.defineProperty(viewport, 'clientWidth', { value: 900 })
+  let scrollError = options.scrollError
   Object.defineProperty(viewport, 'scrollTo', {
     value: () => {
-      if (options.scrollError) throw options.scrollError
+      if (scrollError) throw scrollError
     },
   })
   const observer = new FakeObserverFactory()
@@ -252,6 +336,7 @@ function createHarness(options: {
     loaderRequests,
     textLayerPages,
     get flushCalls() { return flushCalls },
+    setScrollError(next: Error | undefined) { scrollError = next },
     queueDocument(next: FakePdfDocument) { queuedDocuments.push(next) },
     async flushFrames() {
       while (frames.size) {
@@ -324,7 +409,7 @@ class FakePdfDocument {
   outline: PdfOutlineSource[] | null = []
   readonly pages = new Map<number, FakePage>()
 
-  constructor(readonly numPages: number, options: { loadingError?: unknown, loadingDeferred?: boolean, renderDeferred?: boolean, renderError?: Error } = {}) {
+  constructor(readonly numPages: number, options: { loadingError?: unknown, loadingDeferred?: boolean, renderDeferred?: boolean, renderRejectOnCancel?: boolean, renderError?: Error } = {}) {
     this.loading = new FakeLoadingTask(this, options.loadingError, Boolean(options.loadingDeferred))
     for (let page = 1; page <= numPages; page += 1) this.pages.set(page, new FakePage(page, options))
   }
@@ -348,13 +433,13 @@ class FakePage {
   renderScales: number[] = []
   readonly renderTasks: FakeRenderTask[] = []
 
-  constructor(readonly number: number, private readonly options: { renderDeferred?: boolean, renderError?: Error }) {}
+  constructor(readonly number: number, private readonly options: { renderDeferred?: boolean, renderRejectOnCancel?: boolean, renderError?: Error }) {}
 
   getViewport({ scale }: { scale: number }) { return { width: 500 * scale, height: 800 * scale, scale } }
   async getTextContent() { return { page: this.number } }
   render({ viewport }: { canvasContext: CanvasRenderingContext2D | null, viewport: unknown }) {
     this.renderScales.push(Number((viewport as { scale: number }).scale.toFixed(3)))
-    const task = new FakeRenderTask(this.options.renderError, Boolean(this.options.renderDeferred))
+    const task = new FakeRenderTask(this.options.renderError, Boolean(this.options.renderDeferred), Boolean(this.options.renderRejectOnCancel))
     this.renderTasks.push(task)
     return task
   }
@@ -366,17 +451,22 @@ class FakeRenderTask {
   cancelCalls = 0
   readonly promise: Promise<void>
   private resolvePromise!: () => void
+  private rejectPromise!: (error: Error) => void
 
-  constructor(error: Error | undefined, deferred: boolean) {
+  constructor(error: Error | undefined, deferred: boolean, private readonly rejectOnCancel: boolean) {
     this.promise = new Promise((resolve, reject) => {
       this.resolvePromise = resolve
+      this.rejectPromise = reject
       if (error) reject(error)
       else if (!deferred) resolve()
     })
   }
 
   resolve() { this.resolvePromise() }
-  cancel() { this.cancelCalls += 1 }
+  cancel() {
+    this.cancelCalls += 1
+    if (this.rejectOnCancel) this.rejectPromise(new Error('cancelled render'))
+  }
 }
 
 function record(name: string, progress?: BookRecord['progress']): BookRecord {

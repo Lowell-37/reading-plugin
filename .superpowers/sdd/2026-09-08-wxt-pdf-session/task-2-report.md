@@ -61,3 +61,53 @@ The Vue check initially identified PDF.js 6's undeclared ESM runtime entrypoint 
 ## Concern
 
 The workspace sandbox cannot write Vite's temporary config cache in this external worktree. Focused Vitest was rerun with the approved local-cache permission and passed; this is an environment restriction, not an adapter failure.
+
+## Review fix round 1
+
+### 1. In-flight zoom cancellation
+
+**RED:** A deferred render task that rejects from `cancel()` during `setZoom()` emitted stale `render` errors (two page renders failed the new regression).
+
+**Fix:** `renderPage()` now retains its render-task identity. Its success and catch paths require the current generation, render epoch, document, wrapper, and task-map identity before deleting a task, changing wrapper state, or reporting an error.
+
+**GREEN:** The zoom regression confirms the first canceled task emits no error and cannot stop the replacement rendition; a subsequent zoom still cancels the replacement task, proving the stale catch did not delete it.
+
+### 2. Restore failure lifecycle
+
+**RED:** A stored-page `scrollTo()` failure called `onError({ code: 'restore' })` but `open()` continued and published `ready`.
+
+**Fix:** `goToPage()` returns a completion boolean. `open()` requires successful restore before it publishes `ready`; ordinary navigation retains its safe `render`-error mapping.
+
+**GREEN:** The stored-page failure regression has no ready snapshot and retains the loading snapshot for the store's restore error projection. The ordinary-navigation regression reports a render error without republishing ready.
+
+### 3. AST dependency boundaries
+
+**RED:** The first collector test failed against a deliberate empty collector: static imports, re-exports, dynamic imports, and `require()` specifiers were all missing.
+
+**Fix:** Architecture tests now parse TypeScript AST module specifiers and extract Vue SFC script/script-setup blocks with `@vue/compiler-sfc`. They inspect every reader `.vue` file and store `.ts` file, plus both PDF adapter files. Prohibited boundaries are tested only against collected specifiers, not prose or regular-expression source scans.
+
+**GREEN:** Collector tests cover static, re-exported, dynamic, CommonJS, and Vue-script specifiers. The full reader boundary checks pass.
+
+### 4. Close and destroy cancellation
+
+Added parameterized coverage for both `close()` and `destroy()`:
+
+- a deferred loading task is canceled, then resolves late; its task and late document are destroyed with no callback or DOM mutation;
+- a deferred render rejects from cancellation; its render task and document are destroyed with no stale snapshot, error, or DOM mutation.
+
+`destroy()` remains intentionally fire-and-forget, and the tests condition-wait for document destruction before asserting outcomes, so asynchronous teardown is observably settled. Existing ownership/generation guards satisfied this coverage; no additional production change was required for this item.
+
+### Verification
+
+```powershell
+npm test -- tests/pdfjs-session.test.ts tests/pdf-session-store.test.ts tests/architecture.test.js
+npm run typecheck
+npm run typecheck:vue
+git diff --check
+```
+
+Results:
+
+- Focused Vitest: 3 test files, 29 tests passed.
+- Core TypeScript typecheck: exit code 0.
+- Vue TypeScript typecheck: exit code 0.

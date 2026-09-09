@@ -34,7 +34,7 @@ export function createPdfJsSession(
   let renderEpoch = 0
   const frames = new Set<number>()
   const pageCache = new Map<number, PdfPageLike>()
-  const renderTasks = new Map<number, { cancel?(): void }>()
+  const renderTasks = new Map<number, ReturnType<PdfPageLike['render']>>()
 
   async function open(record: BookRecord, _settings: ReaderSettings): Promise<void> {
     const generation = dependencies.nextGeneration()
@@ -95,8 +95,8 @@ export function createPdfJsSession(
 
       phase = 'restore'
       const restoredPage = record.progress?.kind === 'pdf' ? record.progress.page : 1
-      await goToPage(restoredPage, generation, 'restore')
-      if (!isActive(generation) || currentDocument !== document) return
+      const restored = await goToPage(restoredPage, generation, 'restore')
+      if (!restored || !isActive(generation) || currentDocument !== document) return
       currentSnapshot = { ...currentSnapshot, status: 'ready' }
       publishSnapshot(generation)
     } catch (cause) {
@@ -139,9 +139,9 @@ export function createPdfJsSession(
     void destroyResources(resources)
   }
 
-  async function goToPage(requestedPage: number, generation: number, phase: PdfSessionError['code']): Promise<void> {
+  async function goToPage(requestedPage: number, generation: number, phase: PdfSessionError['code']): Promise<boolean> {
     const document = currentDocument
-    if (!document || !currentSnapshot || !isActive(generation)) return
+    if (!document || !currentSnapshot || !isActive(generation)) return false
     try {
       currentPage = clampPage(requestedPage, document.numPages)
       const wrapper = pageElement(currentPage)
@@ -151,8 +151,10 @@ export function createPdfJsSession(
       publishSnapshot(generation)
       progressService.schedule(currentRecord?.id ?? '', { kind: 'pdf', page: currentPage, fraction: progress })
       queueRenderAround(currentPage, generation)
+      return true
     } catch (cause) {
       if (isActive(generation)) dependencies.onError(sessionError(phase, cause), generation)
+      return false
     }
   }
 
@@ -204,6 +206,7 @@ export function createPdfJsSession(
     const document = currentDocument
     const engine = currentEngine
     const wrapper = pageElement(pageNumber)
+    let renderTask: ReturnType<PdfPageLike['render']> | null = null
     if (!document || !engine || !wrapper || !isActive(generation) || wrapper.dataset.state !== 'idle') return
     wrapper.dataset.state = 'rendering'
     try {
@@ -231,7 +234,7 @@ export function createPdfJsSession(
       label.textContent = String(pageNumber)
       wrapper.append(label)
       const content = await page.getTextContent()
-      const renderTask = page.render({
+      renderTask = page.render({
         canvasContext: canvas.getContext('2d', { alpha: false }),
         viewport: renderViewport,
       })
@@ -240,12 +243,12 @@ export function createPdfJsSession(
         renderTask.promise,
         new engine.TextLayer({ textContentSource: content, container: textLayer, viewport: cssViewport }).render(),
       ])
-      if (!isActive(generation) || rendition !== renderEpoch || currentDocument !== document || pageElement(pageNumber) !== wrapper) return
+      if (!isCurrentRender(pageNumber, generation, rendition, document, wrapper, renderTask)) return
       wrapper.dataset.state = 'rendered'
       renderTasks.delete(pageNumber)
     } catch (cause) {
+      if (!isCurrentRender(pageNumber, generation, rendition, document, wrapper, renderTask)) return
       renderTasks.delete(pageNumber)
-      if (!isActive(generation) || pageElement(pageNumber) !== wrapper) return
       wrapper.dataset.state = 'error'
       wrapper.textContent = `第 ${pageNumber} 页渲染失败`
       dependencies.onError(sessionError('render', cause), generation)
@@ -260,6 +263,21 @@ export function createPdfJsSession(
     }
     for (const task of renderTasks.values()) task.cancel?.()
     renderTasks.clear()
+  }
+
+  function isCurrentRender(
+    pageNumber: number,
+    generation: number,
+    rendition: number,
+    document: PdfDocumentLike,
+    wrapper: HTMLElement,
+    renderTask: ReturnType<PdfPageLike['render']> | null,
+  ) {
+    return isActive(generation)
+      && rendition === renderEpoch
+      && currentDocument === document
+      && pageElement(pageNumber) === wrapper
+      && (renderTask === null || renderTasks.get(pageNumber) === renderTask)
   }
 
   async function releaseResources(flush = true): Promise<void> {
