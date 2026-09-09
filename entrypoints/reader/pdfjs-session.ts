@@ -234,6 +234,7 @@ export function createPdfJsSession(
       label.textContent = String(pageNumber)
       wrapper.append(label)
       const content = await page.getTextContent()
+      if (!isCurrentRender(pageNumber, generation, rendition, document, wrapper, renderTask)) return
       renderTask = page.render({
         canvasContext: canvas.getContext('2d', { alpha: false }),
         viewport: renderViewport,

@@ -37,15 +37,39 @@ test('collects module specifiers from Vue script blocks rather than template tex
   `, 'fixture.vue')).toEqual(['vue-script-module'])
 })
 
+test('selects Vue files and TypeScript files under reader components and stores', () => {
+  expect([
+    'App.vue',
+    'components/ReaderWorkspace.vue',
+    'components/pdf-controls.ts',
+    'stores/pdf-session.ts',
+    'helpers/reader.ts',
+  ].filter(isViewBoundaryPath)).toEqual([
+    'App.vue',
+    'components/ReaderWorkspace.vue',
+    'components/pdf-controls.ts',
+    'stores/pdf-session.ts',
+  ])
+})
+
+test('detects direct indexedDB usage only in reader scripts', () => {
+  expect(usesDirectIndexedDb(`const database = indexedDB.open('reader')`, 'fixture.ts')).toBe(true)
+  expect(usesDirectIndexedDb(`
+    <template><p>indexedDB</p></template>
+    <script setup lang="ts">const label = 'indexedDB'</script>
+  `, 'fixture.vue')).toBe(false)
+})
+
 test('WXT Vue components and stores cannot import legacy, persistence, PDF, or ebook engines', async () => {
   const componentRoot = new URL('../entrypoints/reader/', import.meta.url)
   const componentPaths = (await readdir(componentRoot, { recursive: true }))
-    .filter(path => path.endsWith('.vue') || ((path.startsWith('stores/') || path.startsWith('stores\\')) && path.endsWith('.ts')))
+    .filter(isViewBoundaryPath)
 
   expect(componentPaths.length).toBeGreaterThan(0)
   for (const path of componentPaths) {
     const source = await readFile(new URL(path, componentRoot), 'utf8')
     expect(collectModuleSpecifiers(source, path).some(isViewBoundaryViolation), path).toBe(false)
+    expect(usesDirectIndexedDb(source, path), path).toBe(false)
   }
 })
 
@@ -60,11 +84,7 @@ test('PDF.js adapter files own no persistence, search, annotation, or Vue depend
 })
 
 function collectModuleSpecifiers(source, filename) {
-  const descriptor = filename.endsWith('.vue') ? parse(source, { filename }).descriptor : null
-  const script = descriptor
-    ? [descriptor.script?.content, descriptor.scriptSetup?.content].filter(Boolean).join('\n')
-    : source
-  const sourceFile = ts.createSourceFile(filename, script, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  const sourceFile = createScriptSourceFile(source, filename)
   const specifiers = []
 
   const visit = node => {
@@ -81,9 +101,38 @@ function collectModuleSpecifiers(source, filename) {
   return specifiers
 }
 
+function createScriptSourceFile(source, filename) {
+  const descriptor = filename.endsWith('.vue') ? parse(source, { filename }).descriptor : null
+  const script = descriptor
+    ? [descriptor.script?.content, descriptor.scriptSetup?.content].filter(Boolean).join('\n')
+    : source
+  return ts.createSourceFile(filename, script, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+}
+
 function isModuleLoad(node) {
   return node.expression.kind === ts.SyntaxKind.ImportKeyword
     || (ts.isIdentifier(node.expression) && node.expression.text === 'require')
+}
+
+function isViewBoundaryPath(path) {
+  const isComponentOrStore = path.startsWith('components/') || path.startsWith('components\\') || path.startsWith('stores/') || path.startsWith('stores\\')
+  return path.endsWith('.vue') || (isComponentOrStore && path.endsWith('.ts'))
+}
+
+function usesDirectIndexedDb(source, filename) {
+  let found = false
+  const visit = node => {
+    if (ts.isIdentifier(node) && node.text === 'indexedDB' && !isIndexedDbDeclarationOrPropertyName(node)) found = true
+    ts.forEachChild(node, visit)
+  }
+  visit(createScriptSourceFile(source, filename))
+  return found
+}
+
+function isIndexedDbDeclarationOrPropertyName(node) {
+  return (ts.isPropertyAccessExpression(node.parent) && node.parent.name === node)
+    || (ts.isVariableDeclaration(node.parent) && node.parent.name === node)
+    || ts.isImportSpecifier(node.parent)
 }
 
 function isViewBoundaryViolation(specifier) {

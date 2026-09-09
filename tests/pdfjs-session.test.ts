@@ -85,6 +85,22 @@ describe('PDF.js session adapter', () => {
     expect(secondRender?.cancelCalls).toBe(1)
   })
 
+  test('does not create a stale render task when zoom changes during text-content loading', async () => {
+    const harness = createHarness({ textContentDeferred: true })
+    await harness.session.open(record('zoom-text-content.pdf'), {})
+    await harness.flushFrames()
+    await waitFor(() => harness.document.pages.get(1)?.textContentRequests === 1)
+
+    await harness.session.setZoom(1.5)
+    harness.document.resolveTextContent()
+    await settle()
+
+    expect(harness.document.pages.get(1)?.renderScales).toEqual([])
+    expect(harness.document.pages.get(1)?.renderTasks).toEqual([])
+    expect(harness.errors).toEqual([])
+    expect(harness.pages.querySelector<HTMLElement>('.pdf-page[data-page="1"]')?.dataset.state).toBe('idle')
+  })
+
   test('navigates by page, schedules PDF progress and flushes it', async () => {
     const harness = createHarness()
     await harness.session.open(record('navigation.pdf'), {})
@@ -245,6 +261,25 @@ describe('PDF.js session adapter', () => {
     expect(harness.errors).toEqual([])
     expect(harness.pages.children).toHaveLength(0)
   })
+
+  test.each(['close', 'destroy'] as const)('%s prevents a stale render task after text-content loading', async operation => {
+    const harness = createHarness({ textContentDeferred: true })
+    await harness.session.open(record(`${operation}-text-content.pdf`), {})
+    await harness.flushFrames()
+    await waitFor(() => harness.document.pages.get(1)?.textContentRequests === 1)
+    const snapshotCount = harness.snapshots.length
+
+    await cancelSession(harness, operation)
+    harness.document.resolveTextContent()
+    await waitFor(() => harness.document.destroyCalls === 1)
+    await settle()
+
+    expect(harness.document.pages.get(1)?.renderScales).toEqual([])
+    expect(harness.document.pages.get(1)?.renderTasks).toEqual([])
+    expect(harness.snapshots).toHaveLength(snapshotCount)
+    expect(harness.errors).toEqual([])
+    expect(harness.pages.children).toHaveLength(0)
+  })
 })
 
 async function cancelSession(harness: ReturnType<typeof createHarness>, operation: 'close' | 'destroy') {
@@ -257,6 +292,7 @@ function createHarness(options: {
   loadingDeferred?: boolean
   renderDeferred?: boolean
   renderRejectOnCancel?: boolean
+  textContentDeferred?: boolean
   renderError?: Error
   scrollError?: Error
 } = {}) {
@@ -409,7 +445,7 @@ class FakePdfDocument {
   outline: PdfOutlineSource[] | null = []
   readonly pages = new Map<number, FakePage>()
 
-  constructor(readonly numPages: number, options: { loadingError?: unknown, loadingDeferred?: boolean, renderDeferred?: boolean, renderRejectOnCancel?: boolean, renderError?: Error } = {}) {
+  constructor(readonly numPages: number, options: { loadingError?: unknown, loadingDeferred?: boolean, renderDeferred?: boolean, renderRejectOnCancel?: boolean, textContentDeferred?: boolean, renderError?: Error } = {}) {
     this.loading = new FakeLoadingTask(this, options.loadingError, Boolean(options.loadingDeferred))
     for (let page = 1; page <= numPages; page += 1) this.pages.set(page, new FakePage(page, options))
   }
@@ -426,17 +462,26 @@ class FakePdfDocument {
   resolveRenders() {
     for (const page of this.pages.values()) page.resolveRenders()
   }
+  resolveTextContent() {
+    for (const page of this.pages.values()) page.resolveTextContent()
+  }
   destroy() { this.destroyCalls += 1 }
 }
 
 class FakePage {
   renderScales: number[] = []
   readonly renderTasks: FakeRenderTask[] = []
+  textContentRequests = 0
+  private readonly textContentResolvers: Array<(content: { page: number }) => void> = []
 
-  constructor(readonly number: number, private readonly options: { renderDeferred?: boolean, renderRejectOnCancel?: boolean, renderError?: Error }) {}
+  constructor(readonly number: number, private readonly options: { renderDeferred?: boolean, renderRejectOnCancel?: boolean, textContentDeferred?: boolean, renderError?: Error }) {}
 
   getViewport({ scale }: { scale: number }) { return { width: 500 * scale, height: 800 * scale, scale } }
-  async getTextContent() { return { page: this.number } }
+  getTextContent() {
+    this.textContentRequests += 1
+    if (!this.options.textContentDeferred) return Promise.resolve({ page: this.number })
+    return new Promise<{ page: number }>(resolve => this.textContentResolvers.push(resolve))
+  }
   render({ viewport }: { canvasContext: CanvasRenderingContext2D | null, viewport: unknown }) {
     this.renderScales.push(Number((viewport as { scale: number }).scale.toFixed(3)))
     const task = new FakeRenderTask(this.options.renderError, Boolean(this.options.renderDeferred), Boolean(this.options.renderRejectOnCancel))
@@ -445,6 +490,7 @@ class FakePage {
   }
 
   resolveRenders() { this.renderTasks.forEach(task => task.resolve()) }
+  resolveTextContent() { this.textContentResolvers.splice(0).forEach(resolve => resolve({ page: this.number })) }
 }
 
 class FakeRenderTask {

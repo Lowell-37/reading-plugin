@@ -46,6 +46,39 @@ Results:
 - Focused Vitest: 3 test files, 20 tests passed.
 - Core TypeScript typecheck: exit code 0.
 - Vue TypeScript typecheck: exit code 0.
+
+## Review fix round 2
+
+### A. Pre-render-task lifecycle race
+
+**RED:** `FakePage` gained genuinely deferred `getTextContent()`. When zoom, close, or destroy occurred during that await, resolving text content caused the stale continuation to call `page.render()` and create an untracked task. The three regressions failed with the unexpected render scale `1.672`.
+
+**Fix:** Immediately after `await page.getTextContent()`, `renderPage()` now runs its full pre-task current-render guard (generation, rendition, document, and wrapper). A task does not yet exist at this point, so the guard intentionally uses the helper's null-task branch. This also keeps text-layer construction out of stale work because both PDF render and text-layer rendering begin only after the guard.
+
+**GREEN:** Zoom plus parameterized close/destroy tests resolve deferred text content after their lifecycle action and prove no render call/task, error, snapshot, or stale DOM mutation occurs.
+
+### B. Architecture scan coverage
+
+**RED:** The path-selection fixture showed that `components/pdf-controls.ts` was omitted. A direct IndexedDB fixture also failed against the initial empty detector.
+
+**Fix:** The view-boundary path selector now includes every `.vue` file plus `.ts` files under both `components/` and `stores/`. Direct IndexedDB use is restored as an AST identifier check over the Vue script/TypeScript source file; template and string text do not trigger it. Module import enforcement remains AST-specifier based, and the legacy bridge test is unchanged.
+
+**GREEN:** Architecture tests cover component/store TypeScript path selection and direct IndexedDB detection while excluding template text. Current reader Vue/components/stores meet both boundaries.
+
+### Verification
+
+```powershell
+npm test -- tests/pdfjs-session.test.ts tests/pdf-session-store.test.ts tests/architecture.test.js
+npm run typecheck
+npm run typecheck:vue
+git diff --check
+```
+
+Results:
+
+- Focused Vitest: 3 test files, 34 tests passed.
+- Core TypeScript typecheck: exit code 0.
+- Vue TypeScript typecheck: exit code 0.
 - Diff whitespace check: exit code 0.
 
 The Vue check initially identified PDF.js 6's undeclared ESM runtime entrypoint and incomplete test fake interface types. The adapter retains its own typed interface and explicitly documents the upstream declaration gap; the fake now structurally implements that interface.
