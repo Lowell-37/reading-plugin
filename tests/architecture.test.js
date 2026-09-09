@@ -23,3 +23,9 @@ test('WXT components and stores cannot import legacy reader, persistence, PDF, o
     expect(source, path).not.toMatch(/\bindexedDB\b/)
   }
 })
+
+test('PDF.js adapter owns no persistence, search, annotation, or Vue dependencies', async () => {
+  const source = await readFile(new URL('../entrypoints/reader/pdfjs-session.ts', import.meta.url), 'utf8')
+
+  expect(source).not.toMatch(/from\s+['"][^'"]*(?:book-repository|storage\.js|search|annotation|vue)[^'"]*['"]|\bBookRepository\b/)
+})
