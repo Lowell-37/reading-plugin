@@ -29,6 +29,7 @@ const pdfSessionActive = computed(() => pdfRecord.value !== null)
 const ebookErrorActive = computed(() => ebookSessionActive.value && status.value === 'error')
 const pdfErrorActive = computed(() => pdfSessionActive.value && pdfStatus.value === 'error')
 const workspaceVisible = computed(() => isReading.value || ebookErrorActive.value || pdfErrorActive.value)
+const pdfToolbarListeners: Array<{ element: HTMLElement, handler: EventListener }> = []
 
 watch(workspaceVisible, visible => {
   document.body.classList.toggle('is-reading', visible)
@@ -124,11 +125,15 @@ onMounted(() => {
     ['pdf-fit-width', () => { if (pdfSessionActive.value) void pdf.setZoom(1) }],
   ]
   for (const [id, listener] of controls) {
-    document.getElementById(id)?.addEventListener('click', event => {
+    const element = document.getElementById(id)
+    if (!element) continue
+    const handler: EventListener = event => {
       if (!pdfSessionActive.value) return
       event.stopImmediatePropagation()
       listener(event)
-    })
+    }
+    element.addEventListener('click', handler)
+    pdfToolbarListeners.push({ element, handler })
   }
   window.addEventListener('keydown', handlePdfKeyboard)
 })
@@ -136,6 +141,8 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.body.classList.remove('is-reading', 'pdf-mode')
   window.removeEventListener('keydown', handlePdfKeyboard)
+  for (const { element, handler } of pdfToolbarListeners) element.removeEventListener('click', handler)
+  pdfToolbarListeners.length = 0
 })
 
 function navigate(event: MouseEvent, direction: -1 | 1) {
@@ -176,11 +183,17 @@ function stepPdfZoom(delta: number) {
 
 function handlePdfKeyboard(event: KeyboardEvent) {
   if (!pdfSessionActive.value) return
-  event.stopImmediatePropagation()
   const activeTagName = document.activeElement?.tagName ?? ''
   if (['INPUT', 'TEXTAREA', 'SELECT'].includes(activeTagName)) return
-  if (event.key === 'ArrowLeft' || event.key === 'PageUp') { event.preventDefault(); void pdf.navigate(-1) }
-  if (event.key === 'ArrowRight' || event.key === 'PageDown') { event.preventDefault(); void pdf.navigate(1) }
+  const direction = event.key === 'ArrowLeft' || event.key === 'PageUp'
+    ? -1
+    : event.key === 'ArrowRight' || event.key === 'PageDown'
+      ? 1
+      : null
+  if (direction === null) return
+  event.preventDefault()
+  event.stopImmediatePropagation()
+  void pdf.navigate(direction)
 }
 
 async function recoverSessionError(event: MouseEvent, retry: boolean) {

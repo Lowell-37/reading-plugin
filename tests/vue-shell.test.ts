@@ -235,6 +235,61 @@ describe('Vue reader shell', () => {
     wrapper.unmount()
   })
 
+  test('leaves Escape and unrelated keys available while a PDF session is active', async () => {
+    const pinia = createPinia()
+    const reader = useReaderStore(pinia)
+    const pdf = usePdfSessionStore(pinia)
+    pdf.record = { id: 'pdf-keyboard', name: 'manual.pdf', format: 'pdf' }
+    pdf.status = 'ready'
+    reader.applyPdfSessionSnapshot(pdfSnapshot({ status: 'ready' }))
+    reader.requestPanel('tools')
+    const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
+    const rootKeyboard = vi.fn()
+    window.addEventListener('keydown', rootKeyboard)
+
+    try {
+      const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+      window.dispatchEvent(escape)
+      const unrelated = new KeyboardEvent('keydown', { key: 'x', bubbles: true, cancelable: true })
+      window.dispatchEvent(unrelated)
+
+      expect(reader.activePanel).toBeNull()
+      expect(escape.defaultPrevented).toBe(false)
+      expect(unrelated.defaultPrevented).toBe(false)
+      expect(rootKeyboard).toHaveBeenCalledTimes(1)
+    } finally {
+      window.removeEventListener('keydown', rootKeyboard)
+      wrapper.unmount()
+    }
+  })
+
+  test('removes PDF toolbar listeners when the workspace unmounts before a remount', async () => {
+    const pinia = createPinia()
+    const reader = useReaderStore(pinia)
+    const pdf = usePdfSessionStore(pinia)
+    pdf.record = { id: 'pdf-cleanup', name: 'manual.pdf', format: 'pdf' }
+    pdf.status = 'ready'
+    pdf.zoom = 1.2
+    reader.applyPdfSessionSnapshot(pdfSnapshot({ status: 'ready', zoom: 1.2 }))
+    const setZoom = vi.spyOn(pdf, 'setZoom').mockResolvedValue(undefined)
+    const first = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
+    const removedButton = first.find<HTMLButtonElement>('#pdf-zoom-in').element
+
+    first.unmount()
+    removedButton.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+
+    expect(setZoom).not.toHaveBeenCalled()
+
+    const remount = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
+    try {
+      await remount.find('#pdf-zoom-in').trigger('click')
+      expect(setZoom).toHaveBeenCalledTimes(1)
+      expect(setZoom).toHaveBeenCalledWith(1.3)
+    } finally {
+      remount.unmount()
+    }
+  })
+
   test('keeps a PDF open failure recoverable through the Vue close action without exposing diagnostics', async () => {
     const pinia = createPinia()
     const reader = useReaderStore(pinia)
