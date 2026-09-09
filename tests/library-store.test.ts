@@ -6,6 +6,7 @@ import { createLibraryBackup, parseLibraryBackup } from '../src/library-backup.j
 import type { BookFormat, BookRecord } from '../src/core/types'
 import type { EbookSessionPort } from '../entrypoints/reader/ebook-session-port'
 import type { LegacyReaderPort } from '../entrypoints/reader/legacy-reader-port'
+import type { PdfSessionPort } from '../entrypoints/reader/pdf-session-port'
 import {
   createLibraryStore,
   type LibraryRepository,
@@ -51,18 +52,45 @@ describe('reader library store', () => {
     expect(repository.calls.list).toBe(1)
   })
 
-  test('openFile detects the shared format, saves once, then opens the saved PDF record as newly saved', async () => {
+  test('openFile sends PDF records only to the PDF session', async () => {
     const store = useStore()
+    const pdf = new RecordingPdfPort(repository.events)
     store.attachLegacyPort(port)
+    store.attachPdfPort(pdf)
     const file = bookFile('fresh.pdf', 'application/pdf')
 
     await store.openFile(file)
 
     expect(repository.calls.save).toBe(1)
     expect(repository.savedFormats).toEqual(['pdf'])
-    expect(port.opened).toHaveLength(1)
-    expect(port.opened[0]).toMatchObject({ record: { name: 'fresh.pdf' }, options: { newlySaved: true } })
-    expect(repository.events).toEqual(['save:fresh.pdf', 'open:fresh.pdf'])
+    expect(pdf.opened).toHaveLength(1)
+    expect(pdf.opened[0]).toMatchObject({ record: { name: 'fresh.pdf', format: 'pdf' } })
+    expect(port.opened).toHaveLength(0)
+    expect(repository.events).toEqual(['save:fresh.pdf', 'pdf-open:fresh.pdf'])
+  })
+
+  test('closes the active format port before opening a record in another format', async () => {
+    const ebook = new RecordingEbookPort(repository.events)
+    const pdf = new RecordingPdfPort(repository.events)
+    const first = record('first.epub', 100)
+    const next = record('next.pdf', 200)
+    const last = record('last.mobi', 300)
+    repository.seed(first, next, last)
+    const store = useStore()
+    store.attachLegacyPort(port)
+    store.attachEbookPort(ebook)
+    store.attachPdfPort(pdf)
+
+    await store.openRecord(first)
+    await store.openRecord(next)
+    await store.openRecord(last)
+
+    expect(repository.events).toEqual([
+      'update:first.epub', 'ebook-open:first.epub',
+      'update:next.pdf', 'ebook-close', 'pdf-open:next.pdf',
+      'update:last.mobi', 'pdf-close', 'ebook-open:last.mobi',
+    ])
+    expect(port.opened).toHaveLength(0)
   })
 
   test.each([
@@ -321,7 +349,7 @@ class RecordingEbookPort implements EbookSessionPort {
     this.opened.push({ record, settings })
   }
 
-  async close() {}
+  async close() { this.events.push('ebook-close') }
 
   async goTo() {}
 
@@ -330,6 +358,29 @@ class RecordingEbookPort implements EbookSessionPort {
   async setFlow() {}
 
   async applySettings() {}
+
+  async flushProgress() {}
+
+  destroy() {}
+}
+
+class RecordingPdfPort implements PdfSessionPort {
+  opened: Array<{ record: BookRecord, settings: Record<string, unknown> }> = []
+
+  constructor(private readonly events: string[]) {}
+
+  async open(record: BookRecord, settings: Record<string, unknown>) {
+    this.events.push(`pdf-open:${record.name}`)
+    this.opened.push({ record, settings })
+  }
+
+  async close() { this.events.push('pdf-close') }
+
+  async goTo() {}
+
+  async navigate() {}
+
+  async setZoom() {}
 
   async flushProgress() {}
 

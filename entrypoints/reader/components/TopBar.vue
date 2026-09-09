@@ -4,11 +4,13 @@ import { useReaderStore } from '../stores/reader'
 import { useSettingsStore } from '../stores/settings'
 import { useLibraryStore } from '../stores/library'
 import { useEbookSessionStore } from '../stores/ebook-session'
+import { usePdfSessionStore } from '../stores/pdf-session'
 
 const reader = useReaderStore()
 const settings = useSettingsStore()
 const library = useLibraryStore()
 const ebook = useEbookSessionStore()
+const pdf = usePdfSessionStore()
 const { title } = storeToRefs(reader)
 const { headerCollapsed } = storeToRefs(settings)
 
@@ -18,6 +20,11 @@ function openFilePicker() {
 
 async function closeReader() {
   reader.closePanel()
+  if (pdf.record) {
+    await pdf.close()
+    await library.load()
+    return
+  }
   if (ebook.record) {
     await ebook.close()
     await library.load()

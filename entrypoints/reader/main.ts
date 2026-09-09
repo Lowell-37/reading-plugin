@@ -10,10 +10,17 @@ import { createFoliateEbookSessionDependencies } from './ebook-session-dependenc
 import { createFoliateEbookSession } from './foliate-ebook-session'
 import { connectLegacyReaderState } from './legacy-bridge'
 import type { LegacyReaderPort } from './legacy-reader-port'
+import { createPdfSessionDependencies } from './pdf-session-dependencies'
+import { createPdfJsSession } from './pdfjs-session'
 import { runMigrationPreflight } from './migration-preflight'
 import { useMigrationStore } from './stores/migration'
 import { useLibraryStore } from './stores/library'
 import { useEbookSessionStore } from './stores/ebook-session'
+import { usePdfSessionStore } from './stores/pdf-session'
+
+interface ExtensionRuntime {
+  getURL(path: string): string
+}
 
 async function startReader() {
   const pinia = createPinia()
@@ -32,14 +39,33 @@ async function startReader() {
   await library.load()
   const bridge = connectLegacyReaderState(pinia)
   const ebookSession = useEbookSessionStore(pinia)
+  const pdfSession = usePdfSessionStore(pinia)
   const ebookHost = document.getElementById('ebook-host')
   if (!ebookHost) throw new Error('Ebook session host is unavailable')
+  const pdfViewport = document.getElementById('pdf-viewport')
+  const pdfPages = document.getElementById('pdf-pages')
+  if (!pdfViewport || !pdfPages) throw new Error('PDF session host is unavailable')
   let ebookGeneration = 0
   ebookSession.attachPort(callbacks => createFoliateEbookSession(createFoliateEbookSessionDependencies({
     ...callbacks,
     host: ebookHost,
     createProgressService: () => new ProgressService(bookRepository),
     nextGeneration: () => ++ebookGeneration,
+  })))
+  let pdfGeneration = 0
+  const runtime = (globalThis as typeof globalThis & { chrome?: { runtime?: ExtensionRuntime } }).chrome?.runtime
+  pdfSession.attachPort(callbacks => createPdfJsSession(createPdfSessionDependencies({
+    ...callbacks,
+    baseUrl: runtime?.getURL
+      ? runtime.getURL('node_modules/pdfjs-dist/')
+      : new URL('../../node_modules/pdfjs-dist/', import.meta.url).href,
+    host: { viewport: pdfViewport, pages: pdfPages },
+    createObserver: callback => new IntersectionObserver(callback, { root: pdfViewport, rootMargin: '900px 0px' }),
+    requestFrame: callback => requestAnimationFrame(callback),
+    cancelFrame: handle => cancelAnimationFrame(handle),
+    pixelRatio: () => window.devicePixelRatio,
+    createProgressService: () => new ProgressService(bookRepository),
+    nextGeneration: () => ++pdfGeneration,
   })))
   document.documentElement.dataset.legacyController = 'loading'
   // The imperative controller remains JavaScript until its engine adapters move to TypeScript.
@@ -48,6 +74,7 @@ async function startReader() {
   const port: LegacyReaderPort = legacyReader.createLegacyReaderPort(bridge.callbacks)
   bridge.attachLegacyPort(port)
   bridge.attachEbookPort(ebookSession)
+  bridge.attachPdfPort(pdfSession)
   document.documentElement.dataset.legacyController = 'ready'
 }
 

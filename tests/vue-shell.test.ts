@@ -10,7 +10,8 @@ import { useMigrationStore } from '../entrypoints/reader/stores/migration'
 import { useLibraryStore } from '../entrypoints/reader/stores/library'
 import { useEbookSessionStore } from '../entrypoints/reader/stores/ebook-session'
 import type { EbookSessionCallbacks, EbookSessionError, EbookSessionSnapshot } from '../entrypoints/reader/ebook-session-port'
-import type { PdfSessionSnapshot } from '../entrypoints/reader/pdf-session-port'
+import { usePdfSessionStore } from '../entrypoints/reader/stores/pdf-session'
+import type { PdfSessionError, PdfSessionSnapshot } from '../entrypoints/reader/pdf-session-port'
 import type { BookRecord } from '../src/core/types'
 
 afterEach(() => {
@@ -154,6 +155,113 @@ describe('Vue reader shell', () => {
     expect(close).toHaveBeenCalledTimes(1)
     expect(load).toHaveBeenCalledTimes(1)
     expect(consoleError).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  test('derives the PDF workspace from its snapshot and routes every PDF control through the PDF store', async () => {
+    const pinia = createPinia()
+    const reader = useReaderStore(pinia)
+    const pdf = usePdfSessionStore(pinia)
+    const library = useLibraryStore(pinia)
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    pdf.record = { id: 'pdf', name: 'manual.pdf', format: 'pdf' }
+    pdf.status = 'ready'
+    pdf.title = 'PDF manual'
+    pdf.page = 3
+    pdf.pageCount = 9
+    pdf.progress = 0.25
+    pdf.zoom = 1.2
+    pdf.outline = [{
+      label: 'Part one', page: 1, children: [{
+        label: 'Chapter two', page: 3, children: [{ label: 'Section four', page: 4 }],
+      }],
+    }]
+    reader.applyPdfSessionSnapshot(pdfSnapshot({
+      status: 'ready', title: pdf.title, page: pdf.page, pageCount: pdf.pageCount,
+      progress: pdf.progress, zoom: pdf.zoom, outline: pdf.outline,
+    }))
+    const goTo = vi.spyOn(pdf, 'goTo').mockResolvedValue(undefined)
+    const navigate = vi.spyOn(pdf, 'navigate').mockResolvedValue(undefined)
+    const setZoom = vi.spyOn(pdf, 'setZoom').mockResolvedValue(undefined)
+    const close = vi.spyOn(pdf, 'close').mockResolvedValue(undefined)
+    const load = vi.spyOn(library, 'load').mockResolvedValue(undefined)
+    const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
+
+    expect(wrapper.find('#reader-view').classes()).toContain('pdf-session-active')
+    expect(wrapper.find('#ebook-host').attributes('hidden')).toBeDefined()
+    expect(wrapper.find('#pdf-viewport').attributes('hidden')).toBeUndefined()
+    expect(wrapper.find('#pdf-page-jump').attributes('hidden')).toBeUndefined()
+    expect((wrapper.find('#pdf-page-input').element as HTMLInputElement).value).toBe('3')
+    expect(wrapper.find('#pdf-page-total').text()).toBe('/ 9')
+    expect(wrapper.find('#pdf-zoom-label').text()).toBe('120%')
+    expect(wrapper.findAll('#toc button').map(button => button.text())).toEqual(['Part one', 'Chapter two', 'Section four'])
+
+    const legacyControl = vi.fn()
+    for (const selector of ['#prev-button', '#next-button', '#pdf-page-input', '#progress-slider', '#pdf-zoom-in']) {
+      wrapper.find(selector).element.addEventListener(selector === '#pdf-page-input' ? 'change' : selector === '#progress-slider' ? 'input' : 'click', legacyControl)
+    }
+    const legacyKeyboard = vi.fn()
+    window.addEventListener('keydown', legacyKeyboard)
+    await wrapper.findAll('#toc button')[2]!.trigger('click')
+    await wrapper.find('#prev-button').trigger('click')
+    await wrapper.find('#next-button').trigger('click')
+    const input = wrapper.find<HTMLInputElement>('#pdf-page-input')
+    input.element.value = '7'
+    await input.trigger('change')
+    const slider = wrapper.find<HTMLInputElement>('#progress-slider')
+    slider.element.value = '0.5'
+    await slider.trigger('input')
+    await wrapper.find('#pdf-zoom-out').trigger('click')
+    await wrapper.find('#pdf-zoom-in').trigger('click')
+    await wrapper.find('#pdf-fit-width').trigger('click')
+    await wrapper.find('#home-button').trigger('click')
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }))
+
+    expect(goTo).toHaveBeenNthCalledWith(1, 4)
+    expect(goTo).toHaveBeenNthCalledWith(2, 7)
+    expect(goTo).toHaveBeenNthCalledWith(3, 5)
+    expect(navigate).toHaveBeenNthCalledWith(1, -1)
+    expect(navigate).toHaveBeenNthCalledWith(2, 1)
+    expect(navigate).toHaveBeenNthCalledWith(3, 1)
+    expect(setZoom).toHaveBeenNthCalledWith(1, 1.1)
+    expect(setZoom).toHaveBeenNthCalledWith(2, 1.3)
+    expect(setZoom).toHaveBeenNthCalledWith(3, 1)
+    expect(close).toHaveBeenCalledTimes(1)
+    expect(load).toHaveBeenCalledTimes(1)
+    expect(legacyControl).not.toHaveBeenCalled()
+    expect(legacyKeyboard).not.toHaveBeenCalled()
+    expect(consoleError).not.toHaveBeenCalled()
+    window.removeEventListener('keydown', legacyKeyboard)
+    wrapper.unmount()
+  })
+
+  test('keeps a PDF open failure recoverable through the Vue close action without exposing diagnostics', async () => {
+    const pinia = createPinia()
+    const reader = useReaderStore(pinia)
+    const pdf = usePdfSessionStore(pinia)
+    const library = useLibraryStore(pinia)
+    const unsafe = 'engine details <script>steal()</script>'
+    const error: PdfSessionError = {
+      code: 'parse', title: '无法解析 PDF', detail: '文件内容无法解析。请确认文件完整后重试。', diagnostic: unsafe,
+    }
+    pdf.record = { id: 'bad-pdf', name: 'bad.pdf', format: 'pdf' }
+    pdf.status = 'error'
+    pdf.error = error
+    reader.applyPdfSessionSnapshot(pdfSnapshot({ status: 'error', error }))
+    const close = vi.spyOn(pdf, 'close').mockResolvedValue(undefined)
+    const load = vi.spyOn(library, 'load').mockResolvedValue(undefined)
+    const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
+
+    expect(wrapper.find('#reader-view').attributes('hidden')).toBeUndefined()
+    expect(wrapper.find('#loading-view').attributes('data-state')).toBe('error')
+    expect(wrapper.find('#loading-title').text()).toBe(error.title)
+    expect(wrapper.find('#loading-detail').text()).toBe(error.detail)
+    expect(wrapper.text()).not.toContain(unsafe)
+
+    await wrapper.find('#loading-library-button').trigger('click')
+
+    expect(close).toHaveBeenCalledTimes(1)
+    expect(load).toHaveBeenCalledTimes(1)
     wrapper.unmount()
   })
 
