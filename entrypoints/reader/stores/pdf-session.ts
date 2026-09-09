@@ -102,9 +102,14 @@ export function createPdfSessionStore(initialPortFactory?: PdfSessionPortFactory
     }
 
     async function close() {
-      generation.value += 1
-      await port?.close()
-      reset(generation.value)
+      const closingPort = port
+      const closingEpoch = portEpoch
+      const closingGeneration = generation.value + 1
+      generation.value = closingGeneration
+      await closingPort?.close()
+      if (port === closingPort && portEpoch === closingEpoch && generation.value === closingGeneration) {
+        reset(closingGeneration)
+      }
     }
 
     async function goTo(nextPage: number) {

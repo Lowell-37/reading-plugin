@@ -72,6 +72,77 @@ describe('PDF session store', () => {
     expect(fake.calls).toEqual(['open', 'goTo:3', 'navigate:-1', 'setZoom:1.25', 'flushProgress'])
   })
 
+  test('projects a current error as a cloned snapshot and ignores stale errors', async () => {
+    const fake = createFakePort()
+    const useStore = createPdfSessionStore(fake.factory)
+    const pinia = createPinia()
+    const store = useStore(pinia)
+    const reader = useReaderStore(pinia)
+    const emittedOutline: PdfOutlineItem[] = [{ label: 'Chapter one', page: 2 }]
+    const emittedError = pdfError('parse')
+
+    await store.open(record('error.pdf'), {})
+    fake.emit(snapshot(1, {
+      title: 'Error PDF',
+      outline: emittedOutline,
+      page: 4,
+      pageCount: 9,
+      zoom: 1.4,
+      progress: 0.44,
+    }))
+    fake.emitError(emittedError, 1)
+    emittedOutline[0]!.label = 'Mutated chapter'
+    emittedError.detail = 'Mutated detail'
+    fake.emitError(pdfError('render'), 0)
+
+    expect(store.$state).toMatchObject({
+      status: 'error',
+      title: 'Error PDF',
+      outline: [{ label: 'Chapter one', page: 2 }],
+      page: 4,
+      pageCount: 9,
+      zoom: 1.4,
+      progress: 0.44,
+      error: pdfError('parse'),
+      generation: 1,
+    })
+    expect(store.error).not.toBe(emittedError)
+    expect(store.outline).not.toBe(emittedOutline)
+    expect(reader.$state).toMatchObject({
+      title: 'Error PDF',
+      chapter: '第 4 页 / 共 9 页',
+      progress: 0.44,
+      isReading: false,
+    })
+  })
+
+  test('does not reset a replacement port session when the original close completes', async () => {
+    const first = createFakePort()
+    const replacement = createFakePort()
+    const useStore = createPdfSessionStore(first.factory)
+    const store = useStore(createPinia())
+    let releaseClose!: () => void
+    first.setClose(() => new Promise<void>(resolve => { releaseClose = resolve }))
+
+    await store.open(record('first.pdf'), {})
+    first.emit(snapshot(1, { title: 'First PDF', page: 2, pageCount: 3, progress: 0.5 }))
+    const closing = store.close()
+    store.attachPort(replacement.factory)
+    replacement.emit(snapshot(2, { title: 'Replacement PDF', page: 6, pageCount: 8, progress: 0.75 }))
+    releaseClose()
+    await closing
+
+    expect(store.$state).toMatchObject({
+      record: { id: 'first.pdf', name: 'first.pdf', format: 'pdf' },
+      status: 'ready',
+      title: 'Replacement PDF',
+      page: 6,
+      pageCount: 8,
+      progress: 0.75,
+      generation: 2,
+    })
+  })
+
   test('ignores callbacks from a replaced port and resets only after close completes', async () => {
     const first = createFakePort()
     const second = createFakePort()
