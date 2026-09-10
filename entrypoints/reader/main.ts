@@ -1,5 +1,5 @@
 import { createPinia } from 'pinia'
-import { createApp, nextTick } from 'vue'
+import { createApp, nextTick, watch } from 'vue'
 import '../../styles/reader.css'
 import App from './App.vue'
 // @ts-expect-error JavaScript compatibility repository has no declaration file yet.
@@ -72,6 +72,19 @@ async function startReader() {
   // @ts-expect-error JavaScript compatibility controller has no declaration file yet.
   const legacyReader = await import('../../src/reader.js')
   const port: LegacyReaderPort = legacyReader.createLegacyReaderPort(bridge.callbacks)
+  watch([() => pdfSession.generation, () => pdfSession.status], () => {
+    const record = pdfSession.status === 'ready'
+      ? library.books.find(book => book.id === pdfSession.record?.id)
+      : null
+    port.attachPdfTools?.(record ? {
+      id: record.id, name: record.name, format: record.format,
+      metadata: record.metadata, annotations: record.annotations,
+    } : null, record ? {
+      pageCount: () => pdfSession.pageCount,
+      readTextLayer: page => pdfPages.querySelector<HTMLElement>(`.pdf-page[data-page="${page}"][data-state="rendered"] .textLayer`),
+      goTo: page => pdfSession.goTo(page),
+    } : undefined)
+  }, { flush: 'sync' })
   bridge.attachLegacyPort(port)
   bridge.attachEbookPort(ebookSession)
   bridge.attachPdfPort(pdfSession)

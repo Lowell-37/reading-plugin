@@ -26,7 +26,6 @@ import {
   ROOT_LIBRARY_LISTENERS,
   ROOT_UI_LISTENERS,
   WXT_ENGINE_LISTENERS,
-  WXT_PDF_NAVIGATION_LISTENERS,
   bindRegisteredListeners,
   startReaderListenerMode,
 } from './reader-listener-registry.js'
@@ -146,7 +145,6 @@ const elements = {
 const workerUrl = globalThis.chrome?.runtime?.getURL
   ? chrome.runtime.getURL('node_modules/pdfjs-dist/build/pdf.worker.min.mjs')
   : new URL('../node_modules/pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).href
-pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
 
 // Keep the AI implementation and local settings intact while the product UI is paused.
 // Set this to true to restore the existing AI controls without reconstructing state.
@@ -195,6 +193,8 @@ let legacyReaderState = {
 let controllerInitialized = false
 let controllerMode = 'root'
 let vueOwnsMigratedControls = false
+let pdfTools = null
+let pdfToolsObserver = null
 
 function emitLegacyState(state) {
   legacyReaderState = { ...legacyReaderState, ...state }
@@ -296,7 +296,7 @@ function setHeaderCollapsed(collapsed, persist = true) {
   saveSettings(settings)
 }
 function closeReader() {
-  progressService.flush().catch(console.error)
+  if (controllerMode === 'root') progressService.flush().catch(console.error)
   readerAdapter?.destroy?.()
   readerAdapter = null
   closePanels()
@@ -311,13 +311,22 @@ function closeReader() {
     ebookView?.remove()
     ebookView = null
   }
-  pdfObserver?.disconnect()
-  pdfObserver = null
-  pdfLoadingTask?.destroy?.()
-  pdfLoadingTask = null
-  pdfDocument?.destroy?.()
-  pdfDocument = null
-  pdfTextCache.clear()
+  if (controllerMode === 'root') {
+    pdfObserver?.disconnect()
+    pdfObserver = null
+    pdfLoadingTask?.destroy?.()
+    pdfLoadingTask = null
+    pdfDocument?.destroy?.()
+    pdfDocument = null
+    pdfTextCache.clear()
+  }
+  pdfToolsObserver?.disconnect()
+  pdfToolsObserver = null
+  pdfTools = null
+  if (controllerMode === 'wxt') {
+    clearTimeout(annotationRepairSave)
+    annotationRepairSave = null
+  }
   pdfSearchQuery = ''
   pendingSelection = null
   aiAbortController?.abort()
@@ -328,10 +337,15 @@ function closeReader() {
   elements.aiResultContent.textContent = ''
   elements.searchResults.replaceChildren()
   elements.searchStatus.textContent = '输入关键词搜索整本书'
-  elements.pdfToolbar.hidden = true
-  elements.pdfPageJump.hidden = true
-  if (controllerMode === 'root') elements.ebookHost.replaceChildren()
-  elements.pdfPages.replaceChildren()
+  if (controllerMode === 'root') {
+    elements.pdfToolbar.hidden = true
+    elements.pdfPageJump.hidden = true
+    elements.ebookHost.replaceChildren()
+    elements.pdfPages.replaceChildren()
+  } else {
+    elements.pdfPages.querySelectorAll('.pdf-annotation-layer').forEach(node => node.remove())
+    elements.pdfPages.querySelectorAll('.pdf-search-match').forEach(node => node.classList.remove('pdf-search-match'))
+  }
   if (coverObjectUrl) URL.revokeObjectURL(coverObjectUrl)
   coverObjectUrl = null
   tocButtons.clear()
@@ -619,7 +633,7 @@ function renderAnnotationList() {
     }
     jump.addEventListener('click', () => {
       closePanels()
-      if (annotation.kind === 'pdf') goToPdfPage(annotation.page)
+      if (annotation.kind === 'pdf') navigatePdfTool(annotation.page)
       else if (continuousEbook) continuousEbook.goTo(annotation.locator)
       else ebookView?.showAnnotation({ value: annotation.locator })
     })
@@ -755,9 +769,9 @@ async function recoverImportedEbookAnnotation(annotation, documents) {
 
 async function recoverImportedPdfAnnotation(annotation) {
   const origin = annotation.anchor.page ?? annotation.page
-  if (!Number.isInteger(origin) || !pdfDocument) return { ...annotation, anchorStatus: 'unresolved' }
+  if (!Number.isInteger(origin) || !pdfToolPageCount()) return { ...annotation, anchorStatus: 'unresolved' }
   const candidates = []
-  for (const page of nearbyLocations(origin, 2, pdfDocument.numPages, 1)) {
+  for (const page of nearbyLocations(origin, 2, pdfToolPageCount(), 1)) {
     const { content } = await getPdfPageText(page)
     candidates.push({
       location: page,
@@ -897,6 +911,11 @@ async function searchEbook(query, signal) {
 }
 
 async function getPdfPageText(pageNumber) {
+  if (controllerMode === 'wxt') {
+    const layer = pdfTools?.readTextLayer(pageNumber)
+    const items = [...(layer?.querySelectorAll('span') || [])].map(span => ({ str: span.textContent || '' }))
+    return { text: items.map(item => item.str).join(' '), content: { items }, available: Boolean(layer) }
+  }
   return pdfTextCache.get(pageNumber, async () => {
     const page = await pdfDocument.getPage(pageNumber)
     const content = await page.getTextContent()
@@ -909,10 +928,13 @@ async function searchPdf(query, signal) {
   pdfSearchQuery = query
   let count = 0
   let renderedCount = 0
-  for (let page = 1; page <= pdfDocument.numPages; page += 1) {
+  let unavailablePages = 0
+  const pageCount = pdfToolPageCount()
+  for (let page = 1; page <= pageCount; page += 1) {
     signal.throwIfAborted()
-    const wasCached = pdfTextCache.has(page)
-    const { text } = await getPdfPageText(page)
+    const wasCached = controllerMode === 'wxt' || pdfTextCache.has(page)
+    const { text, available } = await getPdfPageText(page)
+    if (available === false) unavailablePages += 1
     signal.throwIfAborted()
     const matches = findSearchMatches(text, query)
     count += matches.length
@@ -922,14 +944,15 @@ async function searchPdf(query, signal) {
       addSearchResult({
         label: `第 ${page} 页`,
         text: createSearchContext(text, match.start, match.end - match.start).text,
-        onSelect: () => goToPdfPage(page, false),
+        onSelect: () => navigatePdfTool(page, false),
       })
     }
-    elements.searchStatus.textContent = `正在搜索 ${Math.round(page / pdfDocument.numPages * 100)}%…`
+    elements.searchStatus.textContent = `正在搜索 ${Math.round(page / pageCount * 100)}%…`
     if (!wasCached) await new Promise(resolve => setTimeout(resolve, 0))
   }
   signal.throwIfAborted()
   elements.searchStatus.textContent = count ? `找到 ${count} 处结果${count > 300 ? '（显示前 300 条）' : ''}` : '没有找到匹配内容'
+  if (unavailablePages) elements.searchStatus.textContent += `（仅搜索已渲染页面，${unavailablePages} 页尚未渲染）`
   elements.pdfPages.querySelectorAll('.textLayer').forEach(markPdfSearchMatches)
 }
 
@@ -969,6 +992,37 @@ function markPdfSearchMatches(textLayer) {
   textLayer.querySelectorAll('span').forEach(span => {
     if (span.textContent.toLocaleLowerCase().includes(query)) span.classList.add('pdf-search-match')
   })
+}
+
+function pdfToolPageCount() {
+  return controllerMode === 'wxt' ? pdfTools?.pageCount() || 0 : pdfDocument?.numPages || 0
+}
+
+function navigatePdfTool(page, smooth = true) {
+  if (controllerMode === 'wxt') return pdfTools?.goTo(page)
+  return goToPdfPage(page, smooth)
+}
+
+function attachPdfTools(record, tools) {
+  closeReader()
+  if (!record || !tools) return
+  // Only annotation identity/value data is retained here, never a Blob or PDF.js resource.
+  currentRecord = { id: record.id, name: record.name, format: record.format, metadata: record.metadata, annotations: record.annotations }
+  currentFormat = 'pdf'
+  pdfTools = tools
+  loadAnnotations()
+  const refresh = wrapper => {
+    if (wrapper?.dataset.state !== 'rendered') return
+    const layer = wrapper.querySelector('.textLayer')
+    if (layer) markPdfSearchMatches(layer)
+    renderPdfAnnotationOverlays(Number(wrapper.dataset.page))
+  }
+  elements.pdfPages.querySelectorAll('.pdf-page').forEach(refresh)
+  // Observe render completion only. Tool overlays/classes do not trigger this observer.
+  pdfToolsObserver = new MutationObserver(records => {
+    for (const mutation of records) refresh(mutation.target)
+  })
+  pdfToolsObserver.observe(elements.pdfPages, { subtree: true, attributes: true, attributeFilter: ['data-state'] })
 }
 
 function updateAiSelectionUi() {
@@ -1741,7 +1795,7 @@ function bindReaderListeners(bindings, handlers, elementLookup = elements) {
 function bindEngineControls() {
   const jumpToInputPage = () => goToPdfPage(Number(elements.pdfPageInput.value))
   bindReaderListeners(controllerMode === 'wxt'
-    ? [...WXT_ENGINE_LISTENERS, ...WXT_PDF_NAVIGATION_LISTENERS]
+    ? WXT_ENGINE_LISTENERS
     : ENGINE_LISTENERS, {
     'loading-return-library': showLibrary,
     'loading-retry-file': openPicker,
@@ -1796,17 +1850,6 @@ function bindEngineControls() {
     'reader-keyboard': event => {
       if (!document.body.classList.contains('is-reading')) return
       if (!vueOwnsMigratedControls && (elements.settingsPanel.classList.contains('open') || elements.toolsPanel.classList.contains('open'))) return
-      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return
-      if (event.key === 'ArrowLeft' || event.key === 'PageUp') { event.preventDefault(); navigate(-1) }
-      if (event.key === 'ArrowRight' || event.key === 'PageDown') { event.preventDefault(); navigate(1) }
-    },
-    'pdf-reader-prev': () => { if (currentFormat === 'pdf') navigate(-1) },
-    'pdf-reader-next': () => { if (currentFormat === 'pdf') navigate(1) },
-    'pdf-reader-progress': event => {
-      if (currentFormat === 'pdf') readerAdapter?.goToFraction(Number(event.target.value))
-    },
-    'pdf-reader-keyboard': event => {
-      if (currentFormat !== 'pdf' || !document.body.classList.contains('is-reading')) return
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return
       if (event.key === 'ArrowLeft' || event.key === 'PageUp') { event.preventDefault(); navigate(-1) }
       if (event.key === 'ArrowRight' || event.key === 'PageDown') { event.preventDefault(); navigate(1) }
@@ -1875,6 +1918,12 @@ function initializeLegacyReaderController({ mode = 'root' } = {}) {
   if (controllerInitialized) return
   controllerInitialized = true
   controllerMode = mode
+  if (mode === 'root') pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
+  else elements.pdfPages.addEventListener('mouseup', event => {
+    if (!pdfTools) return
+    const wrapper = event.target.closest?.('.pdf-page')
+    if (wrapper) capturePdfSelection(wrapper)
+  })
   applySettingsToControls()
   startReaderListenerMode(mode, {
     engine: bindEngineControls,
@@ -1899,14 +1948,18 @@ export function createLegacyReaderPort(callbacks = {}) {
   }
 
   return {
-    async openRecord(record, options) {
+    async openRecord(record) {
       ensureActive()
       if (record.format !== 'pdf') throw new Error('WXT legacy reader port cannot open ebook records')
-      await openStoredBook(record, options)
+      throw new Error('WXT legacy reader port cannot open PDF records')
+    },
+    attachPdfTools(record, tools) {
+      ensureActive()
+      attachPdfTools(record, tools)
     },
     async closeSession() {
       ensureActive()
-      await showLibrary()
+      closeReader()
     },
     async applySettings(nextSettings) {
       ensureActive()
@@ -1918,7 +1971,7 @@ export function createLegacyReaderPort(callbacks = {}) {
     },
     async flushProgress() {
       ensureActive()
-      await progressService.flush()
+      if (controllerMode === 'root') await progressService.flush()
     },
     destroy() {
       if (destroyed) return

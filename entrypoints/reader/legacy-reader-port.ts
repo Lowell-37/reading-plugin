@@ -17,11 +17,21 @@ export interface LegacyReaderCallbacks {
   onLibraryChanged(): void | Promise<void>
 }
 
-/** WXT boundary for legacy PDF, search, and annotation behavior; Vue owns ebook sessions. */
+/** Value identity and rendered DOM only: the PDF session retains all engine resources. */
+export type LegacyPdfToolRecord = Pick<BookRecord, 'id' | 'name' | 'format' | 'metadata' | 'annotations'>
+
+export interface LegacyPdfTools {
+  pageCount(): number
+  readTextLayer(page: number): HTMLElement | null
+  goTo(page: number): Promise<void>
+}
+
+/** WXT legacy tools boundary; typed sessions own both PDF and ebook engines. */
 export interface LegacyReaderPort {
   openRecord(record: BookRecord, options?: { newlySaved?: boolean }): Promise<void>
   closeSession(): Promise<void>
   applySettings(settings: ReaderSettings): Promise<void>
   flushProgress(): Promise<void>
   destroy(): void
+  attachPdfTools?(record: LegacyPdfToolRecord | null, tools?: LegacyPdfTools): void
 }

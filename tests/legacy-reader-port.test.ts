@@ -7,6 +7,9 @@ import { createFoliateEbookSession } from '../entrypoints/reader/foliate-ebook-s
 import { useEbookSessionStore } from '../entrypoints/reader/stores/ebook-session'
 import { useLibraryStore } from '../entrypoints/reader/stores/library'
 import { useSettingsStore } from '../entrypoints/reader/stores/settings'
+import { usePdfSessionStore } from '../entrypoints/reader/stores/pdf-session'
+import { createPdfJsSession } from '../entrypoints/reader/pdfjs-session'
+import type { PdfJsLike } from '../entrypoints/reader/pdf-session-dependencies'
 import type { LegacyReaderState } from '../entrypoints/reader/legacy-reader-port'
 import type { BookRecord } from '../src/core/types'
 
@@ -18,28 +21,31 @@ vi.mock('../src/book-repository.js', () => ({
     list: async () => [],
     restore: async () => undefined,
     save: async () => undefined,
-    update: async () => undefined,
+    update: vi.fn(async () => undefined),
   },
 }))
 vi.mock('../node_modules/pdfjs-dist/build/pdf.mjs', () => ({
   GlobalWorkerOptions: {},
   TextLayer: class {
-    async render() {}
+    constructor(private options: { container: HTMLElement }) {}
+    async render() {
+      this.options.container.innerHTML = '<span>Session searchable text.</span>'
+    }
   },
-  getDocument: () => ({
+  getDocument: vi.fn(() => ({
     promise: Promise.resolve({
-      destroy: async () => undefined,
+      destroy: vi.fn(async () => undefined),
       getMetadata: async () => null,
       getOutline: async () => [],
       getPage: async () => ({
         getTextContent: async () => ({ items: [] }),
         getViewport: ({ scale }: { scale: number }) => ({ width: 600 * scale, height: 800 * scale }),
-        render: () => ({ promise: Promise.resolve() }),
+        render: vi.fn(() => ({ promise: Promise.resolve() })),
       }),
       numPages: 3,
     }),
     destroy: async () => undefined,
-  }),
+  })),
 }))
 
 describe('legacy reader port lifecycle', () => {
@@ -48,6 +54,7 @@ describe('legacy reader port lifecycle', () => {
 
   beforeEach(() => {
     vi.resetModules()
+    vi.clearAllMocks()
     document.documentElement.dataset.legacyController = 'loading'
     pinia = createPinia()
     setActivePinia(pinia)
@@ -79,7 +86,7 @@ describe('legacy reader port lifecycle', () => {
     vi.unstubAllGlobals()
   })
 
-  test('opening a new record resets chapter and progress from the previous session', async () => {
+  test('WXT rejects direct legacy PDF opens without loading the PDF engine', async () => {
     const states: Array<Record<string, unknown>> = []
     // @ts-expect-error JavaScript compatibility controller has no declaration file.
     const { createLegacyReaderPort } = await import('../src/reader.js')
@@ -89,23 +96,11 @@ describe('legacy reader port lifecycle', () => {
       onLibraryChanged() {},
     })
 
-    await port.openRecord(record('old.pdf', 'pdf'))
-    const viewport = document.querySelector('#pdf-viewport') as HTMLElement
-    const pages = [...document.querySelectorAll<HTMLElement>('.pdf-page')]
-    vi.spyOn(viewport, 'getBoundingClientRect').mockReturnValue(rect(0, 100))
-    pages.forEach((page, index) => vi.spyOn(page, 'getBoundingClientRect').mockReturnValue(rect(index === 1 ? 42 : 300, 0)))
-    viewport.onscroll?.(new Event('scroll'))
-    expect(states.at(-1)).toMatchObject({ chapter: '第 2 页 / 共 3 页', progress: 0.5 })
-
-    states.length = 0
-    await port.openRecord(record('next.txt', 'pdf'))
-
-    expect(states.at(-1)).toEqual({
-      title: 'next.txt',
-      chapter: '开始',
-      progress: 0,
-      isReading: true,
-    })
+    await expect(port.openRecord(record('old.pdf', 'pdf'))).rejects.toThrow('WXT legacy reader port cannot open PDF records')
+    // @ts-expect-error PDF.js ESM build has no declaration.
+    const engine = await import('../node_modules/pdfjs-dist/build/pdf.mjs')
+    expect(engine.getDocument).not.toHaveBeenCalled()
+    port.destroy()
   })
 
   test('destroy emits a final non-reading state before disconnecting callbacks', async () => {
@@ -117,8 +112,6 @@ describe('legacy reader port lifecycle', () => {
       onPanelRequest() {},
       onLibraryChanged() {},
     })
-    await port.openRecord(record('session.txt', 'pdf'))
-    expect(states.at(-1)).toMatchObject({ isReading: true })
 
     port.destroy()
 
@@ -160,10 +153,10 @@ describe('legacy reader port lifecycle', () => {
       onLibraryChanged() {},
     })
     const legacyOpen = vi.spyOn(port, 'openRecord')
-    expect(prevBinding).toHaveBeenCalledTimes(1)
-    expect(nextBinding).toHaveBeenCalledTimes(1)
-    expect(progressBinding).toHaveBeenCalledTimes(1)
-    expect(keyboardBinding).toHaveBeenCalledTimes(1)
+    expect(prevBinding).not.toHaveBeenCalled()
+    expect(nextBinding).not.toHaveBeenCalled()
+    expect(progressBinding).not.toHaveBeenCalled()
+    expect(keyboardBinding).not.toHaveBeenCalled()
     const ebook = useEbookSessionStore(pinia)
     const library = useLibraryStore(pinia)
     Object.assign(useSettingsStore(pinia).settings, { flow: 'paginated' })
@@ -228,23 +221,95 @@ describe('legacy reader port lifecycle', () => {
     port.destroy()
   })
 
-  test('WXT replacement PDF navigation bindings drive prev, next, and progress controls', async () => {
+  test('WXT library PDF session keeps legacy tools but has exclusive engine and navigation ownership', async () => {
     // @ts-expect-error JavaScript compatibility controller has no declaration file.
     const { createLegacyReaderPort } = await import('../src/reader.js')
+    const engineBindings = ['prev-button', 'next-button', 'progress-slider', 'pdf-zoom-out', 'pdf-zoom-in', 'pdf-fit-width', 'pdf-page-input']
+      .map(id => vi.spyOn(document.getElementById(id)!, 'addEventListener'))
     const port = createLegacyReaderPort({ onState() {}, onPanelRequest() {}, onLibraryChanged() {} })
-    await port.openRecord(record('controls.pdf', 'pdf'))
-
-    const page = document.querySelector<HTMLInputElement>('#pdf-page-input')!
-    document.querySelector<HTMLElement>('#next-button')?.click()
-    expect(page.value).toBe('2')
-    document.querySelector<HTMLElement>('#prev-button')?.click()
-    expect(page.value).toBe('1')
+    for (const binding of engineBindings) expect(binding).not.toHaveBeenCalled()
+    // @ts-expect-error PDF.js ESM build has no declaration.
+    const engine = await import('../node_modules/pdfjs-dist/build/pdf.mjs')
+    const pdf = usePdfSessionStore(pinia)
+    const library = useLibraryStore(pinia)
+    const pages = document.querySelector<HTMLElement>('#pdf-pages')!
+    const viewport = document.querySelector<HTMLElement>('#pdf-viewport')!
+    const progressWrites: number[] = []
+    let generation = 0
+    pdf.attachPort(callbacks => createPdfJsSession({
+      ...callbacks, baseUrl: '/', host: { pages, viewport },
+      loadPdfJs: async () => engine as PdfJsLike,
+      nextGeneration: () => ++generation,
+      createObserver: () => ({ observe() {}, disconnect() {} }),
+      requestFrame: callback => window.setTimeout(() => callback(0), 0),
+      cancelFrame: handle => window.clearTimeout(handle), pixelRatio: () => 1,
+      createProgressService: () => ({
+        schedule(_id, value) { progressWrites.push(value.page); return true },
+        flush: async () => false, cancel() {},
+      }),
+    }))
+    library.attachLegacyPort(port)
+    library.attachPdfPort(pdf)
+    const book = record('tools.pdf', 'pdf')
+    await library.openRecord(book)
+    expect(pdf.status).toBe('ready')
+    expect(engine.getDocument).toHaveBeenCalledTimes(1)
+    await vi.waitFor(() => expect(pages.querySelectorAll('.textLayer span')).toHaveLength(2))
+    port.attachPdfTools(book, {
+      pageCount: () => pdf.pageCount,
+      readTextLayer: (page: number) => pages.querySelector(`[data-page="${page}"][data-state="rendered"] .textLayer`),
+      goTo: (page: number) => pdf.goTo(page),
+    })
+    const stateCount = progressWrites.length
     const progress = document.querySelector<HTMLInputElement>('#progress-slider')!
-    progress.value = '0.5'
+    progress.value = '0'
     progress.dispatchEvent(new Event('input', { bubbles: true }))
-    expect(page.value).toBe('2')
+    expect(progressWrites).toHaveLength(stateCount + 1)
+    expect(progressWrites.at(-1)).toBe(1)
+    const search = document.querySelector<HTMLInputElement>('#search-input')!
+    search.value = 'searchable'
+    document.querySelector('#search-form')!.dispatchEvent(new Event('submit', { cancelable: true }))
+    await vi.waitFor(() => expect(document.querySelectorAll('.search-result')).toHaveLength(2))
+    expect(pages.querySelectorAll('.pdf-search-match')).toHaveLength(2)
+    expect(document.querySelector('#search-status')?.textContent).toContain('1 页尚未渲染')
+    document.querySelectorAll<HTMLElement>('.search-result')[1]!.click()
+    expect(pdf.page).toBe(2)
+    expect(progressWrites.at(-1)).toBe(2)
 
+    const page = pages.querySelector<HTMLElement>('[data-page="2"]')!
+    vi.spyOn(page, 'getBoundingClientRect').mockReturnValue(rect(0, 100))
+    Object.defineProperty(Range.prototype, 'getClientRects', { configurable: true, value: () => [rect(10, 10)] })
+    const textLayer = page.querySelector('.textLayer')!
+    const range = document.createRange()
+    range.selectNodeContents(textLayer.querySelector('span')!)
+    window.getSelection()!.removeAllRanges()
+    window.getSelection()!.addRange(range)
+    textLayer.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+    document.querySelector<HTMLElement>('#highlight-selection')!.click()
+    await vi.waitFor(() => expect(document.querySelector('.annotation-item q')?.textContent).toBe('Session searchable text.'))
+    expect(page.querySelectorAll('.pdf-annotation-layer span')).toHaveLength(1)
+    // @ts-expect-error JavaScript repository has no declaration.
+    const { bookRepository } = await import('../src/book-repository.js')
+    expect(bookRepository.update).toHaveBeenCalledWith('tools.pdf', { annotations: [expect.objectContaining({ kind: 'pdf', page: 2, text: 'Session searchable text.' })] })
+    await pdf.setZoom(1.2)
+    await vi.waitFor(() => expect(page.querySelectorAll('.pdf-annotation-layer span')).toHaveLength(1))
+    expect(page.querySelectorAll('.pdf-search-match')).toHaveLength(1)
+    expect(document.querySelectorAll('.annotation-item')).toHaveLength(1)
+    await pdf.goTo(1)
+    document.querySelector<HTMLElement>('.annotation-jump')!.click()
+    expect(pdf.page).toBe(2)
+    const count = pages.childElementCount
+    const documentResource = await engine.getDocument.mock.results[0].value.promise
+    await port.closeSession()
+    expect(pages.childElementCount).toBe(count)
+    expect(pages.querySelectorAll('.pdf-annotation-layer')).toHaveLength(0)
+    expect(pages.querySelectorAll('.pdf-search-match')).toHaveLength(0)
     port.destroy()
+    expect(pages.childElementCount).toBe(count)
+    expect(engine.getDocument).toHaveBeenCalledTimes(1)
+    expect(documentResource.destroy).not.toHaveBeenCalled()
+    pdf.destroy()
+    await vi.waitFor(() => expect(documentResource.destroy).toHaveBeenCalledTimes(1))
   })
 
   test('applying settings through the WXT port synchronizes the legacy header body class', async () => {

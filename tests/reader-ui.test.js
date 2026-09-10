@@ -131,3 +131,22 @@ test('root startup retains ebook listeners while WXT startup excludes them', asy
 function signatures(bindings) {
   return bindings.map(binding => `${binding.action}@${binding.target}:${binding.event}`)
 }
+
+test('root PDF engine bindings remain active while WXT binds only shared tools', async () => {
+  const { ENGINE_LISTENERS, WXT_ENGINE_LISTENERS, bindRegisteredListeners } = await import('../src/reader-listener-registry.js')
+  const rootOnly = ['reader-prev', 'reader-next', 'reader-progress', 'reader-keyboard',
+    'pdf-zoom-out', 'pdf-zoom-in', 'pdf-fit-width', 'pdf-page-change', 'pdf-page-keyboard']
+  const calls = []
+  const handlers = Object.fromEntries(ENGINE_LISTENERS.map(({ action }) => [action, () => calls.push(action)]))
+  const fire = bindings => bindRegisteredListeners(bindings, handlers, () => [{
+    addEventListener(_event, handler) { handler() },
+  }])
+  fire(ENGINE_LISTENERS)
+  for (const action of rootOnly) assert.ok(calls.includes(action), `root lost ${action}`)
+  calls.length = 0
+  fire(WXT_ENGINE_LISTENERS)
+  assert.deepEqual(calls.filter(action => rootOnly.includes(action)), [])
+  for (const action of ['search-submit', 'annotation-highlight', 'annotation-note', 'annotation-import-file']) {
+    assert.ok(calls.includes(action), `WXT lost ${action}`)
+  }
+})
