@@ -351,6 +351,7 @@ function closeReader() {
   tocButtons.clear()
   currentRecord = null
   currentFormat = null
+  if (controllerMode === 'wxt') loadAnnotations()
 }
 
 function applySettingsToControls() {

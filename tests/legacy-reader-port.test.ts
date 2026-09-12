@@ -312,6 +312,76 @@ describe('legacy reader port lifecycle', () => {
     await vi.waitFor(() => expect(documentResource.destroy).toHaveBeenCalledTimes(1))
   })
 
+  test('WXT clears persisted annotation rows and all tool controls after close then an invalid PDF', async () => {
+    // @ts-expect-error JavaScript compatibility controller has no declaration file.
+    const { createLegacyReaderPort } = await import('../src/reader.js')
+    // @ts-expect-error PDF.js ESM build has no declaration.
+    const engine = await import('../node_modules/pdfjs-dist/build/pdf.mjs')
+    const port = createLegacyReaderPort({ onState() {}, onPanelRequest() {}, onLibraryChanged() {} })
+    const pdf = usePdfSessionStore(pinia)
+    const pages = document.querySelector<HTMLElement>('#pdf-pages')!
+    const viewport = document.querySelector<HTMLElement>('#pdf-viewport')!
+    let generation = 0
+    pdf.attachPort(callbacks => createPdfJsSession({
+      ...callbacks, baseUrl: '/', host: { pages, viewport },
+      loadPdfJs: async () => engine as PdfJsLike,
+      nextGeneration: () => ++generation,
+      createObserver: () => ({ observe() {}, disconnect() {} }),
+      requestFrame: callback => window.setTimeout(() => callback(0), 0),
+      cancelFrame: handle => window.clearTimeout(handle), pixelRatio: () => 1,
+      createProgressService: () => ({ schedule: () => true, flush: async () => false, cancel() {} }),
+    }))
+    const saved = record('annotated.pdf', 'pdf')
+    saved.annotations = [{
+      id: 'persisted-note', kind: 'pdf', locator: 'page:1', page: 1, section: null,
+      text: 'Saved PDF quotation', note: 'Persisted note', color: '#f4c95d', rects: [], createdAt: 1, tags: [],
+    }]
+    await pdf.open(saved, {})
+    expect(pdf.status).toBe('ready')
+    port.attachPdfTools(saved, {
+      pageCount: () => pdf.pageCount,
+      readTextLayer: (page: number) => pages.querySelector(`[data-page="${page}"][data-state="rendered"] .textLayer`),
+      goTo: (page: number) => pdf.goTo(page),
+    })
+    const query = document.querySelector<HTMLInputElement>('#annotation-filter-query')!
+    const type = document.querySelector<HTMLSelectElement>('#annotation-filter-type')!
+    const sort = document.querySelector<HTMLSelectElement>('#annotation-sort')!
+    const selectAll = document.querySelector<HTMLButtonElement>('#annotation-select-all')!
+    const deleteSelected = document.querySelector<HTMLButtonElement>('#annotation-delete-selected')!
+    query.value = 'Persisted'
+    query.dispatchEvent(new Event('input'))
+    type.value = 'notes'
+    type.dispatchEvent(new Event('change'))
+    sort.value = 'oldest'
+    sort.dispatchEvent(new Event('change'))
+    selectAll.click()
+    expect(document.querySelector('.annotation-item')?.textContent).toContain('Persisted note')
+    expect(document.querySelectorAll('.annotation-select:checked')).toHaveLength(1)
+    expect(deleteSelected.disabled).toBe(false)
+
+    await port.closeSession()
+    await pdf.close()
+    engine.getDocument.mockImplementationOnce(() => { throw new Error('Invalid PDF structure') })
+    await pdf.open(record('invalid.pdf', 'pdf'), {})
+    expect(pdf.error?.code).toBe('parse')
+    port.attachPdfTools(null)
+
+    expect({
+      rows: document.querySelectorAll('.annotation-item').length,
+      count: document.querySelector('#annotation-count')?.textContent,
+      query: query.value, type: type.value, sort: sort.value,
+      selected: document.querySelectorAll('.annotation-select:checked').length,
+      selectAllDisabled: selectAll.disabled, selectAllLabel: selectAll.textContent,
+      deleteDisabled: deleteSelected.disabled, deleteLabel: deleteSelected.textContent,
+    }).toEqual({
+      rows: 0, count: '0 条', query: '', type: 'all', sort: 'newest', selected: 0,
+      selectAllDisabled: true, selectAllLabel: '全选当前', deleteDisabled: true, deleteLabel: '删除所选',
+    })
+    expect(saved.annotations[0]?.note).toBe('Persisted note')
+    port.destroy()
+    pdf.destroy()
+  })
+
   test('applying settings through the WXT port synchronizes the legacy header body class', async () => {
     // @ts-expect-error JavaScript compatibility controller has no declaration file.
     const { createLegacyReaderPort } = await import('../src/reader.js')
