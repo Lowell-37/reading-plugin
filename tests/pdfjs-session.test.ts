@@ -64,6 +64,20 @@ describe('PDF.js session adapter', () => {
     expect(harness.textLayerPages.filter(page => page === 1)).toEqual([1, 1, 1])
   })
 
+  test('renders the final rendition after multiple zoom changes queue before a frame', async () => {
+    const harness = createHarness()
+    await harness.session.open(record('rapid-zoom.pdf'), {})
+    await harness.flushFrames()
+
+    for (const zoom of [1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2, 2.1, 2.2, 2.3, 2.4, 2.5, 2.4, 2.3, 2.2, 2.1, 2, 1.9, 1.8, 1.7, 1.6, 1.5, 1.4, 1.3, 1.2, 1.1, 1, .9, .8, .7, .6])
+      await harness.session.setZoom(zoom)
+    await harness.flushFrames()
+
+    expect(harness.snapshots.at(-1)).toMatchObject({ status: 'ready', zoom: .6 })
+    expect(harness.pages.querySelector<HTMLElement>('.pdf-page[data-page="1"]')?.dataset.state).toBe('rendered')
+    expect(harness.pages.querySelector('.pdf-page[data-page="1"] .textLayer')?.textContent).toBe('text 1')
+  })
+
   test('ignores a rejected cancelled render from a previous zoom rendition', async () => {
     const harness = createHarness({ renderDeferred: true, renderRejectOnCancel: true })
     await harness.session.open(record('zoom-cancel.pdf'), {})

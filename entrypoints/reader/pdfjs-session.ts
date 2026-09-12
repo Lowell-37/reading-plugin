@@ -197,6 +197,7 @@ export function createPdfJsSession(
     const rendition = renderEpoch
     const frame = dependencies.requestFrame(() => {
       frames.delete(frame)
+      if (rendition !== renderEpoch) return
       void renderPage(page, generation, rendition)
     })
     frames.add(frame)

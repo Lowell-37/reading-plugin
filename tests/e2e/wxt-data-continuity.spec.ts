@@ -126,6 +126,95 @@ test('@wxt-data root → WXT → root preserves and extends the same local libra
   }
 })
 
+test('@wxt-data PDF root → WXT → root renders persisted pages without changing ebook data', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'quiet-reader-continuity-'))
+  const profile = join(workspace, 'edge-profile')
+  const extension = join(workspace, 'unpacked-extension')
+  try {
+    await stageRootExtension(extension)
+    const root = await launchExtension(extension, { userDataDir: profile })
+    const extensionId = root.extensionId
+    let rootState: any
+    try {
+      await root.page.locator('#file-input').setInputFiles(bookPath)
+      await expect(root.page.locator('#loading-view')).toBeHidden()
+      await root.page.locator('#toc button').nth(3).evaluate((button: HTMLElement) => button.click())
+      await selectText(await chapterFrame(root.page))
+      await root.page.locator('#tools-button').evaluate((button: HTMLElement) => button.click())
+      root.page.once('dialog', dialog => dialog.accept('Untouched ebook annotation'))
+      await root.page.locator('#note-selection').click()
+      await expect(root.page.locator('.annotation-item')).toContainText('Untouched ebook annotation')
+      await root.page.locator('#home-button').evaluate((button: HTMLElement) => button.click())
+      await expect(root.page.locator('#welcome-view')).toBeVisible()
+      await root.page.locator('#file-input').setInputFiles(resolve('tests/fixtures/books/tracemonkey.pdf'))
+      await expect(root.page.locator('#loading-view')).toBeHidden()
+      await jumpPdf(root.page, 4)
+      await renderedPdfPage(root.page, 4)
+      await root.page.locator('#home-button').evaluate((button: HTMLElement) => button.click())
+      await expect.poll(async () => (await readContinuityState(root.page)).books.find((book: any) => book.format === 'pdf')?.progress?.page).toBe(4)
+      rootState = await readContinuityState(root.page)
+      expect(rootState.books.find((book: any) => book.format === 'epub').progress.fraction).toBeGreaterThan(0)
+      expect(root.pageErrors.map(error => error.stack || error.message)).toEqual([])
+    } finally { await root.context.close() }
+
+    const rootPdf = rootState.books.find((book: any) => book.format === 'pdf')
+    const rootEbook = rootState.books.find((book: any) => book.format === 'epub')
+    let wxtState: any
+    await stageWxtExtension(extension)
+    const wxt = await launchExtension(extension, { userDataDir: profile, extensionId })
+    try {
+      expect(wxt.extensionId).toBe(extensionId)
+      await expect(wxt.page.locator('html')).toHaveAttribute('data-migration-preflight', 'ready')
+      const state = await readContinuityState(wxt.page)
+      expect(state.version).toBe(2)
+      expect(state.schema).toEqual(rootState.schema)
+      expect(state.books).toEqual(rootState.books)
+      await wxt.page.locator('.library-card').filter({ hasText: /tracemonkey/i }).click()
+      await expect(wxt.page.locator('#loading-view')).toBeHidden()
+      await renderedPdfPage(wxt.page, 4)
+      await jumpPdf(wxt.page, 9)
+      await renderedPdfPage(wxt.page, 9)
+      await wxt.page.locator('#home-button').evaluate((button: HTMLElement) => button.click())
+      await expect.poll(async () => (await readContinuityState(wxt.page)).books.find((book: any) => book.format === 'pdf')?.progress?.page).toBe(9)
+      wxtState = await readContinuityState(wxt.page)
+      expect(wxtState.books.find((book: any) => book.format === 'epub')).toEqual(rootEbook)
+      const pdf = wxtState.books.find((book: any) => book.format === 'pdf')
+      expect(pdf.blobSha256).toBe(rootPdf.blobSha256)
+      expect(pdf.annotations).toEqual(rootPdf.annotations)
+      expect(wxt.pageErrors.map(error => error.stack || error.message)).toEqual([])
+    } finally { await wxt.context.close() }
+
+    await stageRootExtension(extension)
+    const rollback = await launchExtension(extension, { userDataDir: profile, extensionId })
+    try {
+      expect(rollback.extensionId).toBe(extensionId)
+      const state = await readContinuityState(rollback.page)
+      expect(state.version).toBe(2)
+      expect(state.schema).toEqual(rootState.schema)
+      expect(state.books).toEqual(wxtState.books)
+      expect(state.books.find((book: any) => book.format === 'epub')).toEqual(rootEbook)
+      await rollback.page.locator('.library-card').filter({ hasText: /tracemonkey/i }).click()
+      await expect(rollback.page.locator('#loading-view')).toBeHidden()
+      await renderedPdfPage(rollback.page, 9)
+      expect(rollback.pageErrors.map(error => error.stack || error.message)).toEqual([])
+    } finally { await rollback.context.close() }
+  } finally { await removeOwnedWorkspace(workspace) }
+})
+
+async function jumpPdf(page: Page, value: number) {
+  await page.locator('#pdf-page-input').evaluate((input: HTMLInputElement, value) => {
+    input.value = String(value)
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+  }, value)
+}
+
+async function renderedPdfPage(page: Page, value: number) {
+  await expect(page.locator('#pdf-page-input')).toHaveValue(String(value))
+  await expect(page.locator('#pdf-page-total')).toHaveText('/ 14')
+  await expect(page.locator(`.pdf-page[data-page="${value}"] .textLayer`)).not.toBeEmpty()
+  await expect(page.locator('#chapter-label')).toContainText(`第 ${value} 页`)
+}
+
 test('@wxt-data failed WXT preflight preserves a damaged schema and blocks startup', async () => {
   const workspace = await mkdtemp(join(tmpdir(), 'quiet-reader-continuity-'))
   const profile = join(workspace, 'edge-profile')

@@ -44,12 +44,13 @@ for (const format of ['epub', 'mobi', 'azw3'] as const) {
 }
 
 test('WXT renders a real PDF text layer, page jump and zoom', async () => {
-  const { context, page } = await launchExtension(wxtExtension)
+  const { context, page, pageErrors } = await launchExtension(wxtExtension)
   try {
     await openBook(page, 'tracemonkey.pdf')
     await expect(page.locator('#ebook-host')).toBeHidden()
-    await expect(page.locator('#pdf-page-total')).not.toHaveText('/ 1')
-    await expect.poll(async () => page.locator('.textLayer span').count()).toBeGreaterThan(0)
+    await expect(page.locator('#reader-view')).toHaveClass(/pdf-session-active/)
+    await expect(page.locator('#pdf-page-total')).toHaveText('/ 14')
+    await expect(page.locator('.pdf-page[data-page="1"] .textLayer')).toContainText('Trace-based Just-in-Time')
 
     await page.locator('#pdf-zoom-in').evaluate((element: HTMLElement) => element.click())
     await expect(page.locator('#pdf-zoom-label')).toHaveText('110%')
@@ -62,6 +63,7 @@ test('WXT renders a real PDF text layer, page jump and zoom', async () => {
     await expect.poll(async () => page.locator('.pdf-page[data-page="3"] .textLayer span').count()).toBeGreaterThan(0)
     await expect(page.locator('#chapter-label')).toContainText('第 3 页')
     await expect.poll(() => progress(page)).toBeGreaterThan(initialProgress)
+    expect(pageErrors.map(error => error.stack || error.message)).toEqual([])
   } finally {
     await context.close()
   }
