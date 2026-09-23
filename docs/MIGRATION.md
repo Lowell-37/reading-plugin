@@ -117,20 +117,22 @@
 - Foliate/引擎原始异常仅保留为诊断字段；用户界面只显示按 `format`、`parse`、`restore`、`render` 代码映射的安全标题和详情。flow 切换失败由设置更新边界吸收 rejected promise，并投射为电子书错误态，不产生未处理 rejection。
 - PDF、搜索和批注仍保持根目录/旧控制器所有；WXT 不是稳定入口，直到后续阶段完成这些领域迁移。
 
-## WXT PDF 会话验收记录（2026-09-12）
+## WXT PDF 会话验收记录（最终修复复验：2026-09-23）
 
 - `npm run check`：通过。
-- `npm test`：40 个测试文件、287 项测试通过。
+- `npm test`：40 个测试文件、313 项测试通过。
 - `npm run build:wxt:verify`：通过，WXT 构建身份与运行资源契约确认 223 个文件。
 - `npm run test:e2e:wxt:baseline`：通过 6 项真实 Edge WXT 基线。
 - `npm run test:e2e:wxt:continuity`：通过 3 项真实 Edge 数据门禁；PDF 在根目录第 4 页打开后由 WXT 更新至第 9 页，回滚根目录版可渲染第 9 页，schema v2、Blob SHA-256、电子书进度和批注保持不变。
-- `tests/e2e/wxt-pdf-session.spec.ts`：通过 4 项真实 Edge PDF 会话验收，覆盖 PDF.js 文本层、页码跳转、目录、前后导航、进度滑块、60%/100%/130%/250% 实际 canvas 缩放、关闭重开、安全的损坏/密码错误以及快速连续打开。
+- `tests/e2e/wxt-pdf-session.spec.ts`：通过 5 项真实 Edge PDF 会话验收，覆盖 PDF.js 文本层、直接滚动后的页码/进度及关闭重开、页码跳转、目录、前后导航、进度滑块、60%/100%/130%/250% 实际 canvas 缩放、安全的损坏/密码错误以及快速连续打开。
 - `tests/e2e/wxt-ebook-session.spec.ts`：通过 4 项真实 Edge 电子书会话验收。
 - `npm run test:e2e`：通过 25 项根目录稳定入口 Edge 回归。
 - `npm run release`：通过；`quiet-reader-0.2.0.zip` 含 303 个文件，SHA-256 为 `e41ff40296657fef521492168b432c9ad7ebf2a4db992760a35e76f58baa6834`。
 - PDF 搜索和批注仍由根目录/旧控制器所有；WXT 不是稳定入口，直到这两个领域迁移完成。
+- 最终修复代码至 `c6e0257`：PDF adapter 用视口顶部下方最多 100px 的阅读线结算当前页，滚动监听器和帧回调按 generation 隔离；程序跳页不产生反馈回跳。LibraryStore 在持久化等待之前分配请求代次，以加载中端口为所有者，排空关闭队列后再打开最新会话。已空闲 store 的再次清理不覆盖另一格式的共享阅读投影。
+- 架构守卫已用 AST 覆盖直接 `indexedDB`、`window.indexedDB` 和 `globalThis.indexedDB`，并验证普通对象属性、字符串及 Vue 模板文本不会误报。schema v2、AI 关闭状态、CSP、根目录和 PDF 搜索/批注所有权均未改变。
 
-后续将依次接管 PDF 搜索和批注。文件选择标签的显式键盘激活，以及架构测试改用 AST/扩展导入守卫，均为非阻断的后续可访问性/测试健壮性工作。在后续阶段完成前，用户仍应加载项目根目录。
+后续将依次接管 PDF 搜索和批注。文件选择标签的显式键盘激活仍是非阻断的后续可访问性工作。在后续阶段完成前，用户仍应加载项目根目录。
 
 ## 后续产品阶段
 
