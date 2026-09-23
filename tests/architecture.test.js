@@ -60,6 +60,26 @@ test('detects direct indexedDB usage only in reader scripts', () => {
   `, 'fixture.vue')).toBe(false)
 })
 
+test.each([
+  `window.indexedDB.open('reader')`,
+  `globalThis.indexedDB.open('reader')`,
+  `window['indexedDB'].open('reader')`,
+  `globalThis?.indexedDB?.open('reader')`,
+  `<script setup lang="ts">const database = globalThis.indexedDB</script><template><p>reader</p></template>`,
+])('detects browser-global indexedDB access: %s', source => {
+  expect(usesDirectIndexedDb(source, source.startsWith('<') ? 'fixture.vue' : 'fixture.ts')).toBe(true)
+})
+
+test.each([
+  `const label = 'window.indexedDB'; const other = \`globalThis.indexedDB\``,
+  `const storage = { indexedDB: 'label' }; storage.indexedDB`,
+  `const { indexedDB: label } = storage`,
+  `service.window.indexedDB.open('reader')`,
+  `<template><p>window.indexedDB globalThis.indexedDB</p></template><script>const label = 'indexedDB'</script>`,
+])('does not mistake ordinary properties or display text for browser persistence: %s', source => {
+  expect(usesDirectIndexedDb(source, source.startsWith('<') ? 'fixture.vue' : 'fixture.ts')).toBe(false)
+})
+
 test('WXT Vue components and stores cannot import legacy, persistence, PDF, or ebook engines', async () => {
   const componentRoot = new URL('../entrypoints/reader/', import.meta.url)
   const componentPaths = (await readdir(componentRoot, { recursive: true }))
@@ -133,6 +153,13 @@ function isViewBoundaryPath(path) {
 function usesDirectIndexedDb(source, filename) {
   let found = false
   const visit = node => {
+    if ((ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node))
+      && ts.isIdentifier(node.expression)
+      && ['window', 'globalThis'].includes(node.expression.text)) {
+      const name = ts.isPropertyAccessExpression(node) ? node.name : node.argumentExpression
+      if (((ts.isIdentifier(name) && ts.isPropertyAccessExpression(node)) || ts.isStringLiteral(name))
+        && name.text === 'indexedDB') found = true
+    }
     if (ts.isIdentifier(node) && node.text === 'indexedDB' && !isIndexedDbDeclarationOrPropertyName(node)) found = true
     ts.forEachChild(node, visit)
   }
@@ -143,6 +170,8 @@ function usesDirectIndexedDb(source, filename) {
 function isIndexedDbDeclarationOrPropertyName(node) {
   return (ts.isPropertyAccessExpression(node.parent) && node.parent.name === node)
     || (ts.isVariableDeclaration(node.parent) && node.parent.name === node)
+    || (ts.isPropertyAssignment(node.parent) && node.parent.name === node)
+    || (ts.isBindingElement(node.parent) && (node.parent.propertyName === node || node.parent.name === node))
     || ts.isImportSpecifier(node.parent)
 }
 
