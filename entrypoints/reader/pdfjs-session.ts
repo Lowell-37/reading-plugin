@@ -32,11 +32,15 @@ export function createPdfJsSession(
   let currentPage = 1
   let currentZoom = DEFAULT_ZOOM
   let renderEpoch = 0
+  let scrollListener: (() => void) | null = null
+  let scrollFrame: number | null = null
+  let settledScrollTop = 0
   const frames = new Set<number>()
   const pageCache = new Map<number, PdfPageLike>()
   const renderTasks = new Map<number, ReturnType<PdfPageLike['render']>>()
 
   async function open(record: BookRecord, _settings: ReaderSettings): Promise<void> {
+    settleScroll(activeGeneration)
     const generation = dependencies.nextGeneration()
     activeGeneration = generation
     await releaseResources()
@@ -81,6 +85,7 @@ export function createPdfJsSession(
 
       buildPageWrappers(document.numPages)
       connectObserver(generation)
+      connectScroll(generation)
       currentSnapshot = {
         status: 'loading',
         title: displayText(metadata?.info?.Title) || displayText(record.metadata?.title) || titleFromName(record.name),
@@ -107,6 +112,7 @@ export function createPdfJsSession(
   }
 
   async function close(): Promise<void> {
+    settleScroll(activeGeneration)
     activeGeneration = dependencies.nextGeneration()
     await releaseResources()
   }
@@ -116,11 +122,13 @@ export function createPdfJsSession(
   }
 
   async function navigate(direction: -1 | 1): Promise<void> {
+    settleScroll(activeGeneration)
     await goToPage(currentPage + direction, activeGeneration, 'render')
   }
 
   async function setZoom(zoom: number): Promise<void> {
     if (!currentDocument || !currentSnapshot) return
+    settleScroll(activeGeneration)
     currentZoom = normalizeZoom(zoom)
     clearRenderedPages()
     currentSnapshot = { ...currentSnapshot, zoom: currentZoom }
@@ -129,6 +137,7 @@ export function createPdfJsSession(
   }
 
   async function flushProgress(): Promise<void> {
+    settleScroll(activeGeneration)
     await progressService.flush()
   }
 
@@ -146,15 +155,58 @@ export function createPdfJsSession(
       currentPage = clampPage(requestedPage, document.numPages)
       const wrapper = pageElement(currentPage)
       if (wrapper) scrollToPage(wrapper)
-      const progress = pageProgress(currentPage, document.numPages)
-      currentSnapshot = { ...currentSnapshot, page: currentPage, progress }
-      publishSnapshot(generation)
-      progressService.schedule(currentRecord?.id ?? '', { kind: 'pdf', page: currentPage, fraction: progress })
-      queueRenderAround(currentPage, generation)
+      // Native scroll events arrive after scrollTo. Ignore this position, but not a
+      // subsequent user scroll; page projection never calls scrollTo itself.
+      settledScrollTop = dependencies.host.viewport.scrollTop
+      projectPage(currentPage, generation)
       return true
     } catch (cause) {
       if (isActive(generation)) dependencies.onError(sessionError(phase, cause), generation)
       return false
+    }
+  }
+
+  function projectPage(page: number, generation: number) {
+    if (!currentDocument || !currentSnapshot || !currentRecord || !isActive(generation)) return
+    currentPage = page
+    const progress = pageProgress(page, currentDocument.numPages)
+    currentSnapshot = { ...currentSnapshot, page, progress }
+    publishSnapshot(generation)
+    progressService.schedule(currentRecord.id, { kind: 'pdf', page, fraction: progress })
+    queueRenderAround(page, generation)
+  }
+
+  function connectScroll(generation: number) {
+    const viewport = dependencies.host.viewport
+    settledScrollTop = viewport.scrollTop
+    const listener = () => {
+      if (!isActive(generation) || scrollListener !== listener || scrollFrame !== null) return
+      scrollFrame = dependencies.requestFrame(() => {
+        if (!isActive(generation) || scrollListener !== listener) return
+        scrollFrame = null
+        settleScroll(generation)
+      })
+    }
+    scrollListener = listener
+    viewport.addEventListener('scroll', listener, { passive: true })
+  }
+
+  function settleScroll(generation: number) {
+    const viewport = dependencies.host.viewport
+    if (!isActive(generation) || !currentDocument || !currentSnapshot
+      || viewport.scrollTop === settledScrollTop || viewport.clientHeight <= 0) return
+    settledScrollTop = viewport.scrollTop
+    const bounds = viewport.getBoundingClientRect()
+    // The first page crossing a reading line near the top wins (not the lazy
+    // observer's expanded root). In a page gap choose the following visible page.
+    const readingLine = bounds.top + Math.min(100, viewport.clientHeight / 4)
+    for (const wrapper of dependencies.host.pages.querySelectorAll<HTMLElement>('.pdf-page')) {
+      const rect = wrapper.getBoundingClientRect()
+      if (rect.height > 0 && rect.bottom > readingLine && rect.top < bounds.bottom) {
+        const page = Number(wrapper.dataset.page)
+        if (page !== currentPage) projectPage(page, generation)
+        return
+      }
     }
   }
 
@@ -292,6 +344,10 @@ export function createPdfJsSession(
   }
 
   function takeResources() {
+    if (scrollListener) dependencies.host.viewport.removeEventListener('scroll', scrollListener)
+    scrollListener = null
+    if (scrollFrame !== null) dependencies.cancelFrame(scrollFrame)
+    scrollFrame = null
     for (const frame of frames) dependencies.cancelFrame(frame)
     frames.clear()
     currentObserver?.disconnect()

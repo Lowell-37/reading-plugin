@@ -134,6 +134,76 @@ describe('PDF.js session adapter', () => {
     expect(harness.flushCalls).toBe(1)
   })
 
+  test('scrolling chooses the page at the reading line without scrolling back or duplicate progress', async () => {
+    const harness = createHarness()
+    await harness.session.open(record('scroll.pdf'), {})
+    harness.enableLayout()
+    await harness.flushFrames()
+    const scrollCalls = harness.scrollCalls
+
+    // Page 1 still intersects, but the reading line (100px below the top) is on page 2.
+    harness.scroll(950)
+    harness.scroll(970)
+    await harness.flushFrames()
+
+    expect(harness.snapshots.at(-1)).toMatchObject({ page: 2, progress: 0.5 })
+    expect(harness.scheduled.at(-1)).toEqual({ bookId: 'scroll.pdf', progress: { kind: 'pdf', page: 2, fraction: 0.5 } })
+    expect(harness.scrollCalls).toBe(scrollCalls)
+    const scheduledCount = harness.scheduled.length
+    harness.scroll(1000)
+    await harness.flushFrames()
+    expect(harness.scheduled).toHaveLength(scheduledCount)
+  })
+
+  test('relative navigation settles a scroll before its queued frame and ignores goTo feedback', async () => {
+    const harness = createHarness()
+    await harness.session.open(record('scroll-navigate.pdf'), {})
+    harness.enableLayout()
+    harness.scroll(1020)
+    await harness.session.navigate(1)
+    await harness.flushFrames()
+    expect(harness.snapshots.at(-1)).toMatchObject({ page: 3, progress: 1 })
+    expect(harness.scheduled.map(value => value.progress)).toEqual([
+      { kind: 'pdf', page: 1, fraction: 0 },
+      { kind: 'pdf', page: 2, fraction: 0.5 },
+      { kind: 'pdf', page: 3, fraction: 1 },
+    ])
+  })
+
+  test.each(['flushProgress', 'close', 'open'] as const)('%s settles unframed scroll progress before flushing', async operation => {
+    const harness = createHarness()
+    await harness.session.open(record('scroll-flush.pdf'), {})
+    harness.enableLayout()
+    harness.scroll(1020)
+    if (operation === 'open') await harness.session.open(record('replacement.pdf'), {})
+    else await harness.session[operation]()
+    expect(harness.flushed.at(-1)).toEqual({ bookId: 'scroll-flush.pdf', progress: { kind: 'pdf', page: 2, fraction: 0.5 } })
+  })
+
+  test.each(['close', 'destroy'] as const)('%s removes the scroll listener and frames; stale callbacks cannot update a replacement', async operation => {
+    const harness = createHarness()
+    await harness.session.open(record('old-scroll.pdf'), {})
+    harness.enableLayout()
+    await harness.flushFrames()
+    harness.scroll(1020)
+    const oldFrames = harness.pendingFrames()
+    expect(oldFrames.length).toBeGreaterThan(0)
+    await cancelSession(harness, operation)
+    harness.scroll(2040)
+    expect(harness.pendingFrames()).toHaveLength(0)
+
+    await harness.session.open(record('new-scroll.pdf'), {})
+    harness.enableLayout()
+    await harness.flushFrames()
+    const snapshots = harness.snapshots.length
+    const scheduled = harness.scheduled.length
+    harness.viewport.scrollTop = 1020
+    oldFrames.forEach(callback => callback(performance.now()))
+    expect(harness.snapshots).toHaveLength(snapshots)
+    expect(harness.scheduled).toHaveLength(scheduled)
+    expect(harness.snapshots.at(-1)).toMatchObject({ title: 'new-scroll', page: 1 })
+  })
+
   test('does not flush on the first open but flushes when replacing or closing an active session', async () => {
     const harness = createHarness()
 
@@ -313,13 +383,18 @@ function createHarness(options: {
   const snapshots: PdfSessionSnapshot[] = []
   const errors: PdfSessionError[] = []
   const scheduled: Array<{ bookId: string, progress: unknown }> = []
+  const flushed: Array<{ bookId: string, progress: unknown } | undefined> = []
   const pages = document.createElement('div')
   const viewport = document.createElement('div')
   Object.defineProperty(viewport, 'clientWidth', { value: 900 })
   let scrollError = options.scrollError
+  let scrollCalls = 0
   Object.defineProperty(viewport, 'scrollTo', {
-    value: () => {
+    value: (position: ScrollToOptions) => {
       if (scrollError) throw scrollError
+      scrollCalls += 1
+      viewport.scrollTop = position.top ?? 0
+      viewport.dispatchEvent(new Event('scroll'))
     },
   })
   const observer = new FakeObserverFactory()
@@ -367,7 +442,7 @@ function createHarness(options: {
         scheduled.push({ bookId, progress })
         return true
       },
-      async flush() { flushCalls += 1; return true },
+      async flush() { flushCalls += 1; flushed.push(scheduled.at(-1)); return true },
       cancel() {},
     }),
     onSnapshot: snapshot => { snapshots.push(snapshot) },
@@ -379,13 +454,26 @@ function createHarness(options: {
     snapshots,
     errors,
     scheduled,
+    flushed,
     pages,
+    viewport,
     observer,
     document: documentToLoad,
     loading: documentToLoad.loading,
     loaderRequests,
     textLayerPages,
     get flushCalls() { return flushCalls },
+    get scrollCalls() { return scrollCalls },
+    pendingFrames() { return [...frames.values()] },
+    scroll(top: number) { viewport.scrollTop = top; viewport.dispatchEvent(new Event('scroll')) },
+    enableLayout() {
+      Object.defineProperty(viewport, 'clientHeight', { configurable: true, value: 600 })
+      viewport.getBoundingClientRect = () => ({ top: 0, bottom: 600, height: 600 }) as DOMRect
+      for (const [index, wrapper] of [...pages.children].entries()) {
+        Object.defineProperty(wrapper, 'offsetTop', { configurable: true, value: index * 1020 })
+        wrapper.getBoundingClientRect = () => ({ top: index * 1020 - viewport.scrollTop, bottom: index * 1020 + 1000 - viewport.scrollTop, height: 1000 }) as DOMRect
+      }
+    },
     setScrollError(next: Error | undefined) { scrollError = next },
     queueDocument(next: FakePdfDocument) { queuedDocuments.push(next) },
     async flushFrames() {

@@ -7,6 +7,30 @@ const extension = resolve('.output/chrome-mv3')
 const realPdf = resolve('tests/fixtures/books/tracemonkey.pdf')
 
 test.describe('@wxt-pdf-session', () => {
+  test('direct viewport scrolling updates page and progress, survives close and reopen', async () => {
+    const { context, page, pageErrors } = await launchExtension(extension)
+    try {
+      await page.locator('#file-input').setInputFiles(realPdf)
+      await expectPdfPage(page, 1)
+      // Move only the browser scroll position: no page input, store command, or goTo.
+      await page.locator('#pdf-viewport').evaluate((viewport: HTMLElement) => {
+        const target = viewport.querySelector<HTMLElement>('.pdf-page[data-page="4"]')!
+        viewport.scrollTop += target.getBoundingClientRect().top - viewport.getBoundingClientRect().top
+      })
+      await expectPdfPage(page, 4)
+      await expect.poll(async () => Number(await page.locator('#progress-slider').inputValue())).toBeCloseTo(3 / 13, 5)
+      await click(page, '#home-button')
+      await expect(page.locator('#welcome-view')).toBeVisible()
+      await expect.poll(async () => (await pdfRecords(page))[0]?.progress?.page).toBe(4)
+      await page.reload()
+      await page.locator('.library-card').click()
+      await expectPdfPage(page, 4)
+      await click(page, '#next-button')
+      await expectPdfPage(page, 5)
+      expect(pageErrors.map(error => error.stack || error.message)).toEqual([])
+    } finally { await context.close() }
+  })
+
   test('real PDF text, page outline, navigation, zoom bounds and durable reopening', async () => {
     const { context, page, pageErrors } = await launchExtension(extension)
     try {
