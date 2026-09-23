@@ -22,7 +22,10 @@ export function createLibraryStore(dependencies: LibraryDependencies = defaultLi
     let legacyPort: LegacyReaderPort | null = null
     let ebookPort: EbookSessionPort | null = null
     let pdfPort: PdfSessionPort | null = null
-    let activePort: 'legacy' | 'ebook' | 'pdf' | null = null
+    type SessionPort = EbookSessionPort | PdfSessionPort
+    let activeOwner: { port: SessionPort, request: number } | null = null
+    let routeGeneration = 0
+    let closeBarrier: Promise<void> = Promise.resolve()
     let resolveLegacyPortReady: (port: LegacyReaderPort) => void = () => undefined
     let legacyPortReady: Promise<LegacyReaderPort>
     let resolveEbookPortReady: (port: EbookSessionPort) => void = () => undefined
@@ -88,26 +91,44 @@ export function createLibraryStore(dependencies: LibraryDependencies = defaultLi
       return format === 'epub' || format === 'mobi' || format === 'azw3'
     }
 
-    async function closeActivePort() {
-      if (activePort === 'legacy') await (await requireLegacyPort()).closeSession()
-      if (activePort === 'ebook') await (await requireEbookPort()).close()
-      if (activePort === 'pdf') await (await requirePdfPort()).close()
-      activePort = null
+    function queueClose(port: SessionPort, onlyIfUnowned = false) {
+      const closing = closeBarrier.then(async () => {
+        // A late completion may belong to a port already reused by a newer
+        // generation. Its store owns that isolation; closing it would kill the new session.
+        if (!onlyIfUnowned || activeOwner?.port !== port) await port.close()
+      })
+      closeBarrier = closing.catch(() => undefined)
+      return closing
     }
 
-    async function openRecordWithPort(record: BookRecord) {
+    function closeActivePort() {
+      const owner = activeOwner
+      activeOwner = null
+      return owner ? queueClose(owner.port) : closeBarrier
+    }
+
+    async function openRecordWithPort(record: BookRecord, request: number) {
       const nextPort = record.format === 'pdf' ? 'pdf' : isEbookFormat(record.format) ? 'ebook' : null
-      if (!nextPort) return
-      if (activePort && activePort !== nextPort) await closeActivePort()
-      if (nextPort === 'pdf') {
-        await (await requirePdfPort()).open(record, { ...useSettingsStore().settings })
-        activePort = 'pdf'
-        return
-      }
-      if (isEbookFormat(record.format)) {
-        await (await requireEbookPort()).open(record, { ...useSettingsStore().settings })
-        activePort = 'ebook'
-        return
+      if (!nextPort || request !== routeGeneration) return
+      await closeActivePort()
+      if (request !== routeGeneration) return
+      const port = await (nextPort === 'pdf' ? requirePdfPort() : requireEbookPort())
+      // Late opens can append cleanup while we await a previous close or port
+      // attachment. Drain the current barrier before giving this port new work.
+      let closing: Promise<void>
+      do {
+        closing = closeBarrier
+        await closing
+      } while (closing !== closeBarrier)
+      if (request !== routeGeneration) return
+      // Loading is ownership too: a replacement/close must cancel this port
+      // before it starts its own engine, without waiting for this open to resolve.
+      const owner = { port, request }
+      activeOwner = owner
+      try {
+        await port.open(record, { ...useSettingsStore().settings })
+      } finally {
+        if (request !== routeGeneration || activeOwner !== owner) await queueClose(port, true)
       }
     }
 
@@ -118,19 +139,22 @@ export function createLibraryStore(dependencies: LibraryDependencies = defaultLi
     async function openFile(file: File) {
       const format = detectFormat(file.name, file.type)
       if (!format) throw new Error('不支持这个文件格式')
+      const request = ++routeGeneration
       const record = await dependencies.repository.save(file, format)
       books.value = sorted([...books.value.filter(book => book.id !== record.id), record])
-      await openRecordWithPort(record)
+      await openRecordWithPort(record, request)
     }
 
     async function openRecord(record: BookRecord) {
+      const request = record.format === 'pdf' || isEbookFormat(record.format) ? ++routeGeneration : routeGeneration
       const updated = { ...record, openedAt: dependencies.now() }
       await dependencies.repository.update(record.id, { openedAt: updated.openedAt })
       books.value = sorted(books.value.map(book => book.id === record.id ? updated : book))
-      await openRecordWithPort(updated)
+      await openRecordWithPort(updated, request)
     }
 
     async function closeSession() {
+      routeGeneration += 1
       await closeActivePort()
       await load()
     }
@@ -144,8 +168,7 @@ export function createLibraryStore(dependencies: LibraryDependencies = defaultLi
       backupState.value = 'working'
       backupStatus.value = '正在校验并打包本地书库…'
       try {
-        if (activePort === 'ebook') await (await requireEbookPort()).flushProgress()
-        else if (activePort === 'pdf') await (await requirePdfPort()).flushProgress()
+        if (activeOwner) await activeOwner.port.flushProgress()
         else await (await requireLegacyPort()).flushProgress()
         const records = await dependencies.repository.list()
         books.value = sorted(records)

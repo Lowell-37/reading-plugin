@@ -12,6 +12,9 @@ import {
   type LibraryRepository,
 } from '../entrypoints/reader/stores/library'
 import { useSettingsStore } from '../entrypoints/reader/stores/settings'
+import { createPdfSessionStore } from '../entrypoints/reader/stores/pdf-session'
+import { createEbookSessionStore } from '../entrypoints/reader/stores/ebook-session'
+import { useReaderStore } from '../entrypoints/reader/stores/reader'
 
 describe('reader library store', () => {
   let repository: MemoryRepository
@@ -91,6 +94,172 @@ describe('reader library store', () => {
       'update:last.mobi', 'pdf-close', 'ebook-open:last.mobi',
     ])
     expect(port.opened).toHaveLength(0)
+  })
+
+  test.each(['pdf', 'ebook'] as const)('replaces a loading %s owner before opening the other format and ignores its late completion', async firstKind => {
+    const store = useStore()
+    const first = new DeferredSessionPort(repository.events, firstKind)
+    const nextKind = firstKind === 'pdf' ? 'ebook' : 'pdf'
+    const next = new DeferredSessionPort(repository.events, nextKind)
+    if (firstKind === 'pdf') { store.attachPdfPort(first); store.attachEbookPort(next) }
+    else { store.attachEbookPort(first); store.attachPdfPort(next) }
+    const firstRecord = record(firstKind === 'pdf' ? 'first.pdf' : 'first.epub', 100)
+    const nextRecord = record(firstKind === 'pdf' ? 'next.epub' : 'next.pdf', 200)
+    const opening = store.openRecord(firstRecord)
+    await vi.waitFor(() => expect(first.opens).toHaveLength(1))
+    const replacement = store.openRecord(nextRecord)
+    await vi.waitFor(() => expect(next.opens).toHaveLength(1))
+    expect(repository.events).toContain(`${firstKind}-close`)
+    expect(repository.events.indexOf(`${firstKind}-close`)).toBeLessThan(repository.events.indexOf(`${nextKind}-open:${nextRecord.name}`))
+    expect(first.active).toBeNull()
+    next.opens[0]!.resolve()
+    await replacement
+    first.opens[0]!.resolve()
+    await opening
+    expect(first.active).toBeNull()
+    expect(next.active).toBe(nextRecord.id)
+    await store.backup()
+    expect(repository.events).toContain(`${nextKind}-flush`)
+    expect(repository.events).not.toContain(`${firstKind}-flush`)
+    await store.closeSession()
+    expect(next.active).toBeNull()
+  })
+
+  test.each(['pdf', 'ebook'] as const)('late %s cleanup preserves the actual replacement store and shared reader projection', async firstKind => {
+    const store = useStore()
+    const oldOpen = deferred()
+    const pdf = createPdfSessionStore(callbacks => ({
+      async open() {
+        if (firstKind === 'pdf') await oldOpen.promise
+        callbacks.onSnapshot({ status: 'ready', title: 'Current PDF', outline: [], page: 1, pageCount: 3, zoom: 1, progress: 0, error: null, generation: 1 })
+      },
+      async close() {}, async flushProgress() {}, async goTo() {}, async navigate() {}, async setZoom() {}, destroy() {},
+    }))()
+    const ebook = createEbookSessionStore(callbacks => ({
+      async open() {
+        if (firstKind === 'ebook') await oldOpen.promise
+        callbacks.onSnapshot({ status: 'ready', title: 'Current Ebook', toc: [], chapter: 'One', progress: 0, flow: 'paginated', error: null, generation: 1 })
+      },
+      async close() {}, async flushProgress() {}, async goTo() {}, async navigate() {}, async setFlow() {}, async applySettings() {}, destroy() {},
+    }))()
+    store.attachPdfPort(pdf)
+    store.attachEbookPort(ebook)
+    const first = store.openRecord(record(firstKind === 'pdf' ? 'old.pdf' : 'old.epub', 1))
+    await vi.waitFor(() => expect(firstKind === 'pdf' ? pdf.status : ebook.status).toBe('loading'))
+    await store.openRecord(record(firstKind === 'pdf' ? 'new.epub' : 'new.pdf', 2))
+    const title = firstKind === 'pdf' ? 'Current Ebook' : 'Current PDF'
+    expect(useReaderStore().title).toBe(title)
+    oldOpen.resolve()
+    await first
+    expect(useReaderStore().isReading).toBe(true)
+    expect(useReaderStore().title).toBe(title)
+    expect(firstKind === 'pdf' ? pdf.record : ebook.record).toBeNull()
+    expect(firstKind === 'pdf' ? ebook.status : pdf.status).toBe('ready')
+  })
+
+  test('close invalidates an opening request and closes resources arriving after cancellation', async () => {
+    const store = useStore()
+    const pdf = new DeferredSessionPort(repository.events, 'pdf')
+    store.attachPdfPort(pdf)
+    const opening = store.openRecord(record('pending.pdf', 100))
+    await vi.waitFor(() => expect(pdf.opens).toHaveLength(1))
+    await store.closeSession()
+    expect(pdf.active).toBeNull()
+    pdf.opens[0]!.resolve()
+    await opening
+    expect(pdf.active).toBeNull()
+  })
+
+  test('latest route wins while an old owner close is pending, and stale completion does not close a reused port', async () => {
+    const store = useStore()
+    const pdf = new DeferredSessionPort(repository.events, 'pdf')
+    const ebook = new DeferredSessionPort(repository.events, 'ebook')
+    store.attachPdfPort(pdf)
+    store.attachEbookPort(ebook)
+    const first = store.openRecord(record('first.pdf', 100))
+    await vi.waitFor(() => expect(pdf.opens).toHaveLength(1))
+    const closing = deferred()
+    pdf.closeGate = closing.promise
+    const second = store.openRecord(record('intermediate.epub', 200))
+    await vi.waitFor(() => expect(repository.events).toContain('pdf-close'))
+    const latest = store.openRecord(record('latest.pdf', 300))
+    closing.resolve()
+    await vi.waitFor(() => expect(pdf.opens).toHaveLength(2))
+    pdf.opens[1]!.resolve()
+    await latest
+    await second
+    pdf.opens[0]!.resolve()
+    await first
+    expect(ebook.opens).toHaveLength(0)
+    expect(pdf.active).toBe('id-latest.pdf')
+    await store.backup()
+    expect(repository.events).toContain('pdf-flush')
+  })
+
+  test('an earlier repository write cannot route after a later request or a close', async () => {
+    const store = useStore()
+    const pdf = new RecordingPdfPort(repository.events)
+    const ebook = new RecordingEbookPort(repository.events)
+    store.attachPdfPort(pdf)
+    store.attachEbookPort(ebook)
+    const saved = deferred()
+    const save = repository.save.bind(repository)
+    vi.spyOn(repository, 'save').mockImplementation(async (...args) => { await saved.promise; return save(...args) })
+    const first = store.openFile(bookFile('slow.pdf'))
+    await store.openRecord(record('latest.epub', 300))
+    saved.resolve()
+    await first
+    expect(pdf.opened).toHaveLength(0)
+    expect(ebook.opened).toHaveLength(1)
+
+    const update = deferred()
+    vi.spyOn(repository, 'update').mockImplementation(async () => { await update.promise })
+    const after = store.openRecord(record('late.pdf', 400))
+    await store.closeSession()
+    update.resolve()
+    await after
+    expect(pdf.opened).toHaveLength(0)
+  })
+
+  test('a reused port waits for late cleanup appended while the route is already waiting to close', async () => {
+    const store = useStore()
+    const ebook = new DeferredSessionPort(repository.events, 'ebook')
+    const pdf = new DeferredSessionPort(repository.events, 'pdf')
+    store.attachEbookPort(ebook)
+    store.attachPdfPort(pdf)
+    const first = store.openRecord(record('old.epub', 1))
+    await vi.waitFor(() => expect(ebook.opens).toHaveLength(1))
+    const second = store.openRecord(record('middle.pdf', 2))
+    await vi.waitFor(() => expect(pdf.opens).toHaveLength(1))
+    pdf.opens[0]!.resolve()
+    await second
+    const pdfClose = deferred()
+    pdf.closeGate = pdfClose.promise
+    const latest = store.openRecord(record('latest.epub', 3))
+    await vi.waitFor(() => expect(repository.events).toContain('pdf-close'))
+    const lateCleanup = deferred()
+    ebook.closeGate = lateCleanup.promise
+    ebook.opens[0]!.resolve()
+    pdfClose.resolve()
+    await vi.waitFor(() => expect(repository.events.filter(event => event === 'ebook-close')).toHaveLength(2))
+    expect(ebook.opens).toHaveLength(1)
+    lateCleanup.resolve()
+    await first
+    await vi.waitFor(() => expect(ebook.opens).toHaveLength(2))
+    ebook.opens[1]!.resolve()
+    await latest
+    expect(ebook.active).toBe('id-latest.epub')
+  })
+
+  test('close invalidates a request still waiting for its port attachment', async () => {
+    const store = useStore()
+    const pending = store.openFile(bookFile('startup.pdf'))
+    await vi.waitFor(() => expect(repository.calls.save).toBe(1))
+    await store.closeSession()
+    const pdf = new RecordingPdfPort(repository.events)
+    store.attachPdfPort(pdf)
+    await pending
+    expect(pdf.opened).toHaveLength(0)
   })
 
   test.each([
@@ -384,6 +553,39 @@ class RecordingPdfPort implements PdfSessionPort {
 
   async flushProgress() {}
 
+  destroy() {}
+}
+
+function deferred() {
+  let resolve!: () => void
+  const promise = new Promise<void>(done => { resolve = done })
+  return { promise, resolve }
+}
+
+class DeferredSessionPort implements PdfSessionPort, EbookSessionPort {
+  opens: ReturnType<typeof deferred>[] = []
+  active: string | null = null
+  closeGate: Promise<void> | null = null
+  private generation = 0
+  constructor(private readonly events: string[], private readonly kind: string) {}
+  async open(record: BookRecord) {
+    const generation = ++this.generation
+    const pending = deferred()
+    this.opens.push(pending)
+    this.events.push(`${this.kind}-open:${record.name}`)
+    this.active = record.id
+    await pending.promise
+    // Like a store, a newer open supersedes older callbacks. This deliberately
+    // allows a late completion after close, so the routing owner must clean it up.
+    if (generation === this.generation) this.active = record.id
+  }
+  async close() { this.events.push(`${this.kind}-close`); await this.closeGate; this.active = null }
+  async flushProgress() { this.events.push(`${this.kind}-flush`) }
+  async goTo() {}
+  async navigate() {}
+  async setZoom() {}
+  async setFlow() {}
+  async applySettings() {}
   destroy() {}
 }
 

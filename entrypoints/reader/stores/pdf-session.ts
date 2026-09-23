@@ -102,12 +102,13 @@ export function createPdfSessionStore(initialPortFactory?: PdfSessionPortFactory
     }
 
     async function close() {
+      const hadSession = record.value !== null
       const closingPort = port
       const closingEpoch = portEpoch
       const closingGeneration = generation.value + 1
       generation.value = closingGeneration
       await closingPort?.close()
-      if (port === closingPort && portEpoch === closingEpoch && generation.value === closingGeneration) {
+      if (hadSession && port === closingPort && portEpoch === closingEpoch && generation.value === closingGeneration) {
         reset(closingGeneration)
       }
     }

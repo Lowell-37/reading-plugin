@@ -101,9 +101,10 @@ export function createEbookSessionStore(initialPortFactory?: EbookSessionPortFac
     }
 
     async function close() {
+      const hadSession = record.value !== null
       generation.value += 1
       await port?.close()
-      reset(generation.value)
+      if (hadSession) reset(generation.value)
     }
 
     async function goTo(target: unknown) {
