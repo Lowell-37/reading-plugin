@@ -295,7 +295,9 @@ function setHeaderCollapsed(collapsed, persist = true) {
   settings.headerCollapsed = collapsed
   saveSettings(settings)
 }
-function closeReader() {
+function closeReader(options = {}) {
+  const preserveSearchUi = options.preserveSearchUi
+    ?? (controllerMode === 'wxt' && currentFormat === 'pdf')
   if (controllerMode === 'root') progressService.flush().catch(console.error)
   readerAdapter?.destroy?.()
   readerAdapter = null
@@ -335,8 +337,10 @@ function closeReader() {
   elements.selectionAiMenu.hidden = true
   elements.aiResult.hidden = true
   elements.aiResultContent.textContent = ''
-  elements.searchResults.replaceChildren()
-  elements.searchStatus.textContent = '输入关键词搜索整本书'
+  if (!preserveSearchUi) {
+    elements.searchResults.replaceChildren()
+    elements.searchStatus.textContent = '输入关键词搜索整本书'
+  }
   if (controllerMode === 'root') {
     elements.pdfToolbar.hidden = true
     elements.pdfPageJump.hidden = true
@@ -959,6 +963,7 @@ async function searchPdf(query, signal) {
 
 async function runSearch(event) {
   event?.preventDefault()
+  if (controllerMode === 'wxt' && currentFormat === 'pdf') return
   const query = elements.searchInput.value.trim()
   searchAbortController?.abort()
   searchAbortController = null
@@ -1005,7 +1010,7 @@ function navigatePdfTool(page, smooth = true) {
 }
 
 function attachPdfTools(record, tools) {
-  closeReader()
+  closeReader({ preserveSearchUi: controllerMode === 'wxt' })
   if (!record || !tools) return
   // Only annotation identity/value data is retained here, never a Blob or PDF.js resource.
   currentRecord = { id: record.id, name: record.name, format: record.format, metadata: record.metadata, annotations: record.annotations }
@@ -1014,8 +1019,6 @@ function attachPdfTools(record, tools) {
   loadAnnotations()
   const refresh = wrapper => {
     if (wrapper?.dataset.state !== 'rendered') return
-    const layer = wrapper.querySelector('.textLayer')
-    if (layer) markPdfSearchMatches(layer)
     renderPdfAnnotationOverlays(Number(wrapper.dataset.page))
   }
   elements.pdfPages.querySelectorAll('.pdf-page').forEach(refresh)
@@ -1977,7 +1980,7 @@ export function createLegacyReaderPort(callbacks = {}) {
     destroy() {
       if (destroyed) return
       destroyed = true
-      closeReader()
+      closeReader({ preserveSearchUi: controllerMode === 'wxt' })
       emitLegacyState({ title: '未命名书籍', chapter: '开始', progress: 0, isReading: false })
       legacyCallbacks = emptyLegacyCallbacks
     },

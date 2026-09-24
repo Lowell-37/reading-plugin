@@ -11,6 +11,7 @@ import { useLibraryStore } from '../entrypoints/reader/stores/library'
 import { useEbookSessionStore } from '../entrypoints/reader/stores/ebook-session'
 import type { EbookSessionCallbacks, EbookSessionError, EbookSessionSnapshot } from '../entrypoints/reader/ebook-session-port'
 import { usePdfSessionStore } from '../entrypoints/reader/stores/pdf-session'
+import { usePdfSearchStore } from '../entrypoints/reader/stores/pdf-search'
 import type { PdfSessionError, PdfSessionSnapshot } from '../entrypoints/reader/pdf-session-port'
 import type { BookRecord } from '../src/core/types'
 
@@ -232,6 +233,62 @@ describe('Vue reader shell', () => {
     expect(legacyKeyboard).not.toHaveBeenCalled()
     expect(consoleError).not.toHaveBeenCalled()
     window.removeEventListener('keydown', legacyKeyboard)
+    wrapper.unmount()
+  })
+
+  test('Vue exclusively handles PDF search and renders navigable results', async () => {
+    const pinia = createPinia()
+    const pdf = usePdfSessionStore(pinia)
+    const search = usePdfSearchStore(pinia)
+    pdf.record = { id: 'search-pdf', name: 'search.pdf', format: 'pdf' }
+    pdf.status = 'ready'
+    pdf.generation = 1
+    pdf.pageCount = 1
+    pdf.zoom = 1
+    const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
+    const layer = document.createElement('div')
+    layer.className = 'textLayer'
+    const span = document.createElement('span')
+    span.textContent = 'Before. A needle sentence. After.'
+    layer.append(span)
+    document.querySelector('#pdf-pages')!.append(layer)
+    vi.spyOn(pdf, 'readRenderedTextLayer').mockReturnValue(layer)
+    const goTo = vi.spyOn(pdf, 'goTo').mockResolvedValue(undefined)
+    const legacySubmit = vi.fn()
+    const form = wrapper.find<HTMLFormElement>('#search-form').element
+    form.addEventListener('submit', legacySubmit)
+    await wrapper.find<HTMLInputElement>('#search-input').setValue('needle')
+    const event = new Event('submit', { bubbles: true, cancelable: true })
+
+    form.dispatchEvent(event)
+
+    expect(event.defaultPrevented).toBe(true)
+    expect(legacySubmit).not.toHaveBeenCalled()
+    await vi.waitFor(() => expect(search.status).toBe('ready'))
+    expect(wrapper.find('#search-status').text()).toBe('找到 1 处结果')
+    expect(wrapper.find('.search-result strong').text()).toBe('第 1 页')
+    expect(wrapper.find('.search-result span').text()).toBe('A needle sentence.')
+    await wrapper.find('.search-result').trigger('click')
+    expect(goTo).toHaveBeenCalledWith(1)
+    wrapper.unmount()
+  })
+
+  test('leaves ebook search submissions for the legacy controller', async () => {
+    const pinia = createPinia()
+    const ebook = useEbookSessionStore(pinia)
+    ebook.record = { id: 'ebook-search', name: 'book.epub', format: 'epub' }
+    ebook.status = 'ready'
+    const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
+    const legacySubmit = vi.fn()
+    const form = wrapper.find<HTMLFormElement>('#search-form').element
+    form.addEventListener('submit', legacySubmit)
+    await wrapper.find<HTMLInputElement>('#search-input').setValue('chapter')
+    const event = new Event('submit', { bubbles: true, cancelable: true })
+
+    form.dispatchEvent(event)
+
+    expect(event.defaultPrevented).toBe(false)
+    expect(legacySubmit).toHaveBeenCalledTimes(1)
     wrapper.unmount()
   })
 

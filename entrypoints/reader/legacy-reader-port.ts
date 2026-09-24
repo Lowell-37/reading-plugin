@@ -20,7 +20,7 @@ export interface LegacyReaderCallbacks {
 /** Value identity and rendered DOM only: the PDF session retains all engine resources. */
 export type LegacyPdfToolRecord = Pick<BookRecord, 'id' | 'name' | 'format' | 'metadata' | 'annotations'>
 
-export interface LegacyPdfTools {
+export interface LegacyPdfAnnotationTools {
   pageCount(): number
   readTextLayer(page: number): HTMLElement | null
   goTo(page: number): Promise<void>
@@ -33,5 +33,5 @@ export interface LegacyReaderPort {
   applySettings(settings: ReaderSettings): Promise<void>
   flushProgress(): Promise<void>
   destroy(): void
-  attachPdfTools?(record: LegacyPdfToolRecord | null, tools?: LegacyPdfTools): void
+  attachPdfTools?(record: LegacyPdfToolRecord | null, tools?: LegacyPdfAnnotationTools): void
 }

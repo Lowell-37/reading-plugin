@@ -1,17 +1,72 @@
 <script setup lang="ts">
 import { storeToRefs } from 'pinia'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useReaderStore } from '../stores/reader'
+import { usePdfSessionStore } from '../stores/pdf-session'
+import { usePdfSearchStore } from '../stores/pdf-search'
 
 const reader = useReaderStore()
 const { activePanel } = storeToRefs(reader)
+const pdf = usePdfSessionStore()
+const pdfSearch = usePdfSearchStore()
+const { record: pdfRecord, status: pdfStatus, generation, zoom } = storeToRefs(pdf)
+const { results, total, unavailablePages, status: pdfSearchStatus, error } = storeToRefs(pdfSearch)
+const searchQuery = ref('')
+const pdfSessionActive = computed(() => pdfRecord.value !== null)
+const searchStatus = computed(() => {
+  if (pdfSearchStatus.value === 'searching') return '正在搜索…'
+  if (pdfSearchStatus.value === 'error') return error.value ?? '搜索失败，请换一个关键词重试'
+  if (pdfSearchStatus.value !== 'ready') return '输入关键词搜索整本书'
+  const message = total.value
+    ? `找到 ${total.value} 处结果${total.value > 300 ? '（显示前 300 条）' : ''}`
+    : '没有找到匹配内容'
+  return unavailablePages.value
+    ? `${message}（仅搜索已渲染页面，${unavailablePages.value} 页尚未渲染）`
+    : message
+})
+
+function handleSearchSubmit(event: Event) {
+  if (!pdfSessionActive.value || pdfStatus.value !== 'ready') return
+  event.preventDefault()
+  event.stopImmediatePropagation()
+  void pdfSearch.run(searchQuery.value)
+}
+
+watch(
+  [generation, pdfStatus, zoom, () => pdfRecord.value?.id ?? null],
+  ([nextGeneration, nextStatus, nextZoom, recordId]) => {
+    pdfSearch.synchronizeSession({
+      generation: nextGeneration,
+      status: nextStatus,
+      zoom: nextZoom,
+      recordId,
+    })
+    if (pdfSessionActive.value && pdfSearch.query === '') searchQuery.value = ''
+  },
+  { immediate: true },
+)
+
+onMounted(() => {
+  pdfSearch.attachRoot(document.getElementById('pdf-pages'))
+})
+
+onUnmounted(() => {
+  pdfSearch.attachRoot(null)
+})
 </script>
 
 <template>
   <aside id="tools-panel" class="tools-panel" :class="{ open: activePanel === 'tools' }" aria-label="搜索与批注">
     <div class="panel-header"><div><p class="eyebrow">TOOLS</p><h2>搜索与批注</h2></div><button id="close-tools" class="icon-button" aria-label="关闭工具" @click="reader.closePanel()">×</button></div>
-    <form id="search-form" class="search-form"><input id="search-input" type="search" placeholder="搜索书中内容" autocomplete="off"><button type="submit">搜索</button></form>
-    <div id="search-status" class="search-status">输入关键词搜索整本书</div>
-    <div id="search-results" class="search-results" />
+    <form id="search-form" class="search-form" @submit="handleSearchSubmit"><input id="search-input" v-model="searchQuery" type="search" placeholder="搜索书中内容" autocomplete="off"><button type="submit">搜索</button></form>
+    <div id="search-status" class="search-status" aria-live="polite">{{ pdfSessionActive ? searchStatus : '输入关键词搜索整本书' }}</div>
+    <div id="search-results" class="search-results">
+      <template v-if="pdfSessionActive">
+        <button v-for="result in results" :key="`${result.page}:${result.start}:${result.end}`" class="search-result" type="button" @click="pdfSearch.goToResult(result)">
+          <strong>第 {{ result.page }} 页</strong><span>{{ result.context }}</span>
+        </button>
+      </template>
+    </div>
     <div class="tool-divider" />
     <section class="ai-section" aria-labelledby="ai-heading" hidden>
       <div class="annotation-heading"><strong id="ai-heading">AI 阅读助手</strong><button id="ai-settings-toggle" class="text-button" type="button">接口设置</button></div>

@@ -269,12 +269,9 @@ describe('legacy reader port lifecycle', () => {
     const search = document.querySelector<HTMLInputElement>('#search-input')!
     search.value = 'searchable'
     document.querySelector('#search-form')!.dispatchEvent(new Event('submit', { cancelable: true }))
-    await vi.waitFor(() => expect(document.querySelectorAll('.search-result')).toHaveLength(2))
-    expect(pages.querySelectorAll('.pdf-search-match')).toHaveLength(2)
-    expect(document.querySelector('#search-status')?.textContent).toContain('1 页尚未渲染')
-    document.querySelectorAll<HTMLElement>('.search-result')[1]!.click()
-    expect(pdf.page).toBe(2)
-    expect(progressWrites.at(-1)).toBe(2)
+    await Promise.resolve()
+    expect(document.querySelectorAll('.search-result')).toHaveLength(0)
+    expect(pages.querySelectorAll('.pdf-search-match')).toHaveLength(0)
 
     const page = pages.querySelector<HTMLElement>('[data-page="2"]')!
     vi.spyOn(page, 'getBoundingClientRect').mockReturnValue(rect(0, 100))
@@ -293,7 +290,7 @@ describe('legacy reader port lifecycle', () => {
     expect(bookRepository.update).toHaveBeenCalledWith('tools.pdf', { annotations: [expect.objectContaining({ kind: 'pdf', page: 2, text: 'Session searchable text.' })] })
     await pdf.setZoom(1.2)
     await vi.waitFor(() => expect(page.querySelectorAll('.pdf-annotation-layer span')).toHaveLength(1))
-    expect(page.querySelectorAll('.pdf-search-match')).toHaveLength(1)
+    expect(page.querySelectorAll('.pdf-search-match')).toHaveLength(0)
     expect(document.querySelectorAll('.annotation-item')).toHaveLength(1)
     await pdf.goTo(1)
     document.querySelector<HTMLElement>('.annotation-jump')!.click()

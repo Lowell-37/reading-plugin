@@ -103,10 +103,10 @@ test('PDF.js adapter files own no persistence, search, annotation, or Vue depend
   }
 })
 
-test('legacy PDF tools expose only rendered DOM reads and typed numeric navigation, never engine resources', async () => {
+test('legacy PDF annotation tools expose only rendered DOM reads and typed numeric navigation, never engine resources', async () => {
   const source = await readFile(new URL('../entrypoints/reader/legacy-reader-port.ts', import.meta.url), 'utf8')
   const script = createScriptSourceFile(source, 'legacy-reader-port.ts')
-  const tools = script.statements.find(node => ts.isInterfaceDeclaration(node) && node.name.text === 'LegacyPdfTools')
+  const tools = script.statements.find(node => ts.isInterfaceDeclaration(node) && node.name.text === 'LegacyPdfAnnotationTools')
   expect(tools).toBeDefined()
   expect(tools.members.map(member => member.name.getText(script))).toEqual(['pageCount', 'readTextLayer', 'goTo'])
   expect(collectModuleSpecifiers(source, 'legacy-reader-port.ts').some(specifier =>

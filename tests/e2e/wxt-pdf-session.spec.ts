@@ -79,6 +79,49 @@ test.describe('@wxt-pdf-session', () => {
     } finally { await context.close() }
   })
 
+  test('Vue PDF search cancels stale queries, navigates, and clears across zoom and reopen', async () => {
+    const { context, page, pageErrors } = await launchExtension(extension)
+    try {
+      await page.locator('#file-input').setInputFiles(realPdf)
+      await expectPdfPage(page, 1)
+      await expect(page.locator('.pdf-page[data-page="2"] .textLayer')).toContainText('TraceMonkey supports')
+      await click(page, '#tools-button')
+
+      await submitPdfSearch(page, 'TraceMonkey supports')
+      await expect(page.locator('#search-status')).toHaveText(/找到 \d+ 处结果/)
+      const results = page.locator('#search-results .search-result')
+      await expect(results.first().locator('strong')).toHaveText('第 2 页')
+      await expect(results.first().locator('span')).toHaveText(
+        'TraceMonkey supports all the JavaScript features of Spi-derMonkey, with a 2x-20x speedup for traceable programs.',
+      )
+      await results.first().click()
+      await expectPdfPage(page, 2)
+
+      await submitPdfSearch(page, 'Dynamic languages')
+      await submitPdfSearch(page, 'TraceMonkey supports')
+      await expect(page.locator('#search-status')).toHaveText(/找到 \d+ 处结果/)
+      expect(await results.locator('span').allTextContents()).not.toContain('Dynamic languages')
+
+      await click(page, '#pdf-zoom-in')
+      await click(page, '#pdf-zoom-in')
+      await click(page, '#pdf-zoom-in')
+      await expect(page.locator('#pdf-zoom-label')).toHaveText('130%')
+      await expect(page.locator('#search-results .search-result')).toHaveCount(0)
+      await expect(page.locator('.pdf-search-match')).toHaveCount(0)
+
+      await expect(page.locator('.pdf-page[data-page="2"] .textLayer')).toContainText('TraceMonkey supports')
+      await submitPdfSearch(page, 'TraceMonkey supports')
+      await expect(page.locator('#search-results .search-result').first()).toBeVisible()
+      await click(page, '#home-button')
+      await expect(page.locator('#welcome-view')).toBeVisible()
+      await page.locator('.library-card').click()
+      await expectPdfPage(page, 2)
+      await expect(page.locator('#search-results .search-result')).toHaveCount(0)
+      await expect(page.locator('.pdf-search-match')).toHaveCount(0)
+      expect(pageErrors.map(error => error.stack || error.message)).toEqual([])
+    } finally { await context.close() }
+  })
+
   for (const kind of ['malformed', 'password'] as const) {
     test(`${kind} PDF displays only a safe error and can recover`, async () => {
       const { context, page, pageErrors } = await launchExtension(extension)
@@ -148,6 +191,13 @@ async function jump(page: Page, number: number) {
     input.value = String(value)
     input.dispatchEvent(new Event('change', { bubbles: true }))
   }, number)
+}
+
+async function submitPdfSearch(page: Page, query: string) {
+  await page.locator('#search-input').fill(query)
+  await page.locator('#search-form').evaluate((form: HTMLFormElement) => {
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+  })
 }
 
 async function expectPdfPage(page: Page, number: number) {

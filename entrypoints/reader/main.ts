@@ -81,7 +81,7 @@ async function startReader() {
       metadata: record.metadata, annotations: record.annotations,
     } : null, record ? {
       pageCount: () => pdfSession.pageCount,
-      readTextLayer: page => pdfPages.querySelector<HTMLElement>(`.pdf-page[data-page="${page}"][data-state="rendered"] .textLayer`),
+      readTextLayer: page => pdfSession.readRenderedTextLayer(page),
       goTo: page => pdfSession.goTo(page),
     } : undefined)
   }, { flush: 'sync' })
