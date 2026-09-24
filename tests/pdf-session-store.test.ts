@@ -72,6 +72,17 @@ describe('PDF session store', () => {
     expect(fake.calls).toEqual(['open', 'goTo:3', 'navigate:-1', 'setZoom:1.25', 'flushProgress'])
   })
 
+  test('proxies only rendered text layers from the active typed port', () => {
+    const fake = createFakePort()
+    const layer = { className: 'textLayer' } as HTMLElement
+    fake.renderedLayers.set(2, layer)
+    const store = createPdfSessionStore(fake.factory)(createPinia())
+
+    expect(store.readRenderedTextLayer(2)).toBe(layer)
+    expect(store.readRenderedTextLayer(3)).toBeNull()
+    expect(fake.readPages).toEqual([2, 3])
+  })
+
   test('projects a current error as a cloned snapshot and ignores stale errors', async () => {
     const fake = createFakePort()
     const useStore = createPdfSessionStore(fake.factory)
@@ -227,6 +238,8 @@ function createFakePort() {
   const calls: string[] = []
   const goToPages: number[] = []
   const opens: Array<{ record: BookRecord, settings: Record<string, unknown> }> = []
+  const renderedLayers = new Map<number, HTMLElement>()
+  const readPages: number[] = []
   const port: PdfSessionPort = {
     async open(record, settings) {
       calls.push('open')
@@ -243,6 +256,10 @@ function createFakePort() {
     async navigate(direction) { calls.push(`navigate:${direction}`) },
     async setZoom(zoom) { calls.push(`setZoom:${zoom}`) },
     async flushProgress() { calls.push('flushProgress') },
+    readRenderedTextLayer(page) {
+      readPages.push(page)
+      return renderedLayers.get(page) ?? null
+    },
     destroy() {},
   }
 
@@ -256,6 +273,8 @@ function createFakePort() {
     factory,
     goToPages,
     opens,
+    readPages,
+    renderedLayers,
     setClose(nextClose: () => Promise<void>) { close = nextClose },
     emit(next: PdfSessionSnapshot) { callbacks?.onSnapshot(next) },
     emitError(error: PdfSessionError, generation: number) { callbacks?.onError(error, generation) },

@@ -49,6 +49,20 @@ describe('PDF.js session adapter', () => {
     expect(harness.pages.children[1]?.querySelector('.textLayer')?.textContent).toBe('text 2')
   })
 
+  test('exposes only a completed rendered text layer for search consumers', async () => {
+    const harness = createHarness()
+    await harness.session.open(record('search.pdf'), {})
+
+    expect(harness.session.readRenderedTextLayer(1)).toBeNull()
+    await harness.flushFrames()
+
+    const layer = harness.session.readRenderedTextLayer(1)
+    expect(layer).toBeInstanceOf(HTMLElement)
+    expect(layer?.className).toBe('textLayer')
+    expect(layer?.textContent).toBe('text 1')
+    expect(harness.session.readRenderedTextLayer(99)).toBeNull()
+  })
+
   test('clamps zoom to 0.6–2.5 in tenths and rebuilds rendered page text layers', async () => {
     const harness = createHarness()
     await harness.session.open(record('zoom.pdf'), {})

@@ -40,6 +40,7 @@ export interface PdfSessionPort {
   navigate(direction: -1 | 1): Promise<void>
   setZoom(zoom: number): Promise<void>
   flushProgress(): Promise<void>
+  readRenderedTextLayer(page: number): HTMLElement | null
   destroy(): void
 }
 

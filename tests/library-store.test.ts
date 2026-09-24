@@ -133,7 +133,9 @@ describe('reader library store', () => {
         if (firstKind === 'pdf') await oldOpen.promise
         callbacks.onSnapshot({ status: 'ready', title: 'Current PDF', outline: [], page: 1, pageCount: 3, zoom: 1, progress: 0, error: null, generation: 1 })
       },
-      async close() {}, async flushProgress() {}, async goTo() {}, async navigate() {}, async setZoom() {}, destroy() {},
+      async close() {}, async flushProgress() {}, async goTo() {}, async navigate() {}, async setZoom() {},
+      readRenderedTextLayer() { return null },
+      destroy() {},
     }))()
     const ebook = createEbookSessionStore(callbacks => ({
       async open() {
@@ -553,6 +555,8 @@ class RecordingPdfPort implements PdfSessionPort {
 
   async flushProgress() {}
 
+  readRenderedTextLayer() { return null }
+
   destroy() {}
 }
 
@@ -584,6 +588,7 @@ class DeferredSessionPort implements PdfSessionPort, EbookSessionPort {
   async goTo() {}
   async navigate() {}
   async setZoom() {}
+  readRenderedTextLayer() { return null }
   async setFlow() {}
   async applySettings() {}
   destroy() {}

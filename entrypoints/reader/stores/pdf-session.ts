@@ -129,6 +129,10 @@ export function createPdfSessionStore(initialPortFactory?: PdfSessionPortFactory
       await port?.flushProgress()
     }
 
+    function readRenderedTextLayer(page: number) {
+      return port?.readRenderedTextLayer(page) ?? null
+    }
+
     function destroy() {
       port?.destroy()
       port = null
@@ -156,6 +160,7 @@ export function createPdfSessionStore(initialPortFactory?: PdfSessionPortFactory
       navigate,
       setZoom,
       flushProgress,
+      readRenderedTextLayer,
       destroy,
     }
   })

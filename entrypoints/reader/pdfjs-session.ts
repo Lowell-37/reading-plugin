@@ -141,6 +141,12 @@ export function createPdfJsSession(
     await progressService.flush()
   }
 
+  function readRenderedTextLayer(page: number): HTMLElement | null {
+    const wrapper = pageElement(page)
+    if (wrapper?.dataset.state !== 'rendered') return null
+    return wrapper.querySelector<HTMLElement>('.textLayer')
+  }
+
   function destroy(): void {
     activeGeneration = dependencies.nextGeneration()
     progressService.cancel()
@@ -396,7 +402,7 @@ export function createPdfJsSession(
     dependencies.host.viewport.scrollTo({ top: wrapper.offsetTop, behavior: 'auto' })
   }
 
-  return { open, close, goTo, navigate, setZoom, flushProgress, destroy }
+  return { open, close, goTo, navigate, setZoom, flushProgress, readRenderedTextLayer, destroy }
 
   function isActive(generation: number) {
     return generation === activeGeneration
