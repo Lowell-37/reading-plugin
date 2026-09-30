@@ -5,16 +5,19 @@ import { useReaderStore } from '../stores/reader'
 import { usePdfSessionStore } from '../stores/pdf-session'
 import { usePdfSearchStore } from '../stores/pdf-search'
 import { usePdfAnnotationStore } from '../stores/pdf-annotations'
+import { annotationExportFileName, createAnnotationExport, serializeAnnotationsJson, serializeAnnotationsMarkdown } from '../../../src/core/annotation-export'
+import { annotationImportMatchesBook, parseAnnotationImport } from '../../../src/core/annotation-import'
 
 const reader = useReaderStore()
 const { activePanel } = storeToRefs(reader)
 const pdf = usePdfSessionStore()
 const pdfSearch = usePdfSearchStore()
 const pdfAnnotations = usePdfAnnotationStore()
-const { record: pdfRecord, status: pdfStatus, generation, zoom } = storeToRefs(pdf)
+const { record: pdfRecord, status: pdfStatus, generation, zoom, title: pdfTitle } = storeToRefs(pdf)
 const { results, total, unavailablePages, status: pdfSearchStatus, error } = storeToRefs(pdfSearch)
-const { annotations, visible: visibleAnnotations, query: annotationQuery, type: annotationType, sort: annotationSort, selected: selectedAnnotations } = storeToRefs(pdfAnnotations)
+const { annotations, allAnnotations, visible: visibleAnnotations, query: annotationQuery, type: annotationType, sort: annotationSort, selected: selectedAnnotations, error: annotationError } = storeToRefs(pdfAnnotations)
 const searchQuery = ref('')
+const annotationMessage = ref('')
 const pdfSessionActive = computed(() => pdfRecord.value !== null)
 const pdfAnnotationsActive = computed(() => pdfSessionActive.value && pdfStatus.value === 'ready')
 const searchStatus = computed(() => {
@@ -62,15 +65,91 @@ function toggleAllAnnotations() {
   selectedAnnotations.value = ids.every(id => selectedAnnotations.value.includes(id)) ? [] : ids
 }
 
-function deleteSelectedAnnotations() {
-  if (!pdfAnnotationsActive.value) return
+function capturePdfControl(event: Event) {
+  if (!pdfAnnotationsActive.value) return false
+  event.preventDefault()
+  event.stopImmediatePropagation()
+  return true
+}
+
+function filterAnnotationsInput(event: Event) {
+  if (capturePdfControl(event)) annotationQuery.value = (event.target as HTMLInputElement).value
+}
+
+function filterAnnotationsType(event: Event) {
+  if (capturePdfControl(event)) annotationType.value = (event.target as HTMLSelectElement).value as typeof annotationType.value
+}
+
+function sortAnnotationsInput(event: Event) {
+  if (capturePdfControl(event)) annotationSort.value = (event.target as HTMLSelectElement).value as typeof annotationSort.value
+}
+
+function selectAllAnnotations(event: Event) {
+  if (capturePdfControl(event)) toggleAllAnnotations()
+}
+
+function deleteSelectedAnnotations(event: Event) {
+  if (!capturePdfControl(event)) return
+  if (!selectedAnnotations.value.length || !window.confirm(`确定删除所选的 ${selectedAnnotations.value.length} 条高亮或批注吗？`)) return
   void pdfAnnotations.removeSelected()
 }
 
+function openAnnotationImport(event: Event) {
+  if (!capturePdfControl(event)) return
+  const input = document.getElementById('annotation-import-input') as HTMLInputElement | null
+  if (input) { input.value = ''; input.click() }
+}
+
+async function importAnnotationFile(event: Event) {
+  if (!capturePdfControl(event)) return
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file || !pdfRecord.value) return
+  const expectedGeneration = generation.value
+  const expectedId = pdfRecord.value.id
+  try {
+    if (file.size > 10 * 1024 * 1024) throw new Error('批注文件不能超过 10 MB')
+    const archive = parseAnnotationImport(await file.text())
+    if (expectedGeneration !== generation.value || expectedId !== pdfRecord.value?.id) return
+    if (!annotationImportMatchesBook(archive.book, { fileName: pdfRecord.value.name, format: pdfRecord.value.format })
+      && !window.confirm('导入文件属于另一本书，仍要合并到当前书籍吗？')) return
+    const result = await pdfAnnotations.importAnnotations(archive.annotations)
+    annotationMessage.value = `导入完成：新增 ${result.added}，更新 ${result.updated}，跳过 ${result.skipped}`
+  } catch (error) {
+    annotationMessage.value = error instanceof Error ? error.message : '无法导入批注文件'
+  } finally {
+    input.value = ''
+  }
+}
+
+function exportAnnotations(event: Event, extension: 'json' | 'md') {
+  if (!capturePdfControl(event)) return
+  if (!pdfRecord.value || !allAnnotations.value.length) {
+    annotationMessage.value = '当前书籍还没有可导出的高亮或批注'
+    return
+  }
+  const archive = createAnnotationExport({ name: pdfRecord.value.name, format: pdfRecord.value.format, title: pdfTitle.value }, allAnnotations.value)
+  const content = extension === 'json' ? serializeAnnotationsJson(archive) : serializeAnnotationsMarkdown(archive)
+  const type = extension === 'json' ? 'application/json' : 'text/markdown'
+  const url = URL.createObjectURL(new Blob([content], { type: `${type};charset=utf-8` }))
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = annotationExportFileName(archive, extension)
+  anchor.click()
+  setTimeout(() => URL.revokeObjectURL(url), 0)
+  annotationMessage.value = `已导出 ${allAnnotations.value.length} 条高亮与批注`
+}
+
 function editAnnotation(annotation: typeof annotations.value[number]) {
-  const note = window.prompt('编辑批注', annotation.note)
+  const note = window.prompt('编辑批注（留空则仅保留高亮）', annotation.note)
   if (note === null) return
-  void pdfAnnotations.update(annotation.id, { note })
+  const tags = window.prompt('编辑标签（使用逗号分隔，最多 10 个）', annotation.tags?.join(', ') || '')
+  if (tags === null) return
+  void pdfAnnotations.update(annotation.id, { note, tags })
+}
+
+function deleteAnnotation(annotation: typeof annotations.value[number]) {
+  if (window.confirm('确定删除这条高亮或批注吗？')) void pdfAnnotations.remove(annotation.id)
 }
 
 function jumpToAnnotation(page: number | null) {
@@ -140,29 +219,31 @@ onUnmounted(() => {
     <p class="selection-hint">在正文中选中文字，然后高亮或添加批注。</p>
     <div class="selection-actions"><button id="highlight-selection" type="button" @click.capture="capturePdfAnnotation($event, false)">高亮选中</button><button id="note-selection" type="button" @click.capture="capturePdfAnnotation($event, true)">添加批注</button></div>
     <div class="annotation-filters">
-      <input id="annotation-filter-query" v-model="annotationQuery" type="search" placeholder="筛选原文、批注或标签" aria-label="筛选批注">
-      <select id="annotation-filter-type" v-model="annotationType" aria-label="批注类型">
+      <input id="annotation-filter-query" v-model="annotationQuery" type="search" placeholder="筛选原文、批注或标签" aria-label="筛选批注" @input.capture="filterAnnotationsInput">
+      <select id="annotation-filter-type" v-model="annotationType" aria-label="批注类型" @change.capture="filterAnnotationsType">
         <option value="all">全部</option><option value="notes">有批注</option><option value="highlights">仅高亮</option><option value="pdf">PDF</option><option value="ebook">电子书</option>
       </select>
-      <select id="annotation-sort" v-model="annotationSort" aria-label="批注排序">
+      <select id="annotation-sort" v-model="annotationSort" aria-label="批注排序" @change.capture="sortAnnotationsInput">
         <option value="newest">最近修改</option><option value="oldest">最早创建</option><option value="location">阅读位置</option>
       </select>
-      <button id="annotation-select-all" class="text-button" type="button" @click.capture="pdfAnnotationsActive && toggleAllAnnotations()">全选当前</button>
+      <button id="annotation-select-all" class="text-button" type="button" @click.capture="selectAllAnnotations">全选当前</button>
       <button id="annotation-delete-selected" class="text-button danger" type="button" :disabled="!pdfAnnotationsActive || !selectedAnnotations.length" @click.capture="deleteSelectedAnnotations">删除所选</button>
     </div>
     <div class="annotation-export-actions">
-      <button id="import-annotations-json" class="text-button" type="button">导入 JSON</button>
-      <input id="annotation-import-input" type="file" accept=".json,application/json" hidden>
-      <button id="export-annotations-markdown" class="text-button" type="button">导出 Markdown</button>
-      <button id="export-annotations-json" class="text-button" type="button">导出 JSON</button>
+      <button id="import-annotations-json" class="text-button" type="button" @click.capture="openAnnotationImport">导入 JSON</button>
+      <input id="annotation-import-input" type="file" accept=".json,application/json" hidden @change.capture="importAnnotationFile">
+      <button id="export-annotations-markdown" class="text-button" type="button" @click.capture="exportAnnotations($event, 'md')">导出 Markdown</button>
+      <button id="export-annotations-json" class="text-button" type="button" @click.capture="exportAnnotations($event, 'json')">导出 JSON</button>
     </div>
+    <p v-if="pdfAnnotationsActive && annotationMessage" class="selection-hint" role="status">{{ annotationMessage }}</p>
+    <p v-if="pdfAnnotationsActive && annotationError" class="selection-hint" role="alert">{{ annotationError }} <button type="button" class="text-button" @click="pdfAnnotations.retrySave()">重试保存</button></p>
     <div id="annotation-list" class="annotation-list">
       <template v-if="pdfAnnotationsActive">
         <article v-for="annotation in visibleAnnotations" :key="annotation.id" class="annotation-item">
           <input class="annotation-select" type="checkbox" :checked="selectedAnnotations.includes(annotation.id)" :aria-label="`选择${annotation.text}`" @change="toggleAnnotation(annotation.id, ($event.target as HTMLInputElement).checked)">
-          <button class="annotation-jump" type="button" @click="jumpToAnnotation(annotation.page)"><small>第 {{ annotation.page }} 页</small><q>{{ annotation.text }}</q><p v-if="annotation.note">{{ annotation.note }}</p></button>
+          <button class="annotation-jump" type="button" @click="jumpToAnnotation(annotation.page)"><small>第 {{ annotation.page }} 页</small><q>{{ annotation.text }}</q><p v-if="annotation.note">{{ annotation.note }}</p><small v-if="annotation.anchorStatus === 'unresolved'" class="annotation-anchor-status">定位待恢复</small><small v-if="annotation.tags?.length" class="annotation-tags">{{ annotation.tags.join('、') }}</small></button>
           <button class="text-button" type="button" @click="editAnnotation(annotation)">编辑</button>
-          <button class="text-button danger" type="button" @click="pdfAnnotations.remove(annotation.id)">删除</button>
+          <button class="text-button danger" type="button" @click="deleteAnnotation(annotation)">删除</button>
         </article>
       </template>
     </div>

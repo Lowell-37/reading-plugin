@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia'
 import { computed, shallowRef } from 'vue'
 import { filterAnnotations, sortAnnotations, updateAnnotation } from '../../../src/core/annotations'
+import { mergeAnnotationImports } from '../../../src/core/annotation-import'
+import { recoverTextAnchor } from '../../../src/core/anchor-recovery'
 import type { Annotation, BookRecord } from '../../../src/core/types'
 import {
   clearPdfAnnotationOverlays,
@@ -30,6 +32,11 @@ export function createPdfAnnotationStore({ repository }: { repository?: Reposito
     const sort = shallowRef<'newest' | 'oldest' | 'location'>('newest')
     const selected = shallowRef<string[]>([])
     const visible = computed(() => sortAnnotations(filterAnnotations(annotations.value, { query: query.value, type: type.value }), sort.value))
+    const allAnnotations = computed(() => [...otherAnnotations, ...annotations.value])
+    let otherAnnotations: Annotation[] = []
+    let pendingRecovery = new Set<string>()
+    let writeQueue: Promise<void> = Promise.resolve()
+    const unsavedDrafts = new Map<string, Annotation[]>()
     let writeId = 0
 
     function synchronizeSession(session: Session) {
@@ -41,8 +48,19 @@ export function createPdfAnnotationStore({ repository }: { repository?: Reposito
       generation.value = session.generation
       zoom.value = session.zoom
       root.value = session.root
-      if (identityChanged) annotations.value = session.record?.annotations?.filter(item => item.kind === 'pdf') ?? []
+      if (identityChanged) {
+        const draft = session.record ? unsavedDrafts.get(session.record.id) : null
+        const source = draft ?? session.record?.annotations ?? []
+        annotations.value = source.filter(item => item.kind === 'pdf')
+        otherAnnotations = source.filter(item => item.kind !== 'pdf')
+        pendingRecovery = new Set(annotations.value.filter(item => item.anchor?.kind === 'pdf' && item.anchorStatus === 'unresolved').map(item => item.id))
+        if (draft) error.value = '批注保存失败，可稍后重试'
+        query.value = ''
+        type.value = 'all'
+        sort.value = 'newest'
+      }
       renderAll()
+      if (pendingRecovery.size) void recoverImported()
     }
 
     async function createFromSelection(options: CreatePdfAnnotationFromRangeOptions & { generation: number }) {
@@ -78,6 +96,7 @@ export function createPdfAnnotationStore({ repository }: { repository?: Reposito
 
     function renderPage(page: number) {
       if (!root.value) return
+      if (pendingRecovery.size) void recoverImported()
       renderPdfAnnotationOverlays({ root: root.value, annotations: annotations.value, page, onResolved: (annotation, resolved) => {
         if (annotation.anchor?.kind !== 'pdf') return
         annotation.rects = resolved.rects
@@ -96,28 +115,89 @@ export function createPdfAnnotationStore({ repository }: { repository?: Reposito
       } })
     }
 
-    async function recoverImported() { renderAll() }
+    async function importAnnotations(imported: Annotation[]) {
+      const existing = [...otherAnnotations, ...annotations.value]
+      const previous = new Map(existing.map(item => [item.id, item]))
+      const result = mergeAnnotationImports(existing, imported)
+      const changed = new Set(imported.flatMap(item => {
+        const local = previous.get(item.id)
+        return !local || (item.updatedAt ?? item.createdAt) > (local.updatedAt ?? local.createdAt) ? [item.id] : []
+      }))
+      otherAnnotations = result.annotations.filter(item => item.kind !== 'pdf')
+      annotations.value = result.annotations.filter(item => item.kind === 'pdf').map(item => {
+        if (!changed.has(item.id) || item.anchor?.kind !== 'pdf') return item
+        pendingRecovery.add(item.id)
+        return { ...item, anchorStatus: 'unresolved' as const, rects: [] }
+      })
+      await recoverImported(false)
+      renderAll()
+      await persist(generation.value, recordId.value)
+      return result
+    }
+
+    async function recoverImported(save = true) {
+      if (!root.value || !pendingRecovery.size) return
+      const next = annotations.value.map(item => {
+        if (!pendingRecovery.has(item.id) || item.anchor?.kind !== 'pdf') return item
+        const origin = item.anchor.page
+        const pages = [origin, origin - 1, origin + 1, origin - 2, origin + 2]
+        const renderedCandidates = pages.flatMap(page => {
+          if (page < 1) return []
+          const element = root.value?.querySelector<HTMLElement>(`.pdf-page[data-page="${page}"][data-state="rendered"]`)
+          const layer = element?.querySelector<HTMLElement>('.textLayer')
+          return layer?.isConnected ? [{ location: page, text: layer.textContent || '', preferredOffset: page === origin ? item.anchor!.textOffset : null }] : []
+        })
+        // Keep the original page as the first candidate even when it is not
+        // rendered, so duplicate quotes on neighboring pages remain ambiguous.
+        const candidates = renderedCandidates[0]?.location === origin
+          ? renderedCandidates
+          : [{ location: origin, text: '', preferredOffset: item.anchor.textOffset }, ...renderedCandidates]
+        const match = recoverTextAnchor(item.anchor.quote, candidates)
+        if (!match) return item
+        pendingRecovery.delete(item.id)
+        return { ...item, page: match.location, locator: `page:${match.location}`, rects: [], anchorStatus: 'resolved' as const,
+          anchor: { ...item.anchor, page: match.location, textOffset: match.start, quote: match.quote } }
+      })
+      if (next.some((item, index) => item !== annotations.value[index])) {
+        annotations.value = next
+        renderAll()
+        if (save) await persist(generation.value, recordId.value)
+      }
+    }
 
     function clear() {
       if (root.value) clearPdfAnnotationOverlays(root.value)
       annotations.value = []
+      otherAnnotations = []
+      pendingRecovery = new Set()
       selected.value = []
       error.value = null
+    }
+
+    async function retrySave() {
+      await persist(generation.value, recordId.value)
     }
 
     async function persist(expectedGeneration: number, expectedRecordId: string | null) {
       if (!expectedRecordId || expectedGeneration !== generation.value || expectedRecordId !== recordId.value) return
       const write = ++writeId
-      try {
+      const snapshot = [...otherAnnotations, ...annotations.value]
+      unsavedDrafts.set(expectedRecordId, snapshot)
+      const next = writeQueue.then(async () => {
+        if (expectedGeneration !== generation.value || expectedRecordId !== recordId.value) return
         const target = repository ?? configuredRepository
         if (!target) throw new Error('批注存储不可用')
-        await target.update(expectedRecordId, { annotations: annotations.value })
-      } catch {
+        await target.update(expectedRecordId, { annotations: snapshot })
+        if (unsavedDrafts.get(expectedRecordId) === snapshot) unsavedDrafts.delete(expectedRecordId)
+        if (write === writeId && expectedGeneration === generation.value && expectedRecordId === recordId.value) error.value = null
+      }).catch(() => {
         if (write === writeId && expectedGeneration === generation.value && expectedRecordId === recordId.value) error.value = '批注保存失败，可稍后重试'
-      }
+      })
+      writeQueue = next
+      await next
     }
 
-    return { annotations, recordId, generation, zoom, root, error, query, type, sort, selected, visible, synchronizeSession, createFromSelection, update, remove, removeSelected, renderPage, recoverImported, clear }
+    return { annotations, allAnnotations, recordId, generation, zoom, root, error, query, type, sort, selected, visible, synchronizeSession, createFromSelection, update, remove, removeSelected, importAnnotations, renderPage, recoverImported, retrySave, clear }
   })
 }
 

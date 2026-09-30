@@ -122,7 +122,7 @@ test.describe('@wxt-pdf-session', () => {
     } finally { await context.close() }
   })
 
-  test('Vue PDF annotations create, redraw after zoom, and delete without page errors', async () => {
+  test('Vue PDF annotations create, filter, edit, export, import, redraw and reopen', async () => {
     const { context, page, pageErrors } = await launchExtension(extension)
     try {
       await page.locator('#file-input').setInputFiles({ name: 'annotations.pdf', mimeType: 'application/pdf', buffer: fixturePdf() })
@@ -138,8 +138,39 @@ test.describe('@wxt-pdf-session', () => {
       await click(page, '#highlight-selection')
       await expect(page.locator('.pdf-annotation-layer span')).toHaveCount(1)
       await expect(page.locator('#annotation-list .annotation-item')).toHaveCount(1)
+      page.once('dialog', async dialog => {
+        page.once('dialog', next => next.accept('test-tag'))
+        await dialog.accept('Updated note')
+      })
+      await click(page, '#annotation-list .annotation-item .text-button:not(.danger)')
+      await expect(page.locator('#annotation-list')).toContainText('Updated note')
+      await page.locator('#annotation-filter-query').fill('missing phrase')
+      await expect(page.locator('#annotation-list .annotation-item')).toHaveCount(0)
+      await page.locator('#annotation-filter-query').fill('Updated note')
+      await expect(page.locator('#annotation-list .annotation-item')).toHaveCount(1)
+      const downloadPromise = page.waitForEvent('download')
+      await click(page, '#export-annotations-json')
+      const download = await downloadPromise
+      const path = await download.path()
+      if (!path) throw new Error('Annotation export path is unavailable')
+      const archive = JSON.parse(await readFile(path, 'utf8'))
+      expect(archive.annotations).toHaveLength(1)
+      expect(archive.annotations[0].note).toBe('Updated note')
+      expect(archive.annotations[0].tags).toContain('test-tag')
+      await click(page, '#annotation-select-all')
+      page.once('dialog', dialog => dialog.accept())
+      await click(page, '#annotation-delete-selected')
+      await expect(page.locator('#annotation-list .annotation-item')).toHaveCount(0)
+      await page.locator('#annotation-import-input').setInputFiles(path)
+      await expect(page.locator('#annotation-list .annotation-item')).toHaveCount(1)
       await click(page, '#pdf-zoom-in')
       await expect(page.locator('.pdf-annotation-layer span')).toHaveCount(1)
+      await click(page, '#home-button')
+      await expect(page.locator('#welcome-view')).toBeVisible()
+      await page.locator('.library-card').click()
+      await expect(page.locator('.pdf-annotation-layer span')).toHaveCount(1)
+      await click(page, '#tools-button')
+      page.once('dialog', dialog => dialog.accept())
       await click(page, '#annotation-list .danger')
       await expect(page.locator('.pdf-annotation-layer span')).toHaveCount(0)
       expect(pageErrors.map(error => error.stack || error.message)).toEqual([])
