@@ -17,15 +17,6 @@ export interface LegacyReaderCallbacks {
   onLibraryChanged(): void | Promise<void>
 }
 
-/** Value identity and rendered DOM only: the PDF session retains all engine resources. */
-export type LegacyPdfToolRecord = Pick<BookRecord, 'id' | 'name' | 'format' | 'metadata' | 'annotations'>
-
-export interface LegacyPdfAnnotationTools {
-  pageCount(): number
-  readTextLayer(page: number): HTMLElement | null
-  goTo(page: number): Promise<void>
-}
-
 /** WXT legacy tools boundary; typed sessions own both PDF and ebook engines. */
 export interface LegacyReaderPort {
   openRecord(record: BookRecord, options?: { newlySaved?: boolean }): Promise<void>
@@ -33,5 +24,4 @@ export interface LegacyReaderPort {
   applySettings(settings: ReaderSettings): Promise<void>
   flushProgress(): Promise<void>
   destroy(): void
-  attachPdfTools?(record: LegacyPdfToolRecord | null, tools?: LegacyPdfAnnotationTools): void
 }

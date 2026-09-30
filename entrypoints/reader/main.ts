@@ -17,7 +17,7 @@ import { useMigrationStore } from './stores/migration'
 import { useLibraryStore } from './stores/library'
 import { useEbookSessionStore } from './stores/ebook-session'
 import { usePdfSessionStore } from './stores/pdf-session'
-import { usePdfAnnotationStore } from './stores/pdf-annotations'
+import { configurePdfAnnotationRepository, usePdfAnnotationStore } from './stores/pdf-annotations'
 
 interface ExtensionRuntime {
   getURL(path: string): string
@@ -41,6 +41,7 @@ async function startReader() {
   const bridge = connectLegacyReaderState(pinia)
   const ebookSession = useEbookSessionStore(pinia)
   const pdfSession = usePdfSessionStore(pinia)
+  configurePdfAnnotationRepository(bookRepository)
   const pdfAnnotations = usePdfAnnotationStore(pinia)
   const ebookHost = document.getElementById('ebook-host')
   if (!ebookHost) throw new Error('Ebook session host is unavailable')
@@ -69,7 +70,7 @@ async function startReader() {
     createProgressService: () => new ProgressService(bookRepository),
     nextGeneration: () => ++pdfGeneration,
   })))
-  const stopPdfAnnotationSync = watch(
+  watch(
     [() => pdfSession.record, () => pdfSession.generation, () => pdfSession.zoom, () => pdfSession.status],
     ([sessionRecord, generation, zoom, status]) => {
       const record = status === 'ready' ? library.books.find(book => book.id === sessionRecord?.id) ?? null : null
@@ -85,19 +86,6 @@ async function startReader() {
   // @ts-expect-error JavaScript compatibility controller has no declaration file yet.
   const legacyReader = await import('../../src/reader.js')
   const port: LegacyReaderPort = legacyReader.createLegacyReaderPort(bridge.callbacks)
-  watch([() => pdfSession.generation, () => pdfSession.status], () => {
-    const record = pdfSession.status === 'ready'
-      ? library.books.find(book => book.id === pdfSession.record?.id)
-      : null
-    port.attachPdfTools?.(record ? {
-      id: record.id, name: record.name, format: record.format,
-      metadata: record.metadata, annotations: record.annotations,
-    } : null, record ? {
-      pageCount: () => pdfSession.pageCount,
-      readTextLayer: page => pdfSession.readRenderedTextLayer(page),
-      goTo: page => pdfSession.goTo(page),
-    } : undefined)
-  }, { flush: 'sync' })
   bridge.attachLegacyPort(port)
   bridge.attachEbookPort(ebookSession)
   bridge.attachPdfPort(pdfSession)

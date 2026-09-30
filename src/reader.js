@@ -193,8 +193,6 @@ let legacyReaderState = {
 let controllerInitialized = false
 let controllerMode = 'root'
 let vueOwnsMigratedControls = false
-let pdfTools = null
-let pdfToolsObserver = null
 
 function emitLegacyState(state) {
   legacyReaderState = { ...legacyReaderState, ...state }
@@ -322,9 +320,6 @@ function closeReader(options = {}) {
     pdfDocument = null
     pdfTextCache.clear()
   }
-  pdfToolsObserver?.disconnect()
-  pdfToolsObserver = null
-  pdfTools = null
   if (controllerMode === 'wxt') {
     clearTimeout(annotationRepairSave)
     annotationRepairSave = null
@@ -916,11 +911,7 @@ async function searchEbook(query, signal) {
 }
 
 async function getPdfPageText(pageNumber) {
-  if (controllerMode === 'wxt') {
-    const layer = pdfTools?.readTextLayer(pageNumber)
-    const items = [...(layer?.querySelectorAll('span') || [])].map(span => ({ str: span.textContent || '' }))
-    return { text: items.map(item => item.str).join(' '), content: { items }, available: Boolean(layer) }
-  }
+  if (controllerMode === 'wxt') return { text: '', content: { items: [] }, available: false }
   return pdfTextCache.get(pageNumber, async () => {
     const page = await pdfDocument.getPage(pageNumber)
     const content = await page.getTextContent()
@@ -1000,34 +991,9 @@ function markPdfSearchMatches(textLayer) {
   })
 }
 
-function pdfToolPageCount() {
-  return controllerMode === 'wxt' ? pdfTools?.pageCount() || 0 : pdfDocument?.numPages || 0
-}
+function pdfToolPageCount() { return controllerMode === 'wxt' ? 0 : pdfDocument?.numPages || 0 }
 
-function navigatePdfTool(page, smooth = true) {
-  if (controllerMode === 'wxt') return pdfTools?.goTo(page)
-  return goToPdfPage(page, smooth)
-}
-
-function attachPdfTools(record, tools) {
-  closeReader({ preserveSearchUi: controllerMode === 'wxt' })
-  if (!record || !tools) return
-  // Only annotation identity/value data is retained here, never a Blob or PDF.js resource.
-  currentRecord = { id: record.id, name: record.name, format: record.format, metadata: record.metadata, annotations: record.annotations }
-  currentFormat = 'pdf'
-  pdfTools = tools
-  loadAnnotations()
-  const refresh = wrapper => {
-    if (wrapper?.dataset.state !== 'rendered') return
-    renderPdfAnnotationOverlays(Number(wrapper.dataset.page))
-  }
-  elements.pdfPages.querySelectorAll('.pdf-page').forEach(refresh)
-  // Observe render completion only. Tool overlays/classes do not trigger this observer.
-  pdfToolsObserver = new MutationObserver(records => {
-    for (const mutation of records) refresh(mutation.target)
-  })
-  pdfToolsObserver.observe(elements.pdfPages, { subtree: true, attributes: true, attributeFilter: ['data-state'] })
-}
+function navigatePdfTool(page, smooth = true) { return controllerMode === 'wxt' ? undefined : goToPdfPage(page, smooth) }
 
 function updateAiSelectionUi() {
   if (!AI_FEATURE_ENABLED) {
@@ -1923,11 +1889,6 @@ function initializeLegacyReaderController({ mode = 'root' } = {}) {
   controllerInitialized = true
   controllerMode = mode
   if (mode === 'root') pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
-  else elements.pdfPages.addEventListener('mouseup', event => {
-    if (!pdfTools) return
-    const wrapper = event.target.closest?.('.pdf-page')
-    if (wrapper) capturePdfSelection(wrapper)
-  })
   applySettingsToControls()
   startReaderListenerMode(mode, {
     engine: bindEngineControls,
@@ -1956,10 +1917,6 @@ export function createLegacyReaderPort(callbacks = {}) {
       ensureActive()
       if (record.format !== 'pdf') throw new Error('WXT legacy reader port cannot open ebook records')
       throw new Error('WXT legacy reader port cannot open PDF records')
-    },
-    attachPdfTools(record, tools) {
-      ensureActive()
-      attachPdfTools(record, tools)
     },
     async closeSession() {
       ensureActive()

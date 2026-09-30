@@ -122,6 +122,30 @@ test.describe('@wxt-pdf-session', () => {
     } finally { await context.close() }
   })
 
+  test('Vue PDF annotations create, redraw after zoom, and delete without page errors', async () => {
+    const { context, page, pageErrors } = await launchExtension(extension)
+    try {
+      await page.locator('#file-input').setInputFiles({ name: 'annotations.pdf', mimeType: 'application/pdf', buffer: fixturePdf() })
+      await expectPdfPage(page, 1)
+      await click(page, '#tools-button')
+      await page.locator('.pdf-page[data-page="1"] .textLayer span').first().evaluate((span: HTMLElement) => {
+        const range = document.createRange()
+        range.selectNodeContents(span)
+        const selection = window.getSelection()!
+        selection.removeAllRanges()
+        selection.addRange(range)
+      })
+      await click(page, '#highlight-selection')
+      await expect(page.locator('.pdf-annotation-layer span')).toHaveCount(1)
+      await expect(page.locator('#annotation-list .annotation-item')).toHaveCount(1)
+      await click(page, '#pdf-zoom-in')
+      await expect(page.locator('.pdf-annotation-layer span')).toHaveCount(1)
+      await click(page, '#annotation-list .danger')
+      await expect(page.locator('.pdf-annotation-layer span')).toHaveCount(0)
+      expect(pageErrors.map(error => error.stack || error.message)).toEqual([])
+    } finally { await context.close() }
+  })
+
   for (const kind of ['malformed', 'password'] as const) {
     test(`${kind} PDF displays only a safe error and can recover`, async () => {
       const { context, page, pageErrors } = await launchExtension(extension)

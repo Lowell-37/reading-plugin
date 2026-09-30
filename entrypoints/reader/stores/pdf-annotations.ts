@@ -2,8 +2,6 @@ import { defineStore } from 'pinia'
 import { computed, shallowRef } from 'vue'
 import { filterAnnotations, sortAnnotations, updateAnnotation } from '../../../src/core/annotations'
 import type { Annotation, BookRecord } from '../../../src/core/types'
-// @ts-expect-error JavaScript repository remains a migration boundary.
-import { bookRepository } from '../../../src/book-repository.js'
 import {
   clearPdfAnnotationOverlays,
   createPdfAnnotationFromRange,
@@ -11,10 +9,15 @@ import {
   type CreatePdfAnnotationFromRangeOptions,
 } from '../pdf-annotations'
 
-type Repository = Pick<typeof bookRepository, 'update'>
+type Repository = { update(id: string, changes: Pick<BookRecord, 'annotations'>): Promise<void> }
 type Session = { record: BookRecord | null, generation: number, zoom: number, root: ParentNode | null }
+let configuredRepository: Repository | null = null
 
-export function createPdfAnnotationStore({ repository = bookRepository }: { repository?: Repository } = {}) {
+export function configurePdfAnnotationRepository(repository: Repository | null) {
+  configuredRepository = repository
+}
+
+export function createPdfAnnotationStore({ repository }: { repository?: Repository } = {}) {
   return defineStore('pdf-annotations', () => {
     const annotations = shallowRef<Annotation[]>([])
     const recordId = shallowRef<string | null>(null)
@@ -30,13 +33,15 @@ export function createPdfAnnotationStore({ repository = bookRepository }: { repo
     let writeId = 0
 
     function synchronizeSession(session: Session) {
-      const changed = recordId.value !== session.record?.id || generation.value !== session.generation || zoom.value !== session.zoom || root.value !== session.root
-      if (changed) clear()
+      const identityChanged = recordId.value !== session.record?.id || generation.value !== session.generation || root.value !== session.root
+      const zoomChanged = zoom.value !== session.zoom
+      if (identityChanged) clear()
+      else if (zoomChanged && root.value) clearPdfAnnotationOverlays(root.value)
       recordId.value = session.record?.id ?? null
       generation.value = session.generation
       zoom.value = session.zoom
       root.value = session.root
-      annotations.value = session.record?.annotations?.filter(item => item.kind === 'pdf') ?? []
+      if (identityChanged) annotations.value = session.record?.annotations?.filter(item => item.kind === 'pdf') ?? []
       renderAll()
     }
 
@@ -104,7 +109,9 @@ export function createPdfAnnotationStore({ repository = bookRepository }: { repo
       if (!expectedRecordId || expectedGeneration !== generation.value || expectedRecordId !== recordId.value) return
       const write = ++writeId
       try {
-        await repository.update(expectedRecordId, { annotations: annotations.value })
+        const target = repository ?? configuredRepository
+        if (!target) throw new Error('批注存储不可用')
+        await target.update(expectedRecordId, { annotations: annotations.value })
       } catch {
         if (write === writeId && expectedGeneration === generation.value && expectedRecordId === recordId.value) error.value = '批注保存失败，可稍后重试'
       }
