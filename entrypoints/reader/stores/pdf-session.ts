@@ -41,6 +41,7 @@ export function createPdfSessionStore(initialPortFactory?: PdfSessionPortFactory
     const generation = shallowRef(0)
     let port: PdfSessionPort | null = null
     let portEpoch = 0
+    const renderedPageListeners = new Set<(page: number, generation: number) => void>()
 
     function callbacksFor(epoch: number): PdfSessionCallbacks {
       return {
@@ -61,6 +62,10 @@ export function createPdfSessionStore(initialPortFactory?: PdfSessionPortFactory
             error: { ...nextError },
             generation: snapshotGeneration,
           })
+        },
+        onPageRendered(renderedPage, renderedGeneration) {
+          if (epoch !== portEpoch || renderedGeneration !== generation.value) return
+          renderedPageListeners.forEach(listener => listener(renderedPage, renderedGeneration))
         },
       }
     }
@@ -133,6 +138,11 @@ export function createPdfSessionStore(initialPortFactory?: PdfSessionPortFactory
       return port?.readRenderedTextLayer(page) ?? null
     }
 
+    function onPageRendered(listener: (page: number, generation: number) => void) {
+      renderedPageListeners.add(listener)
+      return () => renderedPageListeners.delete(listener)
+    }
+
     function destroy() {
       port?.destroy()
       port = null
@@ -161,6 +171,7 @@ export function createPdfSessionStore(initialPortFactory?: PdfSessionPortFactory
       setZoom,
       flushProgress,
       readRenderedTextLayer,
+      onPageRendered,
       destroy,
     }
   })

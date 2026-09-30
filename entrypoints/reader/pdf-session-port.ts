@@ -31,6 +31,7 @@ export interface PdfSessionSnapshot {
 export interface PdfSessionCallbacks {
   onSnapshot(snapshot: PdfSessionSnapshot): void
   onError(error: PdfSessionError, generation: number): void
+  onPageRendered?(page: number, generation: number): void
 }
 
 export interface PdfSessionPort {

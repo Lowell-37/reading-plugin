@@ -306,6 +306,7 @@ export function createPdfJsSession(
       if (!isCurrentRender(pageNumber, generation, rendition, document, wrapper, renderTask)) return
       wrapper.dataset.state = 'rendered'
       renderTasks.delete(pageNumber)
+      dependencies.onPageRendered?.(pageNumber, generation)
     } catch (cause) {
       if (!isCurrentRender(pageNumber, generation, rendition, document, wrapper, renderTask)) return
       renderTasks.delete(pageNumber)

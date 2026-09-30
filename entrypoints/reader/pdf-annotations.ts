@@ -103,7 +103,7 @@ export function renderPdfAnnotationOverlays({
         layer.append(mark)
       }
     }
-    page.append(layer)
+    if (layer.childElementCount) page.append(layer)
   }
 }
 

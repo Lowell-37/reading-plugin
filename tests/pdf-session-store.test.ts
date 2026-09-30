@@ -13,6 +13,19 @@ import { useReaderStore } from '../entrypoints/reader/stores/reader'
 import type { BookRecord } from '../src/core/types'
 
 describe('PDF session store', () => {
+  test('proxies current rendered-page notifications without engine objects', async () => {
+    const fake = createFakePort()
+    const useStore = createPdfSessionStore(fake.factory)
+    const store = useStore(createPinia())
+    const pages: Array<{ page: number, generation: number }> = []
+    store.onPageRendered((page, generation) => pages.push({ page, generation }))
+    await store.open(record('rendered.pdf'), {})
+
+    fake.emitRendered(2, 1)
+    fake.emitRendered(3, 99)
+
+    expect(pages).toEqual([{ page: 2, generation: 1 }])
+  })
   test('projects only the latest generation into PDF and reader state', async () => {
     const fake = createFakePort()
     const useStore = createPdfSessionStore(fake.factory)
@@ -278,6 +291,7 @@ function createFakePort() {
     setClose(nextClose: () => Promise<void>) { close = nextClose },
     emit(next: PdfSessionSnapshot) { callbacks?.onSnapshot(next) },
     emitError(error: PdfSessionError, generation: number) { callbacks?.onError(error, generation) },
+    emitRendered(page: number, generation: number) { callbacks?.onPageRendered?.(page, generation) },
   }
 }
 
