@@ -39,11 +39,14 @@ describe('PDF search store', () => {
 
   test('empty input resets state and removes only search marks', async () => {
     const harness = readyHarness()
+    const layer = document.createElement('div')
+    layer.className = 'textLayer'
     const mark = document.createElement('span')
     mark.className = 'pdf-search-match'
+    layer.append(mark)
     const annotation = document.createElement('div')
     annotation.className = 'pdf-annotation-layer'
-    harness.root.append(mark, annotation)
+    harness.root.append(layer, annotation)
     await harness.search.run('needle')
 
     await harness.search.run('   ')
@@ -56,7 +59,7 @@ describe('PDF search store', () => {
       unavailablePages: 0,
       error: null,
     })
-    expect(harness.root.querySelector('.pdf-search-match')).toBeNull()
+    expect(layer.querySelector('.pdf-search-match')).toBeNull()
     expect(harness.root.querySelector('.pdf-annotation-layer')).toBe(annotation)
   })
 

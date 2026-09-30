@@ -29,10 +29,13 @@ interface TextSpan {
   end: number
 }
 
+let nextSearchOwner = 0
+
 export async function searchRenderedPdf(options: PdfSearchOptions): Promise<PdfSearchOutcome> {
   const query = options.query.trim()
   const maxResults = Math.max(0, options.maxResults ?? 300)
   const yieldControl = options.yieldControl ?? defaultYield
+  const owner = `pdf-search-${++nextSearchOwner}`
   const touchedLayers = new Set<HTMLElement>()
   let total = 0
   let unavailablePages = 0
@@ -53,7 +56,7 @@ export async function searchRenderedPdf(options: PdfSearchOptions): Promise<PdfS
           const matches = findSearchMatches(flattened.text, query)
           total += matches.length
           for (const match of matches) {
-            markOverlappingSpans(flattened.spans, match.start, match.end)
+            markOverlappingSpans(flattened.spans, match.start, match.end, owner)
             if (results.length < maxResults) {
               results.push({
                 page,
@@ -69,7 +72,7 @@ export async function searchRenderedPdf(options: PdfSearchOptions): Promise<PdfS
       options.signal.throwIfAborted()
     }
   } catch (error) {
-    for (const layer of touchedLayers) clearPdfSearchMarks(layer)
+    for (const layer of touchedLayers) clearPdfSearchMarksOwned(layer, owner)
     throw error
   }
 
@@ -77,15 +80,29 @@ export async function searchRenderedPdf(options: PdfSearchOptions): Promise<PdfS
 }
 
 export function clearPdfSearchMarks(root: ParentNode): void {
-  root.querySelectorAll<HTMLElement>('.pdf-search-match').forEach(node => {
-    node.classList.remove('pdf-search-match')
-  })
+  clearPdfSearchMarksOwned(root)
+}
+
+function clearPdfSearchMarksOwned(root: ParentNode, owner?: string): void {
+  const layers = root instanceof HTMLElement && root.classList.contains('textLayer')
+    ? [root]
+    : Array.from(root.querySelectorAll<HTMLElement>('.textLayer'))
+
+  for (const layer of layers) {
+    for (const span of layer.querySelectorAll<HTMLElement>('span.pdf-search-match')) {
+      if (span.closest('.pdf-annotation-layer')) continue
+      if (owner && span.dataset.pdfSearchOwner !== owner) continue
+      span.classList.remove('pdf-search-match')
+      delete span.dataset.pdfSearchOwner
+    }
+  }
 }
 
 function flattenTextLayer(layer: HTMLElement): { text: string, spans: TextSpan[] } {
   let text = ''
   const spans: TextSpan[] = []
   for (const element of layer.querySelectorAll<HTMLElement>('span')) {
+    if (element.closest('.pdf-annotation-layer')) continue
     const value = element.textContent ?? ''
     const start = text.length
     text += value
@@ -94,9 +111,12 @@ function flattenTextLayer(layer: HTMLElement): { text: string, spans: TextSpan[]
   return { text, spans }
 }
 
-function markOverlappingSpans(spans: TextSpan[], start: number, end: number): void {
+function markOverlappingSpans(spans: TextSpan[], start: number, end: number, owner: string): void {
   for (const span of spans) {
-    if (span.start < end && span.end > start) span.element.classList.add('pdf-search-match')
+    if (span.start < end && span.end > start) {
+      span.element.classList.add('pdf-search-match')
+      span.element.dataset.pdfSearchOwner = owner
+    }
   }
 }
 

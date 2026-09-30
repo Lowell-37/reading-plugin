@@ -94,6 +94,39 @@ describe('rendered PDF search', () => {
     expect(document.querySelectorAll('.pdf-search-match')).toHaveLength(0)
   })
 
+  test('does not clear marks added by a newer search when an older search aborts', async () => {
+    const controller = new AbortController()
+    const layer = textLayer('alpha beta')
+    let releaseOlderYield!: () => void
+    const olderYield = new Promise<void>(resolve => {
+      releaseOlderYield = resolve
+    })
+
+    const older = searchRenderedPdf({
+      query: 'alpha',
+      pageCount: 1,
+      readTextLayer: () => layer,
+      signal: controller.signal,
+      yieldControl: () => olderYield,
+    })
+
+    expect(layer.querySelector('.pdf-search-match')).not.toBeNull()
+
+    await searchRenderedPdf({
+      query: 'beta',
+      pageCount: 1,
+      readTextLayer: () => layer,
+      signal: new AbortController().signal,
+    })
+
+    controller.abort()
+    releaseOlderYield()
+    await expect(older).rejects.toMatchObject({ name: 'AbortError' })
+
+    expect(layer.querySelectorAll('.pdf-search-match')).toHaveLength(1)
+    expect(layer.querySelector('.pdf-search-match')?.textContent).toBe('alpha beta')
+  })
+
   test('treats a detached text layer as unavailable', async () => {
     const detached = textLayer('searchable but stale')
     detached.remove()
@@ -114,14 +147,17 @@ describe('rendered PDF search', () => {
     layer.firstElementChild?.classList.add('pdf-search-match')
     const annotation = document.createElement('div')
     annotation.className = 'pdf-annotation-layer'
-    annotation.append(document.createElement('span'))
+    const annotationSpan = document.createElement('span')
+    annotationSpan.classList.add('pdf-search-match')
+    annotation.append(annotationSpan)
     page.append(layer, annotation)
     document.body.append(page)
 
     clearPdfSearchMarks(page)
 
-    expect(page.querySelectorAll('.pdf-search-match')).toHaveLength(0)
+    expect(layer.querySelectorAll('.pdf-search-match')).toHaveLength(0)
     expect(page.querySelectorAll('.pdf-annotation-layer span')).toHaveLength(1)
+    expect(annotationSpan.classList.contains('pdf-search-match')).toBe(true)
   })
 })
 
