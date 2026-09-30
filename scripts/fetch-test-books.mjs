@@ -11,7 +11,7 @@ export const TEST_BOOKS = [
     title: '水滸傳',
     license: 'Project Gutenberg public domain in the USA',
     url: 'https://www.gutenberg.org/ebooks/23863.epub3.images',
-    sha256: 'e764b737e341283ad10b42df6ce5846b1752655b34427b0b8fd1355e335cf980',
+    sha256: '17ec3d9f4b06c00ad3dfd31638e3e05e6a9425d10a5f116199d18f958b2e7b27',
   },
   {
     name: 'peter-rabbit.epub',

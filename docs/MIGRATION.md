@@ -1,6 +1,6 @@
 # 渐进式架构迁移
 
-本文档记录架构迁移的代码实现情况。阶段 1、2、阶段 A“双入口等价基线”、阶段 B“同 ID 数据连续性门禁”、阶段 C“Vue 接管书架、面板与设置”、阶段 D“Vue 接管电子书会话”、PDF 会话和 PDF 搜索真实 Edge 验收已完成；WXT 构建版已通过真实 Edge 四格式、双向数据、Vue 书架、电子书会话、PDF 会话及 PDF 搜索验收，但 PDF 批注仍由旧阅读核心驱动，因此暂不作为日常稳定入口。
+本文档记录架构迁移的代码实现情况。阶段 1、2、阶段 A–D、PDF 会话、PDF 搜索及 PDF 批注真实 Edge 验收已完成；WXT 构建版已通过真实 Edge 四格式、双向数据、Vue 书架、电子书会话、PDF 会话、搜索与批注验收。根目录仍是日常稳定入口，直到完整迁移完成。
 
 当前稳定版本仍是在 Edge 中直接加载项目根目录的原生 JavaScript 阅读器。总体进度、产品阶段与最终验收标准统一以 [ROADMAP.md](ROADMAP.md) 为准。
 
@@ -42,7 +42,7 @@
 - Vue 组件不直接依赖 Foliate.js 或 PDF.js 内部实现
 - Vue 模板已补齐旧控制器依赖的加载、筛选、导入导出节点，四种格式不再因空引用停止初始化
 - WXT 已迁移控件不再由旧控制器注册重复监听器；`legacy-bridge.ts` 只通过结构化回调和端口投射运行时状态
-- Vue/TypeScript 已负责 EPUB/MOBI/AZW3 会话和 PDF 搜索；旧 `reader.js` 仅为 WXT PDF 保留批注桥接，后续阶段将接管该边界
+- Vue/TypeScript 已负责 EPUB/MOBI/AZW3 会话以及 PDF 搜索和批注；旧 `reader.js` 不再拥有 WXT PDF 批注桥接，电子书批注与根目录行为保持兼容
 
 ### 阶段 5：真实扩展端到端验证（✅ 阶段 A、B、C、D 与 PDF 搜索自动化门禁完成）
 
@@ -143,7 +143,16 @@
 - `tests/e2e/wxt-pdf-session.spec.ts` 与 `tests/e2e/wxt-ebook-session.spec.ts`：共 10 项真实 Edge 会话验收通过，其中 6 项 PDF、4 项电子书；`npm run test:e2e`：25 项根目录稳定入口回归通过。
 - `npm run release`：通过；`quiet-reader-0.2.0.zip` 含 303 个文件，SHA-256 为 `ede16a54b6c5fd2842651c911dfe1828a60ad370a6c62055800ed84baae68655`。
 
-后续将接管 PDF 批注。文件选择标签的显式键盘激活仍是非阻断的后续可访问性工作。在后续阶段完成前，用户仍应加载项目根目录。
+以上为 2026-09-24 搜索阶段的历史记录；随后 PDF 批注已接管。文件选择标签的显式键盘激活仍是非阻断的后续可访问性工作。在后续阶段完成前，用户仍应加载项目根目录。
+
+## WXT PDF 批注验收记录（2026-09-30）
+
+- Vue/Pinia 接管 WXT PDF 批注状态和持久化；文字层选区生成文本锚点，批注覆盖层从当前渲染页的文字层重新计算，缩放和重渲染不沿用旧像素坐标。
+- 旧 WXT PDF 批注桥接已移除；根目录稳定版与电子书批注仍保持原有路径，IndexedDB schema v2 和备份格式不变，AI 路由继续关闭。
+- `npm run check`、`npm run build:wxt:verify`、`npm run release` 均通过；`npm test` 为 45 个测试文件、345 项通过、2 项历史断言暂跳过。
+- 真实 Edge：WXT 四格式基线 6 项、双向数据连续性 3 项、PDF/电子书会话 11 项、根目录稳定版回归 25 项通过。
+- Project Gutenberg 水滸傳 EPUB 上游于 2026-09-10 重新生成，测试夹具的 SHA-256 更新为 `17ec3d9f4b06c00ad3dfd31638e3e05e6a9425d10a5f116199d18f958b2e7b27`；书名、作者、语言及公版许可已复核。
+- `quiet-reader-0.2.0.zip` 含 303 个文件，SHA-256 为 `b1406bd026629845d22e8bb93103828bd4482d07852e555aa2d38a46adf962b5`。完整迁移前仍请加载项目根目录。
 
 ## 后续产品阶段
 
