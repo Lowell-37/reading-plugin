@@ -17,6 +17,7 @@ import { useMigrationStore } from './stores/migration'
 import { useLibraryStore } from './stores/library'
 import { useEbookSessionStore } from './stores/ebook-session'
 import { usePdfSessionStore } from './stores/pdf-session'
+import { usePdfAnnotationStore } from './stores/pdf-annotations'
 
 interface ExtensionRuntime {
   getURL(path: string): string
@@ -40,6 +41,7 @@ async function startReader() {
   const bridge = connectLegacyReaderState(pinia)
   const ebookSession = useEbookSessionStore(pinia)
   const pdfSession = usePdfSessionStore(pinia)
+  const pdfAnnotations = usePdfAnnotationStore(pinia)
   const ebookHost = document.getElementById('ebook-host')
   if (!ebookHost) throw new Error('Ebook session host is unavailable')
   const pdfViewport = document.getElementById('pdf-viewport')
@@ -67,6 +69,17 @@ async function startReader() {
     createProgressService: () => new ProgressService(bookRepository),
     nextGeneration: () => ++pdfGeneration,
   })))
+  const stopPdfAnnotationSync = watch(
+    [() => pdfSession.record, () => pdfSession.generation, () => pdfSession.zoom, () => pdfSession.status],
+    ([sessionRecord, generation, zoom, status]) => {
+      const record = status === 'ready' ? library.books.find(book => book.id === sessionRecord?.id) ?? null : null
+      pdfAnnotations.synchronizeSession({ record, generation, zoom, root: document.getElementById('pdf-pages') })
+    },
+    { immediate: true, flush: 'sync' },
+  )
+  pdfSession.onPageRendered((page, renderedGeneration) => {
+    if (renderedGeneration === pdfAnnotations.generation) pdfAnnotations.renderPage(page)
+  })
   document.documentElement.dataset.legacyController = 'loading'
   // The imperative controller remains JavaScript until its engine adapters move to TypeScript.
   // @ts-expect-error JavaScript compatibility controller has no declaration file yet.

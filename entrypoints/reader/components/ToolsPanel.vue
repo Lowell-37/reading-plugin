@@ -4,15 +4,19 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useReaderStore } from '../stores/reader'
 import { usePdfSessionStore } from '../stores/pdf-session'
 import { usePdfSearchStore } from '../stores/pdf-search'
+import { usePdfAnnotationStore } from '../stores/pdf-annotations'
 
 const reader = useReaderStore()
 const { activePanel } = storeToRefs(reader)
 const pdf = usePdfSessionStore()
 const pdfSearch = usePdfSearchStore()
+const pdfAnnotations = usePdfAnnotationStore()
 const { record: pdfRecord, status: pdfStatus, generation, zoom } = storeToRefs(pdf)
 const { results, total, unavailablePages, status: pdfSearchStatus, error } = storeToRefs(pdfSearch)
+const { annotations, visible: visibleAnnotations, query: annotationQuery, type: annotationType, sort: annotationSort, selected: selectedAnnotations } = storeToRefs(pdfAnnotations)
 const searchQuery = ref('')
 const pdfSessionActive = computed(() => pdfRecord.value !== null)
+const pdfAnnotationsActive = computed(() => pdfSessionActive.value && pdfStatus.value === 'ready')
 const searchStatus = computed(() => {
   if (pdfSearchStatus.value === 'searching') return '正在搜索…'
   if (pdfSearchStatus.value === 'error') return error.value ?? '搜索失败，请换一个关键词重试'
@@ -30,6 +34,47 @@ function handleSearchSubmit(event: Event) {
   event.preventDefault()
   event.stopImmediatePropagation()
   void pdfSearch.run(searchQuery.value)
+}
+
+function capturePdfAnnotation(event: Event, withNote: boolean) {
+  if (!pdfAnnotationsActive.value) return
+  event.preventDefault()
+  event.stopImmediatePropagation()
+  const selection = window.getSelection()
+  if (!selection || selection.isCollapsed || !selection.rangeCount) return
+  const range = selection.getRangeAt(0).cloneRange()
+  const container = range.commonAncestorContainer instanceof Element ? range.commonAncestorContainer : range.commonAncestorContainer.parentElement
+  const page = container?.closest<HTMLElement>('.pdf-page')
+  if (!page) return
+  const note = withNote ? window.prompt('写下批注（可留空，仅保存高亮）', '') : ''
+  if (note === null) return
+  void pdfAnnotations.createFromSelection({ page, range, note, generation: generation.value })
+}
+
+function toggleAnnotation(id: string, checked: boolean) {
+  selectedAnnotations.value = checked
+    ? [...new Set([...selectedAnnotations.value, id])]
+    : selectedAnnotations.value.filter(value => value !== id)
+}
+
+function toggleAllAnnotations() {
+  const ids = visibleAnnotations.value.map(item => item.id)
+  selectedAnnotations.value = ids.every(id => selectedAnnotations.value.includes(id)) ? [] : ids
+}
+
+function deleteSelectedAnnotations() {
+  if (!pdfAnnotationsActive.value) return
+  void pdfAnnotations.removeSelected()
+}
+
+function editAnnotation(annotation: typeof annotations.value[number]) {
+  const note = window.prompt('编辑批注', annotation.note)
+  if (note === null) return
+  void pdfAnnotations.update(annotation.id, { note })
+}
+
+function jumpToAnnotation(page: number | null) {
+  if (page != null) void pdf.goTo(page)
 }
 
 watch(
@@ -91,19 +136,19 @@ onUnmounted(() => {
       </div>
     </section>
     <div class="tool-divider" />
-    <div class="annotation-heading"><strong>高亮与批注</strong><span id="annotation-count">0 条</span></div>
+    <div class="annotation-heading"><strong>高亮与批注</strong><span id="annotation-count">{{ pdfAnnotationsActive ? `${annotations.length} 条` : '0 条' }}</span></div>
     <p class="selection-hint">在正文中选中文字，然后高亮或添加批注。</p>
-    <div class="selection-actions"><button id="highlight-selection" type="button">高亮选中</button><button id="note-selection" type="button">添加批注</button></div>
+    <div class="selection-actions"><button id="highlight-selection" type="button" @click.capture="capturePdfAnnotation($event, false)">高亮选中</button><button id="note-selection" type="button" @click.capture="capturePdfAnnotation($event, true)">添加批注</button></div>
     <div class="annotation-filters">
-      <input id="annotation-filter-query" type="search" placeholder="筛选原文、批注或标签" aria-label="筛选批注">
-      <select id="annotation-filter-type" aria-label="批注类型">
+      <input id="annotation-filter-query" v-model="annotationQuery" type="search" placeholder="筛选原文、批注或标签" aria-label="筛选批注">
+      <select id="annotation-filter-type" v-model="annotationType" aria-label="批注类型">
         <option value="all">全部</option><option value="notes">有批注</option><option value="highlights">仅高亮</option><option value="pdf">PDF</option><option value="ebook">电子书</option>
       </select>
-      <select id="annotation-sort" aria-label="批注排序">
+      <select id="annotation-sort" v-model="annotationSort" aria-label="批注排序">
         <option value="newest">最近修改</option><option value="oldest">最早创建</option><option value="location">阅读位置</option>
       </select>
-      <button id="annotation-select-all" class="text-button" type="button">全选当前</button>
-      <button id="annotation-delete-selected" class="text-button danger" type="button" disabled>删除所选</button>
+      <button id="annotation-select-all" class="text-button" type="button" @click.capture="pdfAnnotationsActive && toggleAllAnnotations()">全选当前</button>
+      <button id="annotation-delete-selected" class="text-button danger" type="button" :disabled="!pdfAnnotationsActive || !selectedAnnotations.length" @click.capture="deleteSelectedAnnotations">删除所选</button>
     </div>
     <div class="annotation-export-actions">
       <button id="import-annotations-json" class="text-button" type="button">导入 JSON</button>
@@ -111,6 +156,15 @@ onUnmounted(() => {
       <button id="export-annotations-markdown" class="text-button" type="button">导出 Markdown</button>
       <button id="export-annotations-json" class="text-button" type="button">导出 JSON</button>
     </div>
-    <div id="annotation-list" class="annotation-list" />
+    <div id="annotation-list" class="annotation-list">
+      <template v-if="pdfAnnotationsActive">
+        <article v-for="annotation in visibleAnnotations" :key="annotation.id" class="annotation-item">
+          <input class="annotation-select" type="checkbox" :checked="selectedAnnotations.includes(annotation.id)" :aria-label="`选择${annotation.text}`" @change="toggleAnnotation(annotation.id, ($event.target as HTMLInputElement).checked)">
+          <button class="annotation-jump" type="button" @click="jumpToAnnotation(annotation.page)"><small>第 {{ annotation.page }} 页</small><q>{{ annotation.text }}</q><p v-if="annotation.note">{{ annotation.note }}</p></button>
+          <button class="text-button" type="button" @click="editAnnotation(annotation)">编辑</button>
+          <button class="text-button danger" type="button" @click="pdfAnnotations.remove(annotation.id)">删除</button>
+        </article>
+      </template>
+    </div>
   </aside>
 </template>
