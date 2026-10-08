@@ -64,6 +64,13 @@ test('scrolled EPUB mode uses a continuous cross-chapter document flow', async (
   assert.match(controller, /continuous-section-frame/)
   assert.match(css, /\.continuous-ebook\s*\{[^}]*overflow-y:auto/)
 })
+
+test('keyboard focus remains visible for semantic buttons in normal and forced-color modes', async () => {
+  const css = await readFile(new URL('../styles/reader.css', import.meta.url), 'utf8')
+  assert.match(css, /\[role="button"\]:focus-visible/)
+  assert.match(css, /\[tabindex\]:not\(\[tabindex="-1"\]\):focus-visible/)
+  assert.match(css, /@media\s*\(forced-colors:active\)/)
+})
 test('manifest and package versions stay aligned', async () => {
   const manifest = JSON.parse(await readFile(new URL('../manifest.json', import.meta.url), 'utf8'))
   const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))

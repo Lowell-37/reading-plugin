@@ -26,7 +26,8 @@ html, body { width:100%; height:100%; margin:0; overflow:hidden; }
 body { background:var(--bg); color:var(--text); transition:background .25s ease,color .25s ease; }
 button, input, select { font:inherit; }
 button { color:inherit; }
-button:focus-visible, input:focus-visible, select:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+button:focus-visible, input:focus-visible, select:focus-visible, [role="button"]:focus-visible, [tabindex]:not([tabindex="-1"]):focus-visible { outline:3px solid var(--accent); outline-offset:3px; }
+@media (forced-colors:active) { button:focus-visible, input:focus-visible, select:focus-visible, [role="button"]:focus-visible, [tabindex]:not([tabindex="-1"]):focus-visible { outline-color:Highlight; } }
 svg { width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
 
 .app-header { height:var(--header-height); padding:0 26px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid transparent; position:relative; z-index:30; }
