@@ -135,12 +135,12 @@ onMounted(() => {
     element.addEventListener('click', handler)
     pdfToolbarListeners.push({ element, handler })
   }
-  window.addEventListener('keydown', handlePdfKeyboard)
+  window.addEventListener('keydown', handleReaderKeyboard)
 })
 
 onBeforeUnmount(() => {
   document.body.classList.remove('is-reading', 'pdf-mode')
-  window.removeEventListener('keydown', handlePdfKeyboard)
+  window.removeEventListener('keydown', handleReaderKeyboard)
   for (const { element, handler } of pdfToolbarListeners) element.removeEventListener('click', handler)
   pdfToolbarListeners.length = 0
 })
@@ -181,10 +181,27 @@ function stepPdfZoom(delta: number) {
   return Math.round((Number(pdfZoom.value) + delta) * 10) / 10
 }
 
-function handlePdfKeyboard(event: KeyboardEvent) {
-  if (!pdfSessionActive.value) return
-  const activeTagName = document.activeElement?.tagName ?? ''
-  if (['INPUT', 'TEXTAREA', 'SELECT'].includes(activeTagName)) return
+function hasEditableFocus(root: Document | ShadowRoot = document): boolean {
+  const activeElement = root.activeElement
+  if (!activeElement) return false
+  if (['INPUT', 'TEXTAREA', 'SELECT'].includes(activeElement.tagName)) return true
+  const contentEditable = activeElement.getAttribute('contenteditable')
+  if (activeElement instanceof HTMLElement && (activeElement.isContentEditable || (contentEditable !== null && contentEditable.toLowerCase() !== 'false'))) return true
+  if (activeElement instanceof HTMLIFrameElement) {
+    try {
+      return activeElement.contentDocument ? hasEditableFocus(activeElement.contentDocument) : false
+    } catch {
+      return false
+    }
+  }
+  return activeElement instanceof HTMLElement && activeElement.shadowRoot
+    ? hasEditableFocus(activeElement.shadowRoot)
+    : false
+}
+
+function handleReaderKeyboard(event: KeyboardEvent) {
+  if (!workspaceVisible.value || reader.activePanel !== null || (!pdfSessionActive.value && !ebookSessionActive.value)) return
+  if (hasEditableFocus()) return
   const direction = event.key === 'ArrowLeft' || event.key === 'PageUp'
     ? -1
     : event.key === 'ArrowRight' || event.key === 'PageDown'
@@ -193,7 +210,8 @@ function handlePdfKeyboard(event: KeyboardEvent) {
   if (direction === null) return
   event.preventDefault()
   event.stopImmediatePropagation()
-  void pdf.navigate(direction)
+  if (pdfSessionActive.value) void pdf.navigate(direction)
+  else void ebook.navigate(direction)
 }
 
 async function recoverSessionError(event: MouseEvent, retry: boolean) {

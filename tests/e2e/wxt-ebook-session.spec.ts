@@ -28,6 +28,14 @@ test.describe('@wxt-session', () => {
         await page.locator('#next-button').evaluate((button: HTMLElement) => button.click())
         await expect.poll(() => progress(page)).toBeGreaterThan(0)
 
+        await page.locator('#sidebar-button').evaluate((button: HTMLElement) => button.click())
+        const keyboardHandled = await page.evaluate(() => {
+          const event = new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true })
+          window.dispatchEvent(event)
+          return event.defaultPrevented
+        })
+        expect(keyboardHandled).toBe(true)
+
         await page.locator('#settings-button').evaluate((button: HTMLElement) => button.click())
         await page.locator('[data-flow="scrolled"]').evaluate((button: HTMLElement) => button.click())
         await expect(page.locator('.continuous-ebook')).toBeVisible()

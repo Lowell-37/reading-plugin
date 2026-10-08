@@ -320,6 +320,85 @@ describe('Vue reader shell', () => {
     }
   })
 
+  test('routes reading keys to the active WXT ebook session', async () => {
+    const pinia = createPinia()
+    const reader = useReaderStore(pinia)
+    const ebook = useEbookSessionStore(pinia)
+    ebook.record = { id: 'ebook-keyboard', name: 'keyboard.epub', format: 'epub' }
+    ebook.status = 'ready'
+    reader.applyLegacyState({ isReading: true })
+    const navigate = vi.spyOn(ebook, 'navigate').mockResolvedValue(undefined)
+    const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
+    const event = new KeyboardEvent('keydown', { key: 'PageDown', bubbles: true, cancelable: true })
+
+    window.dispatchEvent(event)
+
+    expect(event.defaultPrevented).toBe(true)
+    expect(navigate).toHaveBeenCalledWith(1)
+    wrapper.unmount()
+  })
+
+  test('does not route reading keys while the WXT workspace is inactive', async () => {
+    const pinia = createPinia()
+    const ebook = useEbookSessionStore(pinia)
+    ebook.record = { id: 'ebook-inactive', name: 'inactive.epub', format: 'epub' }
+    ebook.status = 'ready'
+    const navigate = vi.spyOn(ebook, 'navigate').mockResolvedValue(undefined)
+    const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
+    const event = new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true })
+
+    window.dispatchEvent(event)
+
+    expect(event.defaultPrevented).toBe(false)
+    expect(navigate).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  test('does not navigate a WXT PDF session while a panel is open', async () => {
+    const pinia = createPinia()
+    const reader = useReaderStore(pinia)
+    const pdf = usePdfSessionStore(pinia)
+    pdf.record = { id: 'pdf-panel-keyboard', name: 'panel.pdf', format: 'pdf' }
+    pdf.status = 'ready'
+    reader.applyPdfSessionSnapshot(pdfSnapshot({ status: 'ready' }))
+    reader.requestPanel('tools')
+    const navigate = vi.spyOn(pdf, 'navigate').mockResolvedValue(undefined)
+    const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
+    const event = new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true })
+
+    window.dispatchEvent(event)
+
+    expect(event.defaultPrevented).toBe(false)
+    expect(navigate).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  test('does not route reading keys while a contenteditable descendant has focus', async () => {
+    const pinia = createPinia()
+    const reader = useReaderStore(pinia)
+    const ebook = useEbookSessionStore(pinia)
+    ebook.record = { id: 'ebook-editable-focus', name: 'editable.epub', format: 'epub' }
+    ebook.status = 'ready'
+    reader.applyLegacyState({ isReading: true })
+    const navigate = vi.spyOn(ebook, 'navigate').mockResolvedValue(undefined)
+    const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
+    const host = document.createElement('div')
+    const shadow = host.attachShadow({ mode: 'open' })
+    const editable = document.createElement('div')
+    editable.setAttribute('contenteditable', 'true')
+    shadow.append(editable)
+    document.body.append(host)
+    editable.focus()
+    const event = new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true })
+
+    window.dispatchEvent(event)
+
+    expect(event.defaultPrevented).toBe(false)
+    expect(navigate).not.toHaveBeenCalled()
+    host.remove()
+    wrapper.unmount()
+  })
+
   test('removes PDF toolbar listeners when the workspace unmounts before a remount', async () => {
     const pinia = createPinia()
     const reader = useReaderStore(pinia)

@@ -211,7 +211,8 @@ describe('legacy reader port lifecycle', () => {
     window.dispatchEvent(keyboard)
 
     expect(states).toHaveLength(stateCount)
-    expect(keyboard.defaultPrevented).toBe(false)
+    expect(keyboard.defaultPrevented).toBe(true)
+    expect(view.goRightCalls).toBe(2)
     expect(view.goToFractionCalls).toBe(0)
     await expect(port.openRecord(record(`legacy.${format}`, format)))
       .rejects.toThrow('WXT legacy reader port cannot open ebook records')
