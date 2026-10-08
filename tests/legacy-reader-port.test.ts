@@ -7,9 +7,6 @@ import { createFoliateEbookSession } from '../entrypoints/reader/foliate-ebook-s
 import { useEbookSessionStore } from '../entrypoints/reader/stores/ebook-session'
 import { useLibraryStore } from '../entrypoints/reader/stores/library'
 import { useSettingsStore } from '../entrypoints/reader/stores/settings'
-import { usePdfSessionStore } from '../entrypoints/reader/stores/pdf-session'
-import { createPdfJsSession } from '../entrypoints/reader/pdfjs-session'
-import type { PdfJsLike } from '../entrypoints/reader/pdf-session-dependencies'
 import type { LegacyReaderState } from '../entrypoints/reader/legacy-reader-port'
 import type { BookRecord } from '../src/core/types'
 
@@ -222,164 +219,6 @@ describe('legacy reader port lifecycle', () => {
     port.destroy()
   })
 
-  test.skip('WXT library PDF session keeps legacy tools but has exclusive engine and navigation ownership', async () => {
-    // @ts-expect-error JavaScript compatibility controller has no declaration file.
-    const { createLegacyReaderPort } = await import('../src/reader.js')
-    const engineBindings = ['prev-button', 'next-button', 'progress-slider', 'pdf-zoom-out', 'pdf-zoom-in', 'pdf-fit-width', 'pdf-page-input']
-      .map(id => vi.spyOn(document.getElementById(id)!, 'addEventListener'))
-    const port = createLegacyReaderPort({ onState() {}, onPanelRequest() {}, onLibraryChanged() {} })
-    for (const binding of engineBindings) expect(binding).not.toHaveBeenCalled()
-    // @ts-expect-error PDF.js ESM build has no declaration.
-    const engine = await import('../node_modules/pdfjs-dist/build/pdf.mjs')
-    const pdf = usePdfSessionStore(pinia)
-    const library = useLibraryStore(pinia)
-    const pages = document.querySelector<HTMLElement>('#pdf-pages')!
-    const viewport = document.querySelector<HTMLElement>('#pdf-viewport')!
-    const progressWrites: number[] = []
-    let generation = 0
-    pdf.attachPort(callbacks => createPdfJsSession({
-      ...callbacks, baseUrl: '/', host: { pages, viewport },
-      loadPdfJs: async () => engine as PdfJsLike,
-      nextGeneration: () => ++generation,
-      createObserver: () => ({ observe() {}, disconnect() {} }),
-      requestFrame: callback => window.setTimeout(() => callback(0), 0),
-      cancelFrame: handle => window.clearTimeout(handle), pixelRatio: () => 1,
-      createProgressService: () => ({
-        schedule(_id, value) { progressWrites.push(value.page); return true },
-        flush: async () => false, cancel() {},
-      }),
-    }))
-    library.attachLegacyPort(port)
-    library.attachPdfPort(pdf)
-    const book = record('tools.pdf', 'pdf')
-    await library.openRecord(book)
-    expect(pdf.status).toBe('ready')
-    expect(engine.getDocument).toHaveBeenCalledTimes(1)
-    await vi.waitFor(() => expect(pages.querySelectorAll('.textLayer span')).toHaveLength(2))
-    port.attachPdfTools(book, {
-      pageCount: () => pdf.pageCount,
-      readTextLayer: (page: number) => pages.querySelector(`[data-page="${page}"][data-state="rendered"] .textLayer`),
-      goTo: (page: number) => pdf.goTo(page),
-    })
-    const stateCount = progressWrites.length
-    const progress = document.querySelector<HTMLInputElement>('#progress-slider')!
-    progress.value = '0'
-    progress.dispatchEvent(new Event('input', { bubbles: true }))
-    expect(progressWrites).toHaveLength(stateCount + 1)
-    expect(progressWrites.at(-1)).toBe(1)
-    const search = document.querySelector<HTMLInputElement>('#search-input')!
-    search.value = 'searchable'
-    document.querySelector('#search-form')!.dispatchEvent(new Event('submit', { cancelable: true }))
-    await Promise.resolve()
-    expect(document.querySelectorAll('.search-result')).toHaveLength(0)
-    expect(pages.querySelectorAll('.pdf-search-match')).toHaveLength(0)
-
-    const page = pages.querySelector<HTMLElement>('[data-page="2"]')!
-    vi.spyOn(page, 'getBoundingClientRect').mockReturnValue(rect(0, 100))
-    Object.defineProperty(Range.prototype, 'getClientRects', { configurable: true, value: () => [rect(10, 10)] })
-    const textLayer = page.querySelector('.textLayer')!
-    const range = document.createRange()
-    range.selectNodeContents(textLayer.querySelector('span')!)
-    window.getSelection()!.removeAllRanges()
-    window.getSelection()!.addRange(range)
-    textLayer.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
-    document.querySelector<HTMLElement>('#highlight-selection')!.click()
-    await vi.waitFor(() => expect(document.querySelector('.annotation-item q')?.textContent).toBe('Session searchable text.'))
-    expect(page.querySelectorAll('.pdf-annotation-layer span')).toHaveLength(1)
-    // @ts-expect-error JavaScript repository has no declaration.
-    const { bookRepository } = await import('../src/book-repository.js')
-    expect(bookRepository.update).toHaveBeenCalledWith('tools.pdf', { annotations: [expect.objectContaining({ kind: 'pdf', page: 2, text: 'Session searchable text.' })] })
-    await pdf.setZoom(1.2)
-    await vi.waitFor(() => expect(page.querySelectorAll('.pdf-annotation-layer span')).toHaveLength(1))
-    expect(page.querySelectorAll('.pdf-search-match')).toHaveLength(0)
-    expect(document.querySelectorAll('.annotation-item')).toHaveLength(1)
-    await pdf.goTo(1)
-    document.querySelector<HTMLElement>('.annotation-jump')!.click()
-    expect(pdf.page).toBe(2)
-    const count = pages.childElementCount
-    const documentResource = await engine.getDocument.mock.results[0].value.promise
-    await port.closeSession()
-    expect(pages.childElementCount).toBe(count)
-    expect(pages.querySelectorAll('.pdf-annotation-layer')).toHaveLength(0)
-    expect(pages.querySelectorAll('.pdf-search-match')).toHaveLength(0)
-    port.destroy()
-    expect(pages.childElementCount).toBe(count)
-    expect(engine.getDocument).toHaveBeenCalledTimes(1)
-    expect(documentResource.destroy).not.toHaveBeenCalled()
-    pdf.destroy()
-    await vi.waitFor(() => expect(documentResource.destroy).toHaveBeenCalledTimes(1))
-  })
-
-  test.skip('WXT clears persisted annotation rows and all tool controls after close then an invalid PDF', async () => {
-    // @ts-expect-error JavaScript compatibility controller has no declaration file.
-    const { createLegacyReaderPort } = await import('../src/reader.js')
-    // @ts-expect-error PDF.js ESM build has no declaration.
-    const engine = await import('../node_modules/pdfjs-dist/build/pdf.mjs')
-    const port = createLegacyReaderPort({ onState() {}, onPanelRequest() {}, onLibraryChanged() {} })
-    const pdf = usePdfSessionStore(pinia)
-    const pages = document.querySelector<HTMLElement>('#pdf-pages')!
-    const viewport = document.querySelector<HTMLElement>('#pdf-viewport')!
-    let generation = 0
-    pdf.attachPort(callbacks => createPdfJsSession({
-      ...callbacks, baseUrl: '/', host: { pages, viewport },
-      loadPdfJs: async () => engine as PdfJsLike,
-      nextGeneration: () => ++generation,
-      createObserver: () => ({ observe() {}, disconnect() {} }),
-      requestFrame: callback => window.setTimeout(() => callback(0), 0),
-      cancelFrame: handle => window.clearTimeout(handle), pixelRatio: () => 1,
-      createProgressService: () => ({ schedule: () => true, flush: async () => false, cancel() {} }),
-    }))
-    const saved = record('annotated.pdf', 'pdf')
-    saved.annotations = [{
-      id: 'persisted-note', kind: 'pdf', locator: 'page:1', page: 1, section: null,
-      text: 'Saved PDF quotation', note: 'Persisted note', color: '#f4c95d', rects: [], createdAt: 1, tags: [],
-    }]
-    await pdf.open(saved, {})
-    expect(pdf.status).toBe('ready')
-    port.attachPdfTools(saved, {
-      pageCount: () => pdf.pageCount,
-      readTextLayer: (page: number) => pages.querySelector(`[data-page="${page}"][data-state="rendered"] .textLayer`),
-      goTo: (page: number) => pdf.goTo(page),
-    })
-    const query = document.querySelector<HTMLInputElement>('#annotation-filter-query')!
-    const type = document.querySelector<HTMLSelectElement>('#annotation-filter-type')!
-    const sort = document.querySelector<HTMLSelectElement>('#annotation-sort')!
-    const selectAll = document.querySelector<HTMLButtonElement>('#annotation-select-all')!
-    const deleteSelected = document.querySelector<HTMLButtonElement>('#annotation-delete-selected')!
-    query.value = 'Persisted'
-    query.dispatchEvent(new Event('input'))
-    type.value = 'notes'
-    type.dispatchEvent(new Event('change'))
-    sort.value = 'oldest'
-    sort.dispatchEvent(new Event('change'))
-    selectAll.click()
-    expect(document.querySelector('.annotation-item')?.textContent).toContain('Persisted note')
-    expect(document.querySelectorAll('.annotation-select:checked')).toHaveLength(1)
-    expect(deleteSelected.disabled).toBe(false)
-
-    await port.closeSession()
-    await pdf.close()
-    engine.getDocument.mockImplementationOnce(() => { throw new Error('Invalid PDF structure') })
-    await pdf.open(record('invalid.pdf', 'pdf'), {})
-    expect(pdf.error?.code).toBe('parse')
-    port.attachPdfTools(null)
-
-    expect({
-      rows: document.querySelectorAll('.annotation-item').length,
-      count: document.querySelector('#annotation-count')?.textContent,
-      query: query.value, type: type.value, sort: sort.value,
-      selected: document.querySelectorAll('.annotation-select:checked').length,
-      selectAllDisabled: selectAll.disabled, selectAllLabel: selectAll.textContent,
-      deleteDisabled: deleteSelected.disabled, deleteLabel: deleteSelected.textContent,
-    }).toEqual({
-      rows: 0, count: '0 条', query: '', type: 'all', sort: 'newest', selected: 0,
-      selectAllDisabled: true, selectAllLabel: '全选当前', deleteDisabled: true, deleteLabel: '删除所选',
-    })
-    expect(saved.annotations[0]?.note).toBe('Persisted note')
-    port.destroy()
-    pdf.destroy()
-  })
-
   test('applying settings through the WXT port synchronizes the legacy header body class', async () => {
     // @ts-expect-error JavaScript compatibility controller has no declaration file.
     const { createLegacyReaderPort } = await import('../src/reader.js')
@@ -412,20 +251,6 @@ function record(name: string, format: BookRecord['format']): BookRecord {
     format,
     blob: file,
     openedAt: 1,
-  }
-}
-
-function rect(top: number, height: number): DOMRect {
-  return {
-    bottom: top + height,
-    height,
-    left: 0,
-    right: 100,
-    top,
-    width: 100,
-    x: 0,
-    y: top,
-    toJSON: () => ({}),
   }
 }
 
