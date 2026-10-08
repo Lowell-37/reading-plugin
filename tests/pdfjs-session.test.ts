@@ -49,6 +49,18 @@ describe('PDF.js session adapter', () => {
     expect(harness.pages.children[1]?.querySelector('.textLayer')?.textContent).toBe('text 2')
   })
 
+  test('renders high-density displays at a capped two-times backing scale', async () => {
+    const harness = createHarness({ pixelRatio: 3 })
+
+    await harness.session.open(record('high-density.pdf'), {})
+    await harness.flushFrames()
+
+    expect(harness.document.pages.get(1)?.renderScales).toEqual([3.344])
+    const canvas = harness.pages.querySelector<HTMLCanvasElement>('.pdf-page canvas')
+    expect(canvas?.style.width).toBe('836px')
+    expect(canvas?.width).toBe(1672)
+  })
+
   test('exposes only a completed rendered text layer for search consumers', async () => {
     const harness = createHarness()
     await harness.session.open(record('search.pdf'), {})
@@ -386,6 +398,7 @@ async function cancelSession(harness: ReturnType<typeof createHarness>, operatio
 }
 
 function createHarness(options: {
+  pixelRatio?: number
   loadingError?: unknown
   loadingDeferred?: boolean
   renderDeferred?: boolean
@@ -450,7 +463,7 @@ function createHarness(options: {
       return id
     },
     cancelFrame: id => { frames.delete(id) },
-    pixelRatio: () => 1,
+    pixelRatio: () => options.pixelRatio ?? 1,
     createProgressService: () => ({
       schedule(bookId: string, progress: unknown) {
         scheduled.push({ bookId, progress })
