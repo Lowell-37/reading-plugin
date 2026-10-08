@@ -71,6 +71,12 @@ test('keyboard focus remains visible for semantic buttons in normal and forced-c
   assert.match(css, /\[tabindex\]:not\(\[tabindex="-1"\]\):focus-visible/)
   assert.match(css, /@media\s*\(forced-colors:active\)/)
 })
+
+test('PDF and continuous ebook viewports isolate vertical touch scrolling', async () => {
+  const css = await readFile(new URL('../styles/reader.css', import.meta.url), 'utf8')
+  assert.match(css, /\.continuous-ebook\s*\{[^}]*touch-action:pan-y pinch-zoom/)
+  assert.match(css, /\.pdf-viewport\s*\{[^}]*overscroll-behavior:contain[^}]*touch-action:pan-y pinch-zoom/)
+})
 test('manifest and package versions stay aligned', async () => {
   const manifest = JSON.parse(await readFile(new URL('../manifest.json', import.meta.url), 'utf8'))
   const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
