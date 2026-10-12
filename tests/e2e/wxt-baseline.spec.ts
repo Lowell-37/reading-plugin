@@ -43,6 +43,26 @@ for (const format of ['epub', 'mobi', 'azw3'] as const) {
   })
 }
 
+for (const format of ['epub', 'mobi', 'azw3'] as const) {
+test(`WXT searches a real ${format.toUpperCase()} through Vue and navigates to the selected result`, async () => {
+  const { context, page, pageErrors } = await launchExtension(wxtExtension)
+  try {
+    await openBook(page, `alice.${format}`)
+    await page.locator('#tools-button').click()
+    await page.locator('#search-input').fill('Queen')
+    await page.locator('#search-form button[type="submit"]').click()
+    await expect(page.locator('#search-status')).toContainText('找到', { timeout: 45_000 })
+    await expect.poll(() => page.locator('.search-result').count()).toBeGreaterThan(0)
+    const before = await progress(page)
+    await page.locator('.search-result').first().click()
+    await expect.poll(() => progress(page)).not.toBe(before)
+    expect(pageErrors.map(error => error.stack || error.message)).toEqual([])
+  } finally {
+    await context.close()
+  }
+})
+}
+
 test('WXT renders a real PDF text layer, page jump and zoom', async () => {
   const { context, page, pageErrors } = await launchExtension(wxtExtension)
   try {

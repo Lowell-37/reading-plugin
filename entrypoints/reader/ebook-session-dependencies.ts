@@ -8,9 +8,11 @@ import type {
 } from './ebook-session-port'
 
 export interface EbookLocationLike {
+  index?: number
   cfi?: string | null
   fraction?: number
   tocItem?: { label?: unknown } | null
+  section?: { current?: number } | null
 }
 
 export interface EbookRendererLike {
@@ -22,11 +24,13 @@ export interface EbookViewLike extends EventTarget {
   book: {
     metadata?: { title?: unknown }
     toc?: Array<{ label?: unknown, href?: unknown, subitems?: unknown[] }>
-    sections?: Array<{ linear?: string }>
+    sections?: Array<{ linear?: string, createDocument?: () => Document | Promise<Document> }>
   }
   renderer: EbookRendererLike
   style: { display: string, removeProperty(name: string): string }
   lastLocation?: EbookLocationLike | null
+  getProgressOf?(index: number): { tocItem?: { label?: unknown } | null } | null
+  getCFI?(index: number, range: Range): unknown
   open(blob: Blob): unknown
   goTo(target: unknown): unknown
   goToFraction(fraction: number): unknown

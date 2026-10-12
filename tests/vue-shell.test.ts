@@ -273,11 +273,17 @@ describe('Vue reader shell', () => {
     wrapper.unmount()
   })
 
-  test('leaves ebook search submissions for the legacy controller', async () => {
+  test('Vue handles ebook search and navigates to the selected result', async () => {
     const pinia = createPinia()
     const ebook = useEbookSessionStore(pinia)
     ebook.record = { id: 'ebook-search', name: 'book.epub', format: 'epub' }
     ebook.status = 'ready'
+    const search = vi.spyOn(ebook, 'search').mockResolvedValue({
+      results: [{ section: 0, label: 'Chapter one', offset: 7, length: 7, context: { text: 'A chapter begins.', start: 0, end: 17, matchStart: 2, matchEnd: 9 }, locator: 'cfi:chapter' }],
+      total: 1,
+      errors: [],
+    })
+    const goTo = vi.spyOn(ebook, 'goTo').mockResolvedValue(undefined)
     const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
     const legacySubmit = vi.fn()
     const form = wrapper.find<HTMLFormElement>('#search-form').element
@@ -287,8 +293,28 @@ describe('Vue reader shell', () => {
 
     form.dispatchEvent(event)
 
-    expect(event.defaultPrevented).toBe(false)
-    expect(legacySubmit).toHaveBeenCalledTimes(1)
+    expect(event.defaultPrevented).toBe(true)
+    expect(legacySubmit).not.toHaveBeenCalled()
+    await vi.waitFor(() => expect(wrapper.find('#search-status').text()).toBe('找到 1 处结果'))
+    expect(search).toHaveBeenCalled()
+    expect(wrapper.find('.search-result strong').text()).toBe('Chapter one')
+    await wrapper.find('.search-result').trigger('click')
+    expect(goTo).toHaveBeenCalledWith('cfi:chapter')
+    wrapper.unmount()
+  })
+
+  test('prevents search form navigation while an ebook is loading', () => {
+    const pinia = createPinia()
+    const ebook = useEbookSessionStore(pinia)
+    ebook.record = { id: 'loading-ebook', name: 'book.epub', format: 'epub' }
+    ebook.status = 'loading'
+    const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
+    const form = wrapper.find<HTMLFormElement>('#search-form').element
+    const event = new Event('submit', { bubbles: true, cancelable: true })
+
+    form.dispatchEvent(event)
+
+    expect(event.defaultPrevented).toBe(true)
     wrapper.unmount()
   })
 
@@ -547,6 +573,7 @@ describe('Vue reader shell', () => {
         close: vi.fn().mockResolvedValue(undefined),
         goTo: vi.fn().mockResolvedValue(undefined),
         navigate: vi.fn().mockResolvedValue(undefined),
+        search: vi.fn().mockResolvedValue({ results: [], errors: [], total: 0 }),
         setFlow: vi.fn().mockResolvedValue(undefined),
         applySettings: vi.fn().mockResolvedValue(undefined),
         flushProgress: vi.fn().mockResolvedValue(undefined),

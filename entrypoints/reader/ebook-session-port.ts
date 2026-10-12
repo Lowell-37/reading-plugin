@@ -1,5 +1,6 @@
 import type { BookRecord } from '../../src/core/types'
 import type { ReaderSettings } from './legacy-reader-port'
+import type { EbookSearchOptions, EbookSearchSnapshot } from '../../src/core/ebook-search-index'
 
 export type EbookSessionStatus = 'idle' | 'loading' | 'ready' | 'error'
 export type EbookSessionFlow = 'paginated' | 'scrolled'
@@ -41,6 +42,7 @@ export interface EbookSessionPort {
   close(): Promise<void>
   goTo(target: unknown): Promise<void>
   navigate(direction: -1 | 1): Promise<void>
+  search(query: string, options?: EbookSearchOptions): Promise<EbookSearchSnapshot>
   setFlow(flow: EbookSessionFlow): Promise<void>
   applySettings(settings: ReaderSettings): Promise<void>
   flushProgress(): Promise<void>

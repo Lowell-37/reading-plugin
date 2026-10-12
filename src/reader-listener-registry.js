@@ -44,9 +44,11 @@ const ROOT_EBOOK_ACTIONS = new Set(ROOT_EBOOK_LISTENERS.map(binding => binding.a
 const ROOT_PDF_ACTIONS = new Set([
   'pdf-zoom-out', 'pdf-zoom-in', 'pdf-fit-width', 'pdf-page-change', 'pdf-page-keyboard',
 ])
+const WXT_VUE_ACTIONS = new Set(['search-submit'])
 
 export const WXT_ENGINE_LISTENERS = Object.freeze(
-  ENGINE_LISTENERS.filter(binding => !ROOT_EBOOK_ACTIONS.has(binding.action) && !ROOT_PDF_ACTIONS.has(binding.action)),
+  ENGINE_LISTENERS.filter(binding => !ROOT_EBOOK_ACTIONS.has(binding.action)
+    && !ROOT_PDF_ACTIONS.has(binding.action) && !WXT_VUE_ACTIONS.has(binding.action)),
 )
 
 export const ROOT_UI_LISTENERS = Object.freeze([

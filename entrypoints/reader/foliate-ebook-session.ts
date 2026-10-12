@@ -8,6 +8,9 @@ import type {
   EbookSessionTocItem,
 } from './ebook-session-port'
 import type { ReaderSettings } from './legacy-reader-port'
+import { EbookSearchIndex, type EbookSearchOptions, type EbookSearchSnapshot } from '../../src/core/ebook-search-index'
+// @ts-expect-error JavaScript compatibility text-range module has no declaration file yet.
+import { rangeFromTextOffsets } from '../../src/text-range.js'
 import type {
   EbookLocationLike,
   EbookScrollerLike,
@@ -41,6 +44,7 @@ export function createFoliateEbookSession(
   let viewRelocateListener: EventListener | null = null
   let scrollerRelocateListener: EventListener | null = null
   let flowQueue: Promise<void> = Promise.resolve()
+  let searchIndex: EbookSearchIndex | null = null
 
   async function open(record: BookRecord, settings: ReaderSettings): Promise<void> {
     const generation = dependencies.nextGeneration()
@@ -128,6 +132,41 @@ export function createFoliateEbookSession(
     if (currentScroller) await currentScroller.scrollByPage(direction)
     else if (direction < 0) await currentView?.goLeft()
     else await currentView?.goRight()
+  }
+
+  async function search(query: string, options: EbookSearchOptions = {}): Promise<EbookSearchSnapshot> {
+    const view = currentView
+    if (!view || currentSnapshot?.status !== 'ready') throw new Error('Ebook search is unavailable')
+    searchIndex ??= createSearchIndex(view)
+    return searchIndex.search(query, {
+      ...options,
+      currentSectionIndex: currentScroller?.currentLocation()?.index
+        ?? view.lastLocation?.section?.current ?? 0,
+    })
+  }
+
+  function createSearchIndex(view: EbookViewLike): EbookSearchIndex {
+    const sections = (view.book.sections ?? []).flatMap((section, index) => {
+      if (!section?.createDocument) return []
+      let documentPromise: Promise<Document> | null = null
+      const loadDocument = () => documentPromise ??= Promise.resolve(section.createDocument!())
+      return [{
+        index,
+        label: displayEngineValue(view.getProgressOf?.(index)?.tocItem?.label) || `第 ${index + 1} 章`,
+        loadText: async () => {
+          const doc = await loadDocument()
+          return doc.body?.textContent || doc.documentElement?.textContent || ''
+        },
+        createLocator: async (offset: number, length: number) => {
+          const doc = await loadDocument()
+          const root = doc.body || doc.documentElement
+          const range = root ? rangeFromTextOffsets(root, offset, offset + length) as Range | null : null
+          if (!range || !view.getCFI) throw new Error(`Unable to locate search result in section ${index}`)
+          return view.getCFI(index, range)
+        },
+      }]
+    })
+    return new EbookSearchIndex(sections)
   }
 
   async function setFlow(flow: EbookSessionFlow): Promise<void> {
@@ -291,6 +330,8 @@ export function createFoliateEbookSession(
   function takeResources() {
     const hadResources = hasResources()
     acceptRelocations = false
+    searchIndex?.clear()
+    searchIndex = null
     detachListeners()
     const scroller = currentScroller
     const view = currentView
@@ -377,6 +418,7 @@ export function createFoliateEbookSession(
     close,
     goTo,
     navigate,
+    search,
     setFlow,
     applySettings,
     flushProgress,

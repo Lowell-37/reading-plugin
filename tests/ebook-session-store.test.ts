@@ -189,6 +189,7 @@ function createFakePort() {
     async navigate(direction) { calls.push(`navigate:${direction}`) },
     async setFlow(flow) { calls.push(`setFlow:${flow}`) },
     async applySettings() {},
+    async search() { return { results: [], errors: [], total: 0 } },
     async flushProgress() { calls.push('flushProgress') },
     destroy() {},
   }

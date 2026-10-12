@@ -1,9 +1,62 @@
+// @vitest-environment jsdom
 import { describe, expect, test } from 'vitest'
 import { createFoliateEbookSession } from '../entrypoints/reader/foliate-ebook-session'
 import type { EbookSessionError, EbookSessionSnapshot } from '../entrypoints/reader/ebook-session-port'
+import type { EbookViewLike } from '../entrypoints/reader/ebook-session-dependencies'
 import type { BookRecord } from '../src/core/types'
 
 describe('Foliate ebook session', () => {
+  test('searches Foliate section text and navigates using the generated CFI', async () => {
+    const harness = createHarness()
+    const session = createFoliateEbookSession(harness.dependencies)
+    const document = new DOMParser().parseFromString('<body><p>Before needle after.</p></body>', 'text/html')
+    await session.open(record('search.epub'), readerSettings())
+    harness.view.book.sections = [{ linear: 'yes', createDocument: () => document }]
+    harness.view.getProgressOf = () => ({ tocItem: { label: 'First chapter' } })
+    harness.view.getCFI = (_index, range) => `cfi:${range.toString()}`
+
+    const outcome = await session.search('needle', { batchSize: 1 })
+    expect(outcome.total).toBe(1)
+    expect(outcome.results[0]).toMatchObject({ label: 'First chapter', locator: 'cfi:needle' })
+    await session.goTo(outcome.results[0]!.locator)
+    expect(harness.view.targets).toContain('cfi:needle')
+  })
+
+  test('invalidates an in-flight ebook search when the session closes', async () => {
+    const harness = createHarness()
+    const session = createFoliateEbookSession(harness.dependencies)
+    let release!: (document: Document) => void
+    const pendingDocument = new Promise<Document>(resolve => { release = resolve })
+    await session.open(record('search-close.epub'), readerSettings())
+    harness.view.book.sections = [{ linear: 'yes', createDocument: () => pendingDocument }]
+    const batches: unknown[] = []
+    const search = session.search('needle', { onBatch: batch => batches.push(batch) })
+    await session.close()
+    release(new DOMParser().parseFromString('<body>needle</body>', 'text/html'))
+
+    await expect(search).rejects.toMatchObject({ name: 'AbortError' })
+    expect(batches).toEqual([])
+  })
+
+  test('searches the visible scrolled chapter before other uncached chapters', async () => {
+    const harness = createHarness()
+    const session = createFoliateEbookSession(harness.dependencies)
+    await session.open(record('scrolled-search.epub'), readerSettings({ flow: 'scrolled' }))
+    const loaded: number[] = []
+    harness.view.book.sections = [0, 1].map(index => ({
+      linear: 'yes',
+      createDocument: () => {
+        loaded.push(index)
+        return new DOMParser().parseFromString('<body>needle</body>', 'text/html')
+      },
+    }))
+    harness.scroller.location = { index: 1, fraction: 0.5 }
+
+    const outcome = await session.search('needle')
+
+    expect(loaded).toEqual([1, 0])
+    expect(outcome.total).toBe(2)
+  })
   test('applies paginated renderer settings before restoring saved progress', async () => {
     const harness = createHarness()
     const session = createFoliateEbookSession(harness.dependencies)
@@ -553,13 +606,15 @@ class FakeView extends EventTarget {
   readonly style = new FakeStyle()
   readonly targets: unknown[] = []
   readonly fractionTargets: number[] = []
-  readonly book = {
+  readonly book: EbookViewLike['book'] = {
     metadata: { title: 'Engine title' },
     toc: [{ label: 'Chapter one', href: '/6/2' }],
     sections: [{ linear: 'yes' }],
   }
   isConnected = false
   lastLocation: FakeLocation | null = null
+  getProgressOf(_index: number): { tocItem?: { label?: unknown } | null } | null { return null }
+  getCFI(_index: number, range: Range): unknown { return range.toString() }
   closeCalls = 0
   removeCalls = 0
   rightCalls = 0
@@ -729,6 +784,7 @@ class FakeProgressService {
 }
 
 interface FakeLocation {
+  index?: number
   cfi?: string | null
   fraction?: number
   tocItem?: { label?: unknown }

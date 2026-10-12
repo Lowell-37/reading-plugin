@@ -42,7 +42,7 @@
 - Vue 组件不直接依赖 Foliate.js 或 PDF.js 内部实现
 - Vue 模板已补齐旧控制器依赖的加载、筛选、导入导出节点，四种格式不再因空引用停止初始化
 - WXT 已迁移控件不再由旧控制器注册重复监听器；`legacy-bridge.ts` 只通过结构化回调和端口投射运行时状态
-- Vue/TypeScript 已负责 EPUB/MOBI/AZW3 会话以及 PDF 搜索和批注；旧 `reader.js` 不再拥有 WXT PDF 批注桥接，电子书批注与根目录行为保持兼容
+- Vue/TypeScript 已负责 EPUB/MOBI/AZW3 会话与搜索，以及 PDF 搜索和批注；旧 `reader.js` 不再拥有 WXT PDF 批注桥接，电子书批注与根目录行为保持兼容
 
 ### 阶段 5：真实扩展端到端验证（✅ 阶段 A、B、C、D 与 PDF 搜索自动化门禁完成）
 

@@ -5,6 +5,8 @@ import { useReaderStore } from '../stores/reader'
 import { usePdfSessionStore } from '../stores/pdf-session'
 import { usePdfSearchStore } from '../stores/pdf-search'
 import { usePdfAnnotationStore } from '../stores/pdf-annotations'
+import { useEbookSessionStore } from '../stores/ebook-session'
+import { useEbookSearchStore } from '../stores/ebook-search'
 import { annotationExportFileName, createAnnotationExport, serializeAnnotationsJson, serializeAnnotationsMarkdown } from '../../../src/core/annotation-export'
 import { annotationImportMatchesBook, parseAnnotationImport } from '../../../src/core/annotation-import'
 
@@ -13,14 +15,27 @@ const { activePanel } = storeToRefs(reader)
 const pdf = usePdfSessionStore()
 const pdfSearch = usePdfSearchStore()
 const pdfAnnotations = usePdfAnnotationStore()
+const ebook = useEbookSessionStore()
+const ebookSearch = useEbookSearchStore()
+const { record: ebookRecord, status: ebookStatus, generation: ebookGeneration } = storeToRefs(ebook)
+const { results: ebookResults, total: ebookTotal, failedSections, status: ebookSearchStatus, error: ebookSearchError } = storeToRefs(ebookSearch)
 const { record: pdfRecord, status: pdfStatus, generation, zoom, title: pdfTitle } = storeToRefs(pdf)
 const { results, total, unavailablePages, status: pdfSearchStatus, error } = storeToRefs(pdfSearch)
 const { annotations, allAnnotations, visible: visibleAnnotations, query: annotationQuery, type: annotationType, sort: annotationSort, selected: selectedAnnotations, error: annotationError } = storeToRefs(pdfAnnotations)
 const searchQuery = ref('')
 const annotationMessage = ref('')
 const pdfSessionActive = computed(() => pdfRecord.value !== null)
+const ebookSessionActive = computed(() => ebookRecord.value !== null)
 const pdfAnnotationsActive = computed(() => pdfSessionActive.value && pdfStatus.value === 'ready')
 const searchStatus = computed(() => {
+  if (ebookSessionActive.value) {
+    if (ebookSearchStatus.value === 'searching') return ebookTotal.value ? `正在搜索，已找到 ${ebookTotal.value} 处…` : '正在搜索…'
+    if (ebookSearchStatus.value === 'error') return ebookSearchError.value ?? '搜索失败，请换一个关键词重试'
+    if (ebookSearchStatus.value !== 'ready') return '输入关键词搜索整本书'
+    return ebookTotal.value
+      ? `找到 ${ebookTotal.value} 处结果${ebookTotal.value > 300 ? '（显示前 300 条）' : ''}${failedSections.value ? `，${failedSections.value} 章未能搜索` : ''}`
+      : failedSections.value ? '没有找到匹配内容，部分章节未能搜索' : '没有找到匹配内容'
+  }
   if (pdfSearchStatus.value === 'searching') return '正在搜索…'
   if (pdfSearchStatus.value === 'error') return error.value ?? '搜索失败，请换一个关键词重试'
   if (pdfSearchStatus.value !== 'ready') return '输入关键词搜索整本书'
@@ -33,10 +48,14 @@ const searchStatus = computed(() => {
 })
 
 function handleSearchSubmit(event: Event) {
-  if (!pdfSessionActive.value || pdfStatus.value !== 'ready') return
   event.preventDefault()
   event.stopImmediatePropagation()
-  void pdfSearch.run(searchQuery.value)
+  if (pdfSessionActive.value && pdfStatus.value === 'ready') {
+    void pdfSearch.run(searchQuery.value)
+    return
+  }
+  if (!ebookSessionActive.value || ebookStatus.value !== 'ready') return
+  void ebookSearch.run(searchQuery.value)
 }
 
 function capturePdfAnnotation(event: Event, withNote: boolean) {
@@ -170,6 +189,15 @@ watch(
   { immediate: true },
 )
 
+watch(
+  [ebookGeneration, ebookStatus, () => ebookRecord.value?.id ?? null],
+  ([generation, status, recordId]) => {
+    ebookSearch.synchronizeSession({ generation, status, recordId })
+    if (ebookSessionActive.value && ebookSearch.query === '') searchQuery.value = ''
+  },
+  { immediate: true },
+)
+
 onMounted(() => {
   pdfSearch.attachRoot(document.getElementById('pdf-pages'))
 })
@@ -183,11 +211,16 @@ onUnmounted(() => {
   <aside id="tools-panel" class="tools-panel" :class="{ open: activePanel === 'tools' }" aria-label="搜索与批注">
     <div class="panel-header"><div><p class="eyebrow">TOOLS</p><h2>搜索与批注</h2></div><button id="close-tools" class="icon-button" aria-label="关闭工具" @click="reader.closePanel()">×</button></div>
     <form id="search-form" class="search-form" @submit="handleSearchSubmit"><input id="search-input" v-model="searchQuery" type="search" placeholder="搜索书中内容" autocomplete="off"><button type="submit">搜索</button></form>
-    <div id="search-status" class="search-status" aria-live="polite">{{ pdfSessionActive ? searchStatus : '输入关键词搜索整本书' }}</div>
+    <div id="search-status" class="search-status" aria-live="polite">{{ pdfSessionActive || ebookSessionActive ? searchStatus : '输入关键词搜索整本书' }}</div>
     <div id="search-results" class="search-results">
       <template v-if="pdfSessionActive">
         <button v-for="result in results" :key="`${result.page}:${result.start}:${result.end}`" class="search-result" type="button" @click="pdfSearch.goToResult(result)">
           <strong>第 {{ result.page }} 页</strong><span>{{ result.context }}</span>
+        </button>
+      </template>
+      <template v-else-if="ebookSessionActive">
+        <button v-for="result in ebookResults" :key="`${result.section}:${result.offset}`" class="search-result" type="button" @click="ebookSearch.goToResult(result); reader.closePanel()">
+          <strong>{{ result.label }}</strong><span>{{ result.context.text }}</span>
         </button>
       </template>
     </div>

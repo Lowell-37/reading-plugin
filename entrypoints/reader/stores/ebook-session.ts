@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { shallowRef } from 'vue'
 import { normalizeReaderSettings } from '../../../src/core/migration-preflight'
 import type { BookRecord } from '../../../src/core/types'
+import type { EbookSearchOptions, EbookSearchSnapshot } from '../../../src/core/ebook-search-index'
 import type {
   EbookSessionCallbacks,
   EbookSessionError,
@@ -115,6 +116,11 @@ export function createEbookSessionStore(initialPortFactory?: EbookSessionPortFac
       await port?.navigate(direction)
     }
 
+    async function search(query: string, options?: EbookSearchOptions): Promise<EbookSearchSnapshot> {
+      if (!port || status.value !== 'ready') throw new Error('Ebook search is unavailable')
+      return port.search(query, options)
+    }
+
     async function setFlow(nextFlow: EbookSessionFlow) {
       await port?.setFlow(nextFlow)
     }
@@ -151,6 +157,7 @@ export function createEbookSessionStore(initialPortFactory?: EbookSessionPortFac
       close,
       goTo,
       navigate,
+      search,
       setFlow,
       applySettings,
       flushProgress,
