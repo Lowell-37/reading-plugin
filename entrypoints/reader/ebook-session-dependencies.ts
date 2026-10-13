@@ -6,6 +6,7 @@ import { ContinuousEbookScroller } from '../../src/continuous-ebook.js'
 import type {
   EbookSessionCallbacks,
 } from './ebook-session-port'
+import type { Annotation } from '../../src/core/types'
 
 export interface EbookLocationLike {
   index?: number
@@ -31,6 +32,10 @@ export interface EbookViewLike extends EventTarget {
   lastLocation?: EbookLocationLike | null
   getProgressOf?(index: number): { tocItem?: { label?: unknown } | null } | null
   getCFI?(index: number, range: Range): unknown
+  resolveNavigation?(target: string): { index: number, anchor?: (doc: Document) => Range } | null
+  addAnnotation?(annotation: { value: string, color?: string, note?: string }): Promise<unknown>
+  deleteAnnotation?(annotation: { value: string }): Promise<unknown>
+  deselect?(): void
   open(blob: Blob): unknown
   goTo(target: unknown): unknown
   goToFraction(fraction: number): unknown
@@ -45,6 +50,9 @@ export interface EbookScrollerOptions {
   host: EbookSessionHost
   view: EbookViewLike
   styles: string
+  annotations?: Annotation[]
+  onSelection?: (doc: Document, index: number) => void
+  onAnchorRepair?: (annotation: Annotation) => void
 }
 
 export interface EbookScrollerLike extends EventTarget {
@@ -54,6 +62,8 @@ export interface EbookScrollerLike extends EventTarget {
   goToFraction(fraction: number): unknown
   scrollByPage(direction: -1 | 1): unknown
   setStyles(styles: string): void
+  setAnnotations?(annotations: Annotation[]): void
+  deselect?(): void
   destroy(): void
 }
 
@@ -81,7 +91,7 @@ export interface FoliateEbookSessionDependencies extends EbookSessionCallbacks {
 
 export type FoliateEbookSessionRuntimeOptions = Pick<
   FoliateEbookSessionDependencies,
-  'host' | 'createProgressService' | 'nextGeneration' | 'onSnapshot' | 'onError'
+  'host' | 'createProgressService' | 'nextGeneration' | 'onSnapshot' | 'onError' | 'onAnnotationRepair'
 >
 
 /** Keeps concrete engine imports out of Pinia and Vue code. */

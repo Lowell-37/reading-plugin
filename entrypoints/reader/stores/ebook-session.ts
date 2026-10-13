@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { shallowRef } from 'vue'
 import { normalizeReaderSettings } from '../../../src/core/migration-preflight'
 import type { BookRecord } from '../../../src/core/types'
+import type { Annotation } from '../../../src/core/types'
 import type { EbookSearchOptions, EbookSearchSnapshot } from '../../../src/core/ebook-search-index'
 import type {
   EbookSessionCallbacks,
@@ -13,6 +14,7 @@ import type {
   EbookSessionSnapshot,
   EbookSessionStatus,
   EbookSessionTocItem,
+  EbookSelectionInput,
 } from '../ebook-session-port'
 import type { ReaderSettings } from '../legacy-reader-port'
 import { useReaderStore } from './reader'
@@ -121,6 +123,14 @@ export function createEbookSessionStore(initialPortFactory?: EbookSessionPortFac
       return port.search(query, options)
     }
 
+    function consumeSelection(): EbookSelectionInput | null {
+      return status.value === 'ready' ? port?.consumeSelection() ?? null : null
+    }
+
+    async function setAnnotations(annotations: Annotation[]): Promise<void> {
+      await port?.setAnnotations(annotations)
+    }
+
     async function setFlow(nextFlow: EbookSessionFlow) {
       await port?.setFlow(nextFlow)
     }
@@ -158,6 +168,8 @@ export function createEbookSessionStore(initialPortFactory?: EbookSessionPortFac
       goTo,
       navigate,
       search,
+      consumeSelection,
+      setAnnotations,
       setFlow,
       applySettings,
       flushProgress,

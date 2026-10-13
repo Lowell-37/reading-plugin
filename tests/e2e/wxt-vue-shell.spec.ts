@@ -18,6 +18,7 @@ test('@wxt-vue Vue library imports, reopens, deletes and restores a real annotat
     await page.locator('#toc button').nth(3).click()
     await expect.poll(() => progress(page)).toBeGreaterThan(initialProgress)
     await selectText(await chapterFrame(page))
+    await page.locator('#scrim').click()
     await page.locator('#tools-button').click()
     page.once('dialog', dialog => dialog.accept('Vue library annotation'))
     await page.locator('#note-selection').click()

@@ -151,6 +151,8 @@ function createEbookPort(applySettings: EbookSessionPort['applySettings']): Eboo
     goTo: async () => undefined,
     navigate: async () => undefined,
     search: async () => ({ results: [], errors: [], total: 0 }),
+    consumeSelection: () => null,
+    setAnnotations: async () => undefined,
     setFlow: async () => undefined,
     applySettings,
     flushProgress: async () => undefined,

@@ -1,4 +1,4 @@
-import type { BookRecord, ReadingLocation } from '../../src/core/types'
+import type { Annotation, BookRecord, ReadingLocation } from '../../src/core/types'
 import type {
   EbookSessionError,
   EbookSessionFlow,
@@ -6,11 +6,16 @@ import type {
   EbookSessionPort,
   EbookSessionSnapshot,
   EbookSessionTocItem,
+  EbookSelectionInput,
 } from './ebook-session-port'
 import type { ReaderSettings } from './legacy-reader-port'
 import { EbookSearchIndex, type EbookSearchOptions, type EbookSearchSnapshot } from '../../src/core/ebook-search-index'
 // @ts-expect-error JavaScript compatibility text-range module has no declaration file yet.
-import { rangeFromTextOffsets } from '../../src/text-range.js'
+import { rangeFromTextOffsets, createRangeAnchor, resolveRangeAnchor } from '../../src/text-range.js'
+// @ts-expect-error JavaScript compatibility text-range module has no declaration file yet.
+import { normalizeAnchorText } from '../../src/text-anchor.js'
+// @ts-expect-error Foliate dependency has no declaration file.
+import { Overlayer } from 'foliate-js/overlayer.js'
 import type {
   EbookLocationLike,
   EbookScrollerLike,
@@ -45,6 +50,11 @@ export function createFoliateEbookSession(
   let scrollerRelocateListener: EventListener | null = null
   let flowQueue: Promise<void> = Promise.resolve()
   let searchIndex: EbookSearchIndex | null = null
+  let activeAnnotations: Annotation[] = []
+  let appliedAnnotations = new Map<string, Annotation>()
+  let annotationQueue: Promise<void> = Promise.resolve()
+  let pendingSelection: { root: HTMLElement, range: Range, index: number, text: string } | null = null
+  let pendingAnnotationRepairs: Annotation[] = []
 
   async function open(record: BookRecord, settings: ReaderSettings): Promise<void> {
     const generation = dependencies.nextGeneration()
@@ -59,6 +69,7 @@ export function createFoliateEbookSession(
       if (generation !== activeGeneration) return
 
       currentRecord = record
+      activeAnnotations = (record.annotations ?? []).filter(item => item.kind === 'ebook')
       currentFlow = 'paginated'
       currentSnapshot = createLoadingSnapshot(record, currentSettings, generation)
       dependencies.onSnapshot(currentSnapshot)
@@ -68,6 +79,9 @@ export function createFoliateEbookSession(
       dependencies.host.append(view)
       viewRelocateListener = createRelocateListener('view', generation)
       view.addEventListener('relocate', viewRelocateListener)
+      view.addEventListener('load', onViewLoad)
+      view.addEventListener('create-overlay', onCreateOverlay)
+      view.addEventListener('draw-annotation', onDrawAnnotation)
 
       phase = 'parse'
       await view.open(record.blob)
@@ -106,6 +120,9 @@ export function createFoliateEbookSession(
       }
       acceptRelocations = true
       dependencies.onSnapshot(currentSnapshot)
+      await setAnnotations(activeAnnotations)
+      for (const repaired of pendingAnnotationRepairs) dependencies.onAnnotationRepair?.(repaired, generation)
+      pendingAnnotationRepairs = []
     } catch (cause) {
       if (generation !== activeGeneration) return
       const error = sessionError(phase, cause)
@@ -143,6 +160,142 @@ export function createFoliateEbookSession(
       currentSectionIndex: currentScroller?.currentLocation()?.index
         ?? view.lastLocation?.section?.current ?? 0,
     })
+  }
+
+  function captureSelection(doc: Document, index: number) {
+    const selection = doc.defaultView?.getSelection()
+    if (!selection || selection.isCollapsed || !selection.rangeCount || !doc.body) {
+      pendingSelection = null
+      return
+    }
+    const range = selection.getRangeAt(0).cloneRange()
+    if (!doc.body.contains(range.commonAncestorContainer)) return
+    const text = selection.toString().trim()
+    if (text) pendingSelection = { root: doc.body, range, index, text }
+  }
+
+  function consumeSelection(): EbookSelectionInput | null {
+    const selection = pendingSelection
+    pendingSelection = null
+    const view = currentView
+    if (!selection || !view?.getCFI || currentSnapshot?.status !== 'ready') return null
+    const locator = view.getCFI(selection.index, selection.range)
+    if (typeof locator !== 'string' || !locator) return null
+    const rangeAnchor = createRangeAnchor(selection.root, selection.range)
+    currentScroller?.deselect?.()
+    view.deselect?.()
+    return {
+      locator,
+      section: selection.index,
+      text: selection.text,
+      ...(rangeAnchor ? { anchor: {
+        version: 1 as const,
+        kind: 'ebook' as const,
+        section: selection.index,
+        cfi: locator,
+        textOffset: rangeAnchor.textOffset,
+        quote: rangeAnchor.quote,
+      } } : {}),
+    }
+  }
+
+  async function setAnnotations(annotations: Annotation[]): Promise<void> {
+    const requested = annotations.filter(item => item.kind === 'ebook')
+    activeAnnotations = requested
+    currentScroller?.setAnnotations?.(requested)
+    const view = currentView
+    const generation = activeGeneration
+    const operation = annotationQueue.catch(() => {}).then(async () => {
+      if (!view || view !== currentView || generation !== activeGeneration || currentSnapshot?.status !== 'ready') return
+      const next = new Map(requested.filter(item => item.locator && item.anchorStatus !== 'unresolved')
+        .map(item => [item.locator!, item]))
+      const applied = new Map<string, Annotation>()
+      for (const [locator, previous] of appliedAnnotations) {
+        const current = next.get(locator)
+        if (current && current.color === previous.color && current.note === previous.note) {
+          applied.set(locator, current)
+          continue
+        }
+        try { await view.deleteAnnotation?.({ value: locator }) }
+        catch (error) { console.warn('Could not remove an ebook highlight.', error) }
+        if (view !== currentView || generation !== activeGeneration) return
+      }
+      for (const [locator, annotation] of next) {
+        if (applied.has(locator)) continue
+        try {
+          await view.addAnnotation?.({ value: locator, color: annotation.color, note: annotation.note })
+          applied.set(locator, annotation)
+        } catch (error) { console.warn('Could not display an ebook highlight.', error) }
+        if (view !== currentView || generation !== activeGeneration) return
+      }
+      appliedAnnotations = applied
+    })
+    annotationQueue = operation
+    await operation
+  }
+
+  function onViewLoad(event: Event) {
+    const detail = (event as CustomEvent<{ doc: Document, index: number }>).detail
+    const { doc, index } = detail ?? {}
+    if (!doc || !Number.isInteger(index)) return
+    const repairs: Annotation[] = []
+    const next = activeAnnotations.map(annotation => {
+      if (annotation.section !== index || annotation.anchor?.kind !== 'ebook' || annotation.anchorStatus === 'unresolved') return annotation
+      let range: Range | null = null
+      try {
+        const resolved = currentView?.resolveNavigation?.(annotation.locator || '')
+        if (resolved?.index === index) range = resolved.anchor?.(doc) ?? null
+      } catch { /* A stale CFI is repaired from its quote below. */ }
+      if (range && !range.collapsed && normalizeAnchorText(range.toString()).text === annotation.anchor.quote.normalizedExact) return annotation
+      const fallback = doc.body ? resolveRangeAnchor(doc.body, annotation.anchor.quote, annotation.anchor.textOffset) as { range: Range, textOffset: number } | null : null
+      if (fallback && currentView?.getCFI) {
+        const locator = currentView.getCFI(index, fallback.range)
+        if (typeof locator === 'string' && locator) {
+          const repaired: Annotation = { ...annotation, locator, anchorStatus: 'resolved',
+            anchor: { ...annotation.anchor, cfi: locator, textOffset: fallback.textOffset } }
+          repairs.push(repaired)
+          return repaired
+        }
+      }
+      const unresolved: Annotation = { ...annotation, anchorStatus: 'unresolved' }
+      repairs.push(unresolved)
+      return unresolved
+    })
+    if (repairs.length) {
+      activeAnnotations = next
+      if (currentSnapshot?.status === 'ready') {
+        for (const repaired of repairs) dependencies.onAnnotationRepair?.(repaired, activeGeneration)
+        void setAnnotations(next).catch(console.error)
+      } else pendingAnnotationRepairs.push(...repairs)
+    }
+    const capture = () => captureSelection(doc, index)
+    doc.addEventListener('mouseup', capture)
+    doc.addEventListener('selectionchange', capture)
+  }
+
+  function onCreateOverlay(event: Event) {
+    const index = (event as CustomEvent<{ index: number }>).detail?.index
+    if (!Number.isInteger(index)) return
+    const view = currentView
+    const generation = activeGeneration
+    const operation = annotationQueue.catch(() => {}).then(async () => {
+      if (!view || view !== currentView || generation !== activeGeneration) return
+      const unique = new Map(activeAnnotations.filter(item => item.anchorStatus !== 'unresolved'
+        && (item.section == null || item.section === index) && item.locator)
+        .map(item => [item.locator!, item]))
+      for (const [locator, annotation] of unique) {
+        try { await view.addAnnotation?.({ value: locator, color: annotation.color, note: annotation.note }) }
+        catch (error) { console.warn('Could not restore an ebook highlight.', error) }
+        if (view !== currentView || generation !== activeGeneration) return
+      }
+    })
+    annotationQueue = operation
+    void operation.catch(console.error)
+  }
+
+  function onDrawAnnotation(event: Event) {
+    const detail = (event as CustomEvent<{ draw: (func: unknown, options: { color: string }) => void, annotation: { color?: string } }>).detail
+    detail?.draw(Overlayer.highlight, { color: detail.annotation.color || '#f4c95d' })
   }
 
   function createSearchIndex(view: EbookViewLike): EbookSearchIndex {
@@ -264,6 +417,11 @@ export function createFoliateEbookSession(
       host: dependencies.host,
       view,
       styles: createBookStyles(currentSettings, true),
+      annotations: activeAnnotations,
+      onSelection: captureSelection,
+      onAnchorRepair: annotation => {
+        if (generation === activeGeneration) dependencies.onAnnotationRepair?.(annotation, generation)
+      },
     })
     const listener = createRelocateListener('scroller', generation)
     currentScroller = scroller
@@ -332,6 +490,11 @@ export function createFoliateEbookSession(
     acceptRelocations = false
     searchIndex?.clear()
     searchIndex = null
+    pendingSelection = null
+    pendingAnnotationRepairs = []
+    activeAnnotations = []
+    appliedAnnotations = new Map()
+    annotationQueue = Promise.resolve()
     detachListeners()
     const scroller = currentScroller
     const view = currentView
@@ -419,6 +582,8 @@ export function createFoliateEbookSession(
     goTo,
     navigate,
     search,
+    consumeSelection,
+    setAnnotations,
     setFlow,
     applySettings,
     flushProgress,

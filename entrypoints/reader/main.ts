@@ -18,6 +18,7 @@ import { useLibraryStore } from './stores/library'
 import { useEbookSessionStore } from './stores/ebook-session'
 import { usePdfSessionStore } from './stores/pdf-session'
 import { configurePdfAnnotationRepository, usePdfAnnotationStore } from './stores/pdf-annotations'
+import { configureEbookAnnotationRepository, useEbookAnnotationStore } from './stores/ebook-annotations'
 
 interface ExtensionRuntime {
   getURL(path: string): string
@@ -43,6 +44,8 @@ async function startReader() {
   const pdfSession = usePdfSessionStore(pinia)
   configurePdfAnnotationRepository(bookRepository)
   const pdfAnnotations = usePdfAnnotationStore(pinia)
+  configureEbookAnnotationRepository(bookRepository)
+  const ebookAnnotations = useEbookAnnotationStore(pinia)
   const ebookHost = document.getElementById('ebook-host')
   if (!ebookHost) throw new Error('Ebook session host is unavailable')
   const pdfViewport = document.getElementById('pdf-viewport')
@@ -54,6 +57,7 @@ async function startReader() {
     host: ebookHost,
     createProgressService: () => new ProgressService(bookRepository),
     nextGeneration: () => ++ebookGeneration,
+    onAnnotationRepair: (annotation, generation) => { void ebookAnnotations.applyRepair(annotation, generation) },
   })))
   let pdfGeneration = 0
   const runtime = (globalThis as typeof globalThis & { chrome?: { runtime?: ExtensionRuntime } }).chrome?.runtime
@@ -70,6 +74,14 @@ async function startReader() {
     createProgressService: () => new ProgressService(bookRepository),
     nextGeneration: () => ++pdfGeneration,
   })))
+  watch(
+    [() => ebookSession.record, () => ebookSession.generation, () => ebookSession.status],
+    ([sessionRecord, generation, status]) => {
+      const record = status === 'ready' ? library.books.find(book => book.id === sessionRecord?.id) ?? null : null
+      ebookAnnotations.synchronizeSession({ record, generation })
+    },
+    { immediate: true, flush: 'sync' },
+  )
   watch(
     [() => pdfSession.record, () => pdfSession.generation, () => pdfSession.zoom, () => pdfSession.status],
     ([sessionRecord, generation, zoom, status]) => {

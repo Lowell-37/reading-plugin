@@ -155,6 +155,13 @@
 - Project Gutenberg 水滸傳 EPUB 上游于 2026-09-10 重新生成，测试夹具的 SHA-256 更新为 `17ec3d9f4b06c00ad3dfd31638e3e05e6a9425d10a5f116199d18f958b2e7b27`；书名、作者、语言及公版许可已复核。
 - `quiet-reader-0.2.0.zip` 含 303 个文件，SHA-256 为 `b1406bd026629845d22e8bb93103828bd4482d07852e555aa2d38a46adf962b5`。完整迁移前仍请加载项目根目录。
 
+## WXT 电子书批注验收记录（2026-10-13）
+
+- Vue/Pinia 接管 WXT EPUB、MOBI、AZW3 批注；Foliate 会话负责 iframe 选区、CFI/引文锚点及分页/滚动高亮。旧 WXT 批注监听器移除，根目录稳定入口不变。
+- 现有 `BookRecord.annotations`、IndexedDB schema v2 与备份格式不变；跨书写入按会话代次隔离，失败草稿可重试，混合记录里的 PDF 批注保留。
+- 378 项单测与 `npm run check` 通过；真实 Edge 覆盖三种格式的高亮显示、编辑、重开、JSON 导出/导入，以及 EPUB 滚动模式下的创建/删除。
+- 排查发现本机 Foliate 依赖未应用既有生命周期补丁，导致 WXT 搜索跳转时偶发 `getComputedStyle` 异常。开发和构建命令现自动运行补丁，构建校验对此设门禁。项目根目录仍为稳定加载入口。
+
 ## 后续产品阶段
 
 - 整本书语义搜索与带出处问答

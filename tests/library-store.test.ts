@@ -142,7 +142,7 @@ describe('reader library store', () => {
         if (firstKind === 'ebook') await oldOpen.promise
         callbacks.onSnapshot({ status: 'ready', title: 'Current Ebook', toc: [], chapter: 'One', progress: 0, flow: 'paginated', error: null, generation: 1 })
       },
-      async close() {}, async flushProgress() {}, async goTo() {}, async navigate() {}, async search() { return { results: [], errors: [], total: 0 } }, async setFlow() {}, async applySettings() {}, destroy() {},
+      async close() {}, async flushProgress() {}, async goTo() {}, async navigate() {}, async search() { return { results: [], errors: [], total: 0 } }, consumeSelection() { return null }, async setAnnotations() {}, async setFlow() {}, async applySettings() {}, destroy() {},
     }))()
     store.attachPdfPort(pdf)
     store.attachEbookPort(ebook)
@@ -527,6 +527,8 @@ class RecordingEbookPort implements EbookSessionPort {
   async navigate() {}
 
   async search() { return { results: [], errors: [], total: 0 } }
+  consumeSelection() { return null }
+  async setAnnotations() {}
 
   async setFlow() {}
 
@@ -590,6 +592,8 @@ class DeferredSessionPort implements PdfSessionPort, EbookSessionPort {
   async goTo() {}
   async navigate() {}
   async search() { return { results: [], errors: [], total: 0 } }
+  consumeSelection() { return null }
+  async setAnnotations() {}
   async setZoom() {}
   readRenderedTextLayer() { return null }
   async setFlow() {}

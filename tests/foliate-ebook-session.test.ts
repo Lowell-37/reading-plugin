@@ -3,9 +3,133 @@ import { describe, expect, test } from 'vitest'
 import { createFoliateEbookSession } from '../entrypoints/reader/foliate-ebook-session'
 import type { EbookSessionError, EbookSessionSnapshot } from '../entrypoints/reader/ebook-session-port'
 import type { EbookViewLike } from '../entrypoints/reader/ebook-session-dependencies'
+import type { EbookScrollerOptions } from '../entrypoints/reader/ebook-session-dependencies'
+import type { Annotation } from '../src/core/types'
 import type { BookRecord } from '../src/core/types'
 
 describe('Foliate ebook session', () => {
+  test('captures iframe selection as a CFI and quote anchor for a new highlight', async () => {
+    const harness = createHarness()
+    const session = createFoliateEbookSession(harness.dependencies)
+    await session.open(record('annotate.epub'), readerSettings())
+    harness.view.getCFI = (_index, range) => `cfi:${range.toString()}`
+    document.body.textContent = 'Before needle after.'
+    harness.view.dispatchEvent(new CustomEvent('load', { detail: { doc: document, index: 0 } }))
+    const range = document.createRange()
+    range.setStart(document.body.firstChild!, 7)
+    range.setEnd(document.body.firstChild!, 13)
+    window.getSelection()!.removeAllRanges()
+    window.getSelection()!.addRange(range)
+    document.dispatchEvent(new Event('mouseup'))
+
+    const selection = session.consumeSelection()
+
+    expect(selection).toMatchObject({ locator: 'cfi:needle', section: 0, text: 'needle', anchor: {
+      kind: 'ebook', section: 0, cfi: 'cfi:needle', textOffset: 7,
+      quote: { exact: 'needle', normalizedExact: 'needle' },
+    } })
+    expect(session.consumeSelection()).toBeNull()
+    window.getSelection()!.addRange(range)
+    document.dispatchEvent(new Event('selectionchange'))
+    window.getSelection()!.removeAllRanges()
+    document.dispatchEvent(new Event('selectionchange'))
+    expect(session.consumeSelection()).toBeNull()
+    document.body.replaceChildren()
+  })
+
+  test('updates paginated highlights and passes the same list into scrolled flow', async () => {
+    const harness = createHarness()
+    const session = createFoliateEbookSession(harness.dependencies)
+    await session.open(record('highlights.epub'), readerSettings())
+    const annotation = { id: 'one', kind: 'ebook' as const, locator: 'cfi:one', page: null, section: 0,
+      text: 'one', note: '', color: '#f4c95d', rects: [], createdAt: 1 }
+
+    await session.setAnnotations([annotation])
+    expect(harness.view.annotationAdds).toContain('cfi:one')
+    await session.setFlow('scrolled')
+    expect(harness.scroller.annotationLists.at(-1)?.map(item => item.id)).toEqual(['one'])
+    await session.setAnnotations([])
+    expect(harness.scroller.annotationLists.at(-1)).toEqual([])
+    await session.setFlow('paginated')
+    expect(harness.view.annotationDeletes).toContain('cfi:one')
+  })
+  test('a rapid create then delete cannot leave a stale paginated highlight', async () => {
+    const harness = createHarness()
+    const session = createFoliateEbookSession(harness.dependencies)
+    await session.open(record('annotation-race.epub'), readerSettings())
+    const annotation: Annotation = { id: 'one', kind: 'ebook', locator: 'cfi:one', page: null, section: 0,
+      text: 'one', note: '', color: '#f4c95d', rects: [], createdAt: 1 }
+    const gate = deferred<void>()
+    const started = deferred<void>()
+    harness.view.addAnnotation = async ({ value }) => {
+      harness.view.annotationAdds.push(value)
+      started.resolve()
+      await gate.promise
+    }
+
+    const adding = session.setAnnotations([annotation])
+    await started.promise
+    const removing = session.setAnnotations([])
+    gate.resolve()
+    await Promise.all([adding, removing])
+
+    expect(harness.view.annotationDeletes).toEqual(['cfi:one'])
+  })
+
+  test('deleting one of two annotations at the same CFI retains the surviving overlay', async () => {
+    const harness = createHarness()
+    const session = createFoliateEbookSession(harness.dependencies)
+    await session.open(record('duplicate-cfi.epub'), readerSettings())
+    const shared: Annotation = { id: 'one', kind: 'ebook', locator: 'cfi:shared', page: null, section: 0,
+      text: 'one', note: '', color: '#f4c95d', rects: [], createdAt: 1 }
+    await session.setAnnotations([shared, { ...shared, id: 'two' }])
+    await session.setAnnotations([{ ...shared, id: 'two' }])
+    expect(harness.view.annotationDeletes).toEqual([])
+  })
+
+  test('repairs a stale paginated CFI from its quote instead of highlighting the wrong text', async () => {
+    const harness = createHarness()
+    const session = createFoliateEbookSession(harness.dependencies)
+    await session.open(record('stale-anchor.epub'), readerSettings())
+    const stale: Annotation = { id: 'stale', kind: 'ebook', locator: 'cfi:wrong', page: null, section: 0,
+      text: 'needle', note: '', color: '#f4c95d', rects: [], createdAt: 1,
+      anchor: { version: 1, kind: 'ebook', section: 0, cfi: 'cfi:wrong', textOffset: 7,
+        quote: { exact: 'needle', normalizedExact: 'needle', prefix: 'Before ', suffix: ' after' } },
+      anchorStatus: 'resolved' }
+    harness.view.getCFI = (_index, range) => `cfi:${range.toString()}`
+    harness.view.resolveNavigation = () => ({ index: 0, anchor: (doc: Document) => {
+      const range = doc.createRange()
+      range.setStart(doc.body.firstChild!, 0)
+      range.setEnd(doc.body.firstChild!, 6)
+      return range
+    } })
+    await session.setAnnotations([stale])
+    const doc = new DOMParser().parseFromString('<body>Before needle after</body>', 'text/html')
+    harness.view.dispatchEvent(new CustomEvent('load', { detail: { doc, index: 0 } }))
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(harness.view.annotationAdds.at(-1)).toBe('cfi:needle')
+    expect(harness.repairs.at(-1)).toMatchObject({ id: 'stale', locator: 'cfi:needle', anchorStatus: 'resolved' })
+  })
+
+  test('a malformed saved highlight cannot prevent its ebook from opening', async () => {
+    const harness = createHarness()
+    const createView = harness.dependencies.createView
+    harness.dependencies.createView = () => {
+      const view = createView()
+      view.addAnnotation = async () => { throw new Error('invalid CFI') }
+      return view
+    }
+    const broken = record('bad-highlight.epub')
+    broken.annotations = [{ id: 'bad', kind: 'ebook', locator: 'bad-cfi', page: null, section: 0,
+      text: 'old', note: '', color: '#f4c95d', rects: [], createdAt: 1 }]
+    const session = createFoliateEbookSession(harness.dependencies)
+
+    await session.open(broken, readerSettings())
+
+    expect(harness.snapshots.at(-1)?.status).toBe('ready')
+    expect(harness.errors).toEqual([])
+  })
   test('searches Foliate section text and navigates using the generated CFI', async () => {
     const harness = createHarness()
     const session = createFoliateEbookSession(harness.dependencies)
@@ -466,6 +590,7 @@ function createHarness() {
   const events: string[] = []
   const snapshots: EbookSessionSnapshot[] = []
   const errors: Array<{ error: unknown, generation: number }> = []
+  const repairs: Annotation[] = []
   const views: FakeView[] = []
   const scrollers: FakeScroller[] = []
   const progress = new FakeProgressService(events)
@@ -508,7 +633,7 @@ function createHarness() {
       views.push(view)
       return view
     },
-    createScroller() {
+    createScroller(options: EbookScrollerOptions) {
       const scroller = new FakeScroller(
         events,
         nextScrollerMountError,
@@ -518,12 +643,14 @@ function createHarness() {
       nextScrollerMountError = null
       nextScrollerMountPromise = null
       nextScrollerMountStarted = null
+      scroller.setAnnotations(options.annotations ?? [])
       scrollers.push(scroller)
       return scroller
     },
     createProgressService: () => progress,
     onSnapshot: (snapshot: EbookSessionSnapshot) => snapshots.push(snapshot),
     onError: (error: unknown, nextGeneration: number) => errors.push({ error, generation: nextGeneration }),
+    onAnnotationRepair: (annotation: Annotation) => repairs.push(annotation),
     nextGeneration: () => ++generation,
   }
 
@@ -539,6 +666,7 @@ function createHarness() {
     errors,
     events,
     progress,
+    repairs,
     snapshots,
     deferNextScrollerMount(promise: Promise<void>) {
       const started = deferred<void>()
@@ -615,9 +743,12 @@ class FakeView extends EventTarget {
   lastLocation: FakeLocation | null = null
   getProgressOf(_index: number): { tocItem?: { label?: unknown } | null } | null { return null }
   getCFI(_index: number, range: Range): unknown { return range.toString() }
+  resolveNavigation(_target: string): { index: number, anchor: (doc: Document) => Range } | null { return null }
   closeCalls = 0
   removeCalls = 0
   rightCalls = 0
+  annotationAdds: string[] = []
+  annotationDeletes: string[] = []
   private listenerError: Error | null
   private readonly navigationFailures = new Map<string, Error>()
 
@@ -683,6 +814,9 @@ class FakeView extends EventTarget {
 
   async goLeft() {}
   async goRight() { this.rightCalls += 1 }
+  async addAnnotation(annotation: { value: string }) { this.annotationAdds.push(annotation.value) }
+  async deleteAnnotation(annotation: { value: string }) { this.annotationDeletes.push(annotation.value) }
+  deselect() { window.getSelection()?.removeAllRanges() }
 
   failNextNavigation(method: string, error: Error) {
     this.navigationFailures.set(method, error)
@@ -717,6 +851,7 @@ class FakeScroller extends EventTarget {
   location: FakeLocation | null = null
   mountTargets: unknown[] = []
   pageDirections: Array<-1 | 1> = []
+  annotationLists: Annotation[][] = []
 
   constructor(
     private readonly events: string[],
@@ -741,6 +876,8 @@ class FakeScroller extends EventTarget {
   async goToFraction() {}
   async scrollByPage(direction: -1 | 1) { this.pageDirections.push(direction) }
   setStyles() {}
+  setAnnotations(annotations: Annotation[]) { this.annotationLists.push([...annotations]) }
+  deselect() {}
 
   destroy() {
     this.destroyCalls += 1

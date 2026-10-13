@@ -190,6 +190,8 @@ function createFakePort() {
     async setFlow(flow) { calls.push(`setFlow:${flow}`) },
     async applySettings() {},
     async search() { return { results: [], errors: [], total: 0 } },
+    consumeSelection() { return null },
+    async setAnnotations() {},
     async flushProgress() { calls.push('flushProgress') },
     destroy() {},
   }

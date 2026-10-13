@@ -574,6 +574,8 @@ describe('Vue reader shell', () => {
         goTo: vi.fn().mockResolvedValue(undefined),
         navigate: vi.fn().mockResolvedValue(undefined),
         search: vi.fn().mockResolvedValue({ results: [], errors: [], total: 0 }),
+        consumeSelection: vi.fn().mockReturnValue(null),
+        setAnnotations: vi.fn().mockResolvedValue(undefined),
         setFlow: vi.fn().mockResolvedValue(undefined),
         applySettings: vi.fn().mockResolvedValue(undefined),
         flushProgress: vi.fn().mockResolvedValue(undefined),

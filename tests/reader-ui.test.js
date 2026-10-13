@@ -148,7 +148,10 @@ function signatures(bindings) {
 test('root PDF engine bindings remain active while WXT binds only shared tools', async () => {
   const { ENGINE_LISTENERS, WXT_ENGINE_LISTENERS, bindRegisteredListeners } = await import('../src/reader-listener-registry.js')
   const rootOnly = ['reader-prev', 'reader-next', 'reader-progress', 'reader-keyboard',
-    'pdf-zoom-out', 'pdf-zoom-in', 'pdf-fit-width', 'pdf-page-change', 'pdf-page-keyboard', 'search-submit']
+    'pdf-zoom-out', 'pdf-zoom-in', 'pdf-fit-width', 'pdf-page-change', 'pdf-page-keyboard', 'search-submit',
+    'annotation-highlight', 'annotation-note', 'annotation-filter-query', 'annotation-filter-type',
+    'annotation-sort', 'annotation-select-all', 'annotation-delete-selected', 'annotation-import-picker',
+    'annotation-import-file', 'annotation-export-markdown', 'annotation-export-json']
   const calls = []
   const handlers = Object.fromEntries(ENGINE_LISTENERS.map(({ action }) => [action, () => calls.push(action)]))
   const fire = bindings => bindRegisteredListeners(bindings, handlers, () => [{
@@ -159,7 +162,5 @@ test('root PDF engine bindings remain active while WXT binds only shared tools',
   calls.length = 0
   fire(WXT_ENGINE_LISTENERS)
   assert.deepEqual(calls.filter(action => rootOnly.includes(action)), [])
-  for (const action of ['annotation-highlight', 'annotation-note', 'annotation-import-file']) {
-    assert.ok(calls.includes(action), `WXT lost ${action}`)
-  }
+  for (const action of ['ai-settings-toggle', 'ai-action']) assert.ok(calls.includes(action), `WXT lost ${action}`)
 })

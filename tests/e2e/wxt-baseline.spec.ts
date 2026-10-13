@@ -113,12 +113,21 @@ test('WXT switches and restores real EPUB flow, theme and progress', async () =>
     await page.locator('#sidebar-button').click()
     await page.locator('#toc button').nth(3).click()
     await expect.poll(() => progress(page)).not.toBe(initialProgress)
+    await page.locator('.continuous-ebook').evaluate(element => new Promise<void>(resolve => {
+      let quiet = window.setTimeout(resolve, 250)
+      element.addEventListener('scroll', () => {
+        window.clearTimeout(quiet)
+        quiet = window.setTimeout(resolve, 250)
+      }, { passive: true })
+    }))
+    const expectedProgress = await progress(page)
 
     await page.locator('#scrim').click()
     await expect(page.locator('#scrim')).not.toHaveClass(/show/)
     await page.locator('#home-button').click()
     await expect(page.locator('#welcome-view')).toBeVisible()
     await expect.poll(() => storedEbookProgress(page)).not.toBeCloseTo(storedBeforeNavigation, 3)
+    await expect.poll(() => storedEbookProgress(page)).toBeCloseTo(expectedProgress, 1)
     const savedProgress = await storedEbookProgress(page)
     await page.reload()
     await expect(page.locator('.library-card')).toHaveCount(1)

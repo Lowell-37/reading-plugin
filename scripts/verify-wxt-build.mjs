@@ -13,6 +13,10 @@ const [rootManifest, builtManifest, files, requiredRuntimeFiles] = await Promise
 ])
 
 const result = verifyWxtBuildContract({ rootManifest, builtManifest, files, requiredRuntimeFiles })
+const paginator = await readFile(resolve(projectRoot, 'node_modules/foliate-js/paginator.js'), 'utf8')
+if (!paginator.includes('if (!view || !documentElement || !(documentElement instanceof view.Element)) return')) {
+  throw new Error('Foliate paginator lifecycle patch is missing; run scripts/patch-foliate.mjs before building')
+}
 console.log(`Verified WXT build identity and runtime assets (${result.fileCount} files)`)
 
 async function readJson(path) {

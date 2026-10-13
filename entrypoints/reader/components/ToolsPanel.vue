@@ -7,6 +7,7 @@ import { usePdfSearchStore } from '../stores/pdf-search'
 import { usePdfAnnotationStore } from '../stores/pdf-annotations'
 import { useEbookSessionStore } from '../stores/ebook-session'
 import { useEbookSearchStore } from '../stores/ebook-search'
+import { useEbookAnnotationStore } from '../stores/ebook-annotations'
 import { annotationExportFileName, createAnnotationExport, serializeAnnotationsJson, serializeAnnotationsMarkdown } from '../../../src/core/annotation-export'
 import { annotationImportMatchesBook, parseAnnotationImport } from '../../../src/core/annotation-import'
 
@@ -17,16 +18,41 @@ const pdfSearch = usePdfSearchStore()
 const pdfAnnotations = usePdfAnnotationStore()
 const ebook = useEbookSessionStore()
 const ebookSearch = useEbookSearchStore()
+const ebookAnnotations = useEbookAnnotationStore()
 const { record: ebookRecord, status: ebookStatus, generation: ebookGeneration } = storeToRefs(ebook)
 const { results: ebookResults, total: ebookTotal, failedSections, status: ebookSearchStatus, error: ebookSearchError } = storeToRefs(ebookSearch)
 const { record: pdfRecord, status: pdfStatus, generation, zoom, title: pdfTitle } = storeToRefs(pdf)
 const { results, total, unavailablePages, status: pdfSearchStatus, error } = storeToRefs(pdfSearch)
-const { annotations, allAnnotations, visible: visibleAnnotations, query: annotationQuery, type: annotationType, sort: annotationSort, selected: selectedAnnotations, error: annotationError } = storeToRefs(pdfAnnotations)
+const pdfAnnotationRefs = storeToRefs(pdfAnnotations)
+const ebookAnnotationRefs = storeToRefs(ebookAnnotations)
 const searchQuery = ref('')
 const annotationMessage = ref('')
 const pdfSessionActive = computed(() => pdfRecord.value !== null)
 const ebookSessionActive = computed(() => ebookRecord.value !== null)
 const pdfAnnotationsActive = computed(() => pdfSessionActive.value && pdfStatus.value === 'ready')
+const ebookAnnotationsActive = computed(() => ebookSessionActive.value && ebookStatus.value === 'ready')
+const annotationActive = computed(() => pdfAnnotationsActive.value || ebookAnnotationsActive.value)
+const annotationStore = computed(() => ebookAnnotationsActive.value ? ebookAnnotations : pdfAnnotations)
+const annotations = computed(() => ebookAnnotationsActive.value ? ebookAnnotationRefs.annotations.value : pdfAnnotationRefs.annotations.value)
+const allAnnotations = computed(() => ebookAnnotationsActive.value ? ebookAnnotationRefs.allAnnotations.value : pdfAnnotationRefs.allAnnotations.value)
+const visibleAnnotations = computed(() => ebookAnnotationsActive.value ? ebookAnnotationRefs.visible.value : pdfAnnotationRefs.visible.value)
+const selectedAnnotations = computed({
+  get: () => ebookAnnotationsActive.value ? ebookAnnotationRefs.selected.value : pdfAnnotationRefs.selected.value,
+  set: value => { annotationStore.value.selected = value },
+})
+const annotationQuery = computed({
+  get: () => ebookAnnotationsActive.value ? ebookAnnotationRefs.query.value : pdfAnnotationRefs.query.value,
+  set: value => { annotationStore.value.query = value },
+})
+const annotationType = computed({
+  get: () => ebookAnnotationsActive.value ? ebookAnnotationRefs.type.value : pdfAnnotationRefs.type.value,
+  set: value => { annotationStore.value.type = value },
+})
+const annotationSort = computed({
+  get: () => ebookAnnotationsActive.value ? ebookAnnotationRefs.sort.value : pdfAnnotationRefs.sort.value,
+  set: value => { annotationStore.value.sort = value },
+})
+const annotationError = computed(() => ebookAnnotationsActive.value ? ebookAnnotationRefs.error.value : pdfAnnotationRefs.error.value)
 const searchStatus = computed(() => {
   if (ebookSessionActive.value) {
     if (ebookSearchStatus.value === 'searching') return ebookTotal.value ? `正在搜索，已找到 ${ebookTotal.value} 处…` : '正在搜索…'
@@ -58,10 +84,19 @@ function handleSearchSubmit(event: Event) {
   void ebookSearch.run(searchQuery.value)
 }
 
-function capturePdfAnnotation(event: Event, withNote: boolean) {
-  if (!pdfAnnotationsActive.value) return
+function captureAnnotation(event: Event, withNote: boolean) {
+  if (!annotationActive.value) return
   event.preventDefault()
   event.stopImmediatePropagation()
+  if (ebookAnnotationsActive.value) {
+    const note = withNote ? window.prompt('写下批注（可留空，仅保存高亮）', '') : ''
+    if (note === null) return
+    void ebookAnnotations.createFromSelection(note).then(created => {
+      if (!created) annotationMessage.value = '请先选中书中的文字'
+      else annotationMessage.value = ''
+    })
+    return
+  }
   const selection = window.getSelection()
   if (!selection || selection.isCollapsed || !selection.rangeCount) return
   const range = selection.getRangeAt(0).cloneRange()
@@ -84,55 +119,57 @@ function toggleAllAnnotations() {
   selectedAnnotations.value = ids.every(id => selectedAnnotations.value.includes(id)) ? [] : ids
 }
 
-function capturePdfControl(event: Event) {
-  if (!pdfAnnotationsActive.value) return false
+function captureAnnotationControl(event: Event) {
+  if (!annotationActive.value) return false
   event.preventDefault()
   event.stopImmediatePropagation()
   return true
 }
 
 function filterAnnotationsInput(event: Event) {
-  if (capturePdfControl(event)) annotationQuery.value = (event.target as HTMLInputElement).value
+  if (captureAnnotationControl(event)) annotationQuery.value = (event.target as HTMLInputElement).value
 }
 
 function filterAnnotationsType(event: Event) {
-  if (capturePdfControl(event)) annotationType.value = (event.target as HTMLSelectElement).value as typeof annotationType.value
+  if (captureAnnotationControl(event)) annotationType.value = (event.target as HTMLSelectElement).value as typeof annotationType.value
 }
 
 function sortAnnotationsInput(event: Event) {
-  if (capturePdfControl(event)) annotationSort.value = (event.target as HTMLSelectElement).value as typeof annotationSort.value
+  if (captureAnnotationControl(event)) annotationSort.value = (event.target as HTMLSelectElement).value as typeof annotationSort.value
 }
 
 function selectAllAnnotations(event: Event) {
-  if (capturePdfControl(event)) toggleAllAnnotations()
+  if (captureAnnotationControl(event)) toggleAllAnnotations()
 }
 
 function deleteSelectedAnnotations(event: Event) {
-  if (!capturePdfControl(event)) return
+  if (!captureAnnotationControl(event)) return
   if (!selectedAnnotations.value.length || !window.confirm(`确定删除所选的 ${selectedAnnotations.value.length} 条高亮或批注吗？`)) return
-  void pdfAnnotations.removeSelected()
+  void annotationStore.value.removeSelected()
 }
 
 function openAnnotationImport(event: Event) {
-  if (!capturePdfControl(event)) return
+  if (!captureAnnotationControl(event)) return
   const input = document.getElementById('annotation-import-input') as HTMLInputElement | null
   if (input) { input.value = ''; input.click() }
 }
 
 async function importAnnotationFile(event: Event) {
-  if (!capturePdfControl(event)) return
+  if (!captureAnnotationControl(event)) return
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
-  if (!file || !pdfRecord.value) return
-  const expectedGeneration = generation.value
-  const expectedId = pdfRecord.value.id
+  const currentRecord = ebookAnnotationsActive.value ? ebookRecord.value : pdfRecord.value
+  if (!file || !currentRecord) return
+  const expectedGeneration = ebookAnnotationsActive.value ? ebookGeneration.value : generation.value
+  const expectedId = currentRecord.id
   try {
     if (file.size > 10 * 1024 * 1024) throw new Error('批注文件不能超过 10 MB')
     const archive = parseAnnotationImport(await file.text())
-    if (expectedGeneration !== generation.value || expectedId !== pdfRecord.value?.id) return
-    if (!annotationImportMatchesBook(archive.book, { fileName: pdfRecord.value.name, format: pdfRecord.value.format })
+    const latestRecord = ebookAnnotationsActive.value ? ebookRecord.value : pdfRecord.value
+    if (expectedGeneration !== (ebookAnnotationsActive.value ? ebookGeneration.value : generation.value) || expectedId !== latestRecord?.id) return
+    if (!annotationImportMatchesBook(archive.book, { fileName: currentRecord.name, format: currentRecord.format })
       && !window.confirm('导入文件属于另一本书，仍要合并到当前书籍吗？')) return
-    const result = await pdfAnnotations.importAnnotations(archive.annotations)
+    const result = await annotationStore.value.importAnnotations(archive.annotations)
     annotationMessage.value = `导入完成：新增 ${result.added}，更新 ${result.updated}，跳过 ${result.skipped}`
   } catch (error) {
     annotationMessage.value = error instanceof Error ? error.message : '无法导入批注文件'
@@ -142,12 +179,13 @@ async function importAnnotationFile(event: Event) {
 }
 
 function exportAnnotations(event: Event, extension: 'json' | 'md') {
-  if (!capturePdfControl(event)) return
-  if (!pdfRecord.value || !allAnnotations.value.length) {
+  if (!captureAnnotationControl(event)) return
+  const currentRecord = ebookAnnotationsActive.value ? ebookRecord.value : pdfRecord.value
+  if (!currentRecord || !allAnnotations.value.length) {
     annotationMessage.value = '当前书籍还没有可导出的高亮或批注'
     return
   }
-  const archive = createAnnotationExport({ name: pdfRecord.value.name, format: pdfRecord.value.format, title: pdfTitle.value }, allAnnotations.value)
+  const archive = createAnnotationExport({ name: currentRecord.name, format: currentRecord.format, title: ebookAnnotationsActive.value ? ebook.title : pdfTitle.value }, allAnnotations.value)
   const content = extension === 'json' ? serializeAnnotationsJson(archive) : serializeAnnotationsMarkdown(archive)
   const type = extension === 'json' ? 'application/json' : 'text/markdown'
   const url = URL.createObjectURL(new Blob([content], { type: `${type};charset=utf-8` }))
@@ -164,15 +202,16 @@ function editAnnotation(annotation: typeof annotations.value[number]) {
   if (note === null) return
   const tags = window.prompt('编辑标签（使用逗号分隔，最多 10 个）', annotation.tags?.join(', ') || '')
   if (tags === null) return
-  void pdfAnnotations.update(annotation.id, { note, tags })
+  void annotationStore.value.update(annotation.id, { note, tags })
 }
 
 function deleteAnnotation(annotation: typeof annotations.value[number]) {
-  if (window.confirm('确定删除这条高亮或批注吗？')) void pdfAnnotations.remove(annotation.id)
+  if (window.confirm('确定删除这条高亮或批注吗？')) void annotationStore.value.remove(annotation.id)
 }
 
-function jumpToAnnotation(page: number | null) {
-  if (page != null) void pdf.goTo(page)
+function jumpToAnnotation(annotation: typeof annotations.value[number]) {
+  if (annotation.kind === 'ebook' && annotation.locator) void ebook.goTo(annotation.locator)
+  else if (annotation.page != null) void pdf.goTo(annotation.page)
 }
 
 watch(
@@ -248,9 +287,9 @@ onUnmounted(() => {
       </div>
     </section>
     <div class="tool-divider" />
-    <div class="annotation-heading"><strong>高亮与批注</strong><span id="annotation-count">{{ pdfAnnotationsActive ? `${annotations.length} 条` : '0 条' }}</span></div>
+    <div class="annotation-heading"><strong>高亮与批注</strong><span id="annotation-count">{{ annotationActive ? `${annotations.length} 条` : '0 条' }}</span></div>
     <p class="selection-hint">在正文中选中文字，然后高亮或添加批注。</p>
-    <div class="selection-actions"><button id="highlight-selection" type="button" @click.capture="capturePdfAnnotation($event, false)">高亮选中</button><button id="note-selection" type="button" @click.capture="capturePdfAnnotation($event, true)">添加批注</button></div>
+    <div class="selection-actions"><button id="highlight-selection" type="button" @click.capture="captureAnnotation($event, false)">高亮选中</button><button id="note-selection" type="button" @click.capture="captureAnnotation($event, true)">添加批注</button></div>
     <div class="annotation-filters">
       <input id="annotation-filter-query" v-model="annotationQuery" type="search" placeholder="筛选原文、批注或标签" aria-label="筛选批注" @input.capture="filterAnnotationsInput">
       <select id="annotation-filter-type" v-model="annotationType" aria-label="批注类型" @change.capture="filterAnnotationsType">
@@ -260,7 +299,7 @@ onUnmounted(() => {
         <option value="newest">最近修改</option><option value="oldest">最早创建</option><option value="location">阅读位置</option>
       </select>
       <button id="annotation-select-all" class="text-button" type="button" @click.capture="selectAllAnnotations">全选当前</button>
-      <button id="annotation-delete-selected" class="text-button danger" type="button" :disabled="!pdfAnnotationsActive || !selectedAnnotations.length" @click.capture="deleteSelectedAnnotations">删除所选</button>
+      <button id="annotation-delete-selected" class="text-button danger" type="button" :disabled="!annotationActive || !selectedAnnotations.length" @click.capture="deleteSelectedAnnotations">删除所选</button>
     </div>
     <div class="annotation-export-actions">
       <button id="import-annotations-json" class="text-button" type="button" @click.capture="openAnnotationImport">导入 JSON</button>
@@ -268,13 +307,13 @@ onUnmounted(() => {
       <button id="export-annotations-markdown" class="text-button" type="button" @click.capture="exportAnnotations($event, 'md')">导出 Markdown</button>
       <button id="export-annotations-json" class="text-button" type="button" @click.capture="exportAnnotations($event, 'json')">导出 JSON</button>
     </div>
-    <p v-if="pdfAnnotationsActive && annotationMessage" class="selection-hint" role="status">{{ annotationMessage }}</p>
-    <p v-if="pdfAnnotationsActive && annotationError" class="selection-hint" role="alert">{{ annotationError }} <button type="button" class="text-button" @click="pdfAnnotations.retrySave()">重试保存</button></p>
+    <p v-if="annotationActive && annotationMessage" class="selection-hint" role="status">{{ annotationMessage }}</p>
+    <p v-if="annotationActive && annotationError" class="selection-hint" role="alert">{{ annotationError }} <button type="button" class="text-button" @click="annotationStore.retrySave()">重试保存</button></p>
     <div id="annotation-list" class="annotation-list">
-      <template v-if="pdfAnnotationsActive">
+      <template v-if="annotationActive">
         <article v-for="annotation in visibleAnnotations" :key="annotation.id" class="annotation-item">
           <input class="annotation-select" type="checkbox" :checked="selectedAnnotations.includes(annotation.id)" :aria-label="`选择${annotation.text}`" @change="toggleAnnotation(annotation.id, ($event.target as HTMLInputElement).checked)">
-          <button class="annotation-jump" type="button" @click="jumpToAnnotation(annotation.page)"><small>第 {{ annotation.page }} 页</small><q>{{ annotation.text }}</q><p v-if="annotation.note">{{ annotation.note }}</p><small v-if="annotation.anchorStatus === 'unresolved'" class="annotation-anchor-status">定位待恢复</small><small v-if="annotation.tags?.length" class="annotation-tags">{{ annotation.tags.join('、') }}</small></button>
+          <button class="annotation-jump" type="button" @click="jumpToAnnotation(annotation)"><small>{{ annotation.kind === 'pdf' ? `第 ${annotation.page} 页` : `第 ${(annotation.section ?? 0) + 1} 章` }}</small><q>{{ annotation.text }}</q><p v-if="annotation.note">{{ annotation.note }}</p><small v-if="annotation.anchorStatus === 'unresolved'" class="annotation-anchor-status">定位待恢复</small><small v-if="annotation.tags?.length" class="annotation-tags">{{ annotation.tags.join('、') }}</small></button>
           <button class="text-button" type="button" @click="editAnnotation(annotation)">编辑</button>
           <button class="text-button danger" type="button" @click="deleteAnnotation(annotation)">删除</button>
         </article>
