@@ -9,5 +9,4 @@ test('Vue components depend on UI state, not Foliate or PDF.js internals', async
 
   const main = await readFile(new URL('../entrypoints/reader/main.ts', import.meta.url), 'utf8')
   expect(main).toMatch(/createPinia/)
-  expect(main).toMatch(/await import\('\.\.\/\.\.\/src\/reader\.js'\)/)
 })

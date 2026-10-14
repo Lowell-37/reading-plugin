@@ -33,6 +33,7 @@ const pdfToolbarListeners: Array<{ element: HTMLElement, handler: EventListener 
 
 watch(workspaceVisible, visible => {
   document.body.classList.toggle('is-reading', visible)
+  document.body.classList.toggle('header-collapsed', visible && settings.headerCollapsed)
   document.getElementById('welcome-view')?.toggleAttribute('hidden', visible)
 }, { immediate: true })
 
@@ -139,7 +140,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  document.body.classList.remove('is-reading', 'pdf-mode')
+  document.body.classList.remove('is-reading', 'pdf-mode', 'header-collapsed')
   window.removeEventListener('keydown', handleReaderKeyboard)
   for (const { element, handler } of pdfToolbarListeners) element.removeEventListener('click', handler)
   pdfToolbarListeners.length = 0

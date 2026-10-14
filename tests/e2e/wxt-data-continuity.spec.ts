@@ -61,7 +61,7 @@ test('@wxt-data root → WXT → root preserves and extends the same local libra
     try {
       expect(wxt.extensionId).toBe(rootId)
       await expect(wxt.page.locator('html')).toHaveAttribute('data-migration-preflight', 'ready')
-      await expect(wxt.page.locator('html')).toHaveAttribute('data-legacy-controller', 'ready')
+      await expect(wxt.page.locator('html')).not.toHaveAttribute('data-legacy-controller', /.+/)
       await expect(wxt.page.locator('.library-card')).toHaveCount(1)
       wxtState = await readContinuityState(wxt.page)
       expect(wxtState.books[0].blobSha256).toBe(rootState.books[0].blobSha256)

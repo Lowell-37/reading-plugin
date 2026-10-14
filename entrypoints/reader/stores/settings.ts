@@ -15,6 +15,13 @@ export const useSettingsStore = defineStore('settings', () => {
   const settings = reactive<ReaderSettings>({ ...loadReaderSettings() })
   let port: LegacyReaderPort | null = null
 
+  function applyPageAppearance(nextSettings: ReaderSettings) {
+    document.documentElement.dataset.theme = String(nextSettings.theme)
+    document.body.classList.toggle('header-collapsed', Boolean(nextSettings.headerCollapsed) && document.body.classList.contains('is-reading'))
+  }
+
+  applyPageAppearance(settings)
+
   const theme = computed(() => settings.theme as ReaderTheme)
   const flow = computed(() => settings.flow as ReaderFlow)
   const font = computed(() => settings.font as ReaderFont)
@@ -34,6 +41,7 @@ export const useSettingsStore = defineStore('settings', () => {
     const nextSettings = normalized.settings
     saveReaderSettings(nextSettings)
     Object.assign(settings, nextSettings)
+    applyPageAppearance(nextSettings)
     await applyToReaders(nextSettings)
     return true
   }
@@ -44,6 +52,7 @@ export const useSettingsStore = defineStore('settings', () => {
     const nextSettings = normalized.settings
     saveReaderSettings(nextSettings)
     Object.assign(settings, nextSettings)
+    applyPageAppearance(nextSettings)
     await applyToReaders(nextSettings)
     return { ...nextSettings }
   }

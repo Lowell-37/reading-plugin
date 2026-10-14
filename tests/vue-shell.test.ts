@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { createPinia } from 'pinia'
 import { mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import App from '../entrypoints/reader/App.vue'
 import { connectLegacyReaderState } from '../entrypoints/reader/legacy-bridge'
@@ -24,6 +25,22 @@ afterEach(() => {
 })
 
 describe('Vue reader shell', () => {
+  test('restored collapsed header stays visible on the bookshelf and reapplies in a book', async () => {
+    localStorage.setItem('quiet-reader-settings', JSON.stringify({ headerCollapsed: true }))
+    const pinia = createPinia()
+    const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
+    const reader = useReaderStore(pinia)
+
+    expect(document.body.classList.contains('header-collapsed')).toBe(false)
+    reader.applyLegacyState({ isReading: true })
+    await nextTick()
+    expect(document.body.classList.contains('header-collapsed')).toBe(true)
+    reader.applyLegacyState({ isReading: false })
+    await nextTick()
+    expect(document.body.classList.contains('header-collapsed')).toBe(false)
+
+    wrapper.unmount()
+  })
   test('renders all legacy reader integration points through components', () => {
     const pinia = createPinia()
     const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })

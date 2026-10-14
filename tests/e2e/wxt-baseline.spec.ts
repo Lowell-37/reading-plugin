@@ -20,6 +20,7 @@ test('WXT build keeps the root extension identity and opens the reader shell', a
     await expect(wxt.page.locator('.ai-section')).toBeHidden()
     await expect(wxt.page.locator('[data-ai-action]').first()).toBeHidden()
     await expect(wxt.page.locator('#selection-ai-menu')).toBeHidden()
+    await expect(wxt.page.locator('html')).not.toHaveAttribute('data-legacy-controller', /.+/)
   } finally {
     await wxt.context.close()
   }
@@ -137,6 +138,29 @@ test('WXT switches and restores real EPUB flow, theme and progress', async () =>
     await expect(page.locator('.continuous-ebook')).toBeVisible()
     await expect.poll(() => progress(page)).toBeGreaterThan(0)
     expect(await progress(page)).toBeCloseTo(savedProgress, 1)
+  } finally {
+    await context.close()
+  }
+})
+
+test('WXT restores collapsed header only inside a book, never on the bookshelf', async () => {
+  const { context, page } = await launchExtension(wxtExtension)
+  try {
+    await openBook(page, 'alice.epub')
+    await page.locator('#header-toggle').click()
+    await expect(page.locator('body')).toHaveClass(/header-collapsed/)
+
+    await page.reload()
+    await expect(page.locator('#welcome-view')).toBeVisible()
+    await expect(page.locator('body')).not.toHaveClass(/header-collapsed/)
+    await expect(page.locator('#app-header')).toBeVisible()
+
+    await page.locator('.library-card').click()
+    await expect(page.locator('body')).toHaveClass(/header-collapsed/)
+    await page.locator('#header-toggle').click()
+    await page.locator('#home-button').click()
+    await expect(page.locator('#welcome-view')).toBeVisible()
+    await expect(page.locator('#app-header')).toBeVisible()
   } finally {
     await context.close()
   }

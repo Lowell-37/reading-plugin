@@ -13,6 +13,18 @@ afterEach(() => {
 })
 
 describe('reader settings store', () => {
+  test('projects saved theme and collapsed header without a legacy reader port', async () => {
+    localStorage.setItem('quiet-reader-settings', JSON.stringify({ theme: 'dark', headerCollapsed: true }))
+    document.body.classList.add('is-reading')
+    const store = useSettingsStore(createPinia())
+
+    expect(document.documentElement.dataset.theme).toBe('dark')
+    expect(document.body.classList.contains('header-collapsed')).toBe(true)
+    await store.updateTheme('sepia')
+    await store.updateHeaderCollapsed(false)
+    expect(document.documentElement.dataset.theme).toBe('sepia')
+    expect(document.body.classList.contains('header-collapsed')).toBe(false)
+  })
   test('loads normalized settings while retaining unknown persisted fields', () => {
     localStorage.setItem('quiet-reader-settings', JSON.stringify({
       theme: 'invalid',

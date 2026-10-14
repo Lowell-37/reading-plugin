@@ -169,7 +169,7 @@ export function createLibraryStore(dependencies: LibraryDependencies = defaultLi
       backupStatus.value = '正在校验并打包本地书库…'
       try {
         if (activeOwner) await activeOwner.port.flushProgress()
-        else await (await requireLegacyPort()).flushProgress()
+        else if (legacyPort) await legacyPort.flushProgress()
         const records = await dependencies.repository.list()
         books.value = sorted(records)
         const settings = useSettingsStore()

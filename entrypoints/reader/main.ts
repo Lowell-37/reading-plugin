@@ -8,8 +8,6 @@ import { bookRepository } from '../../src/book-repository.js'
 import { ProgressService } from '../../src/progress-service.js'
 import { createFoliateEbookSessionDependencies } from './ebook-session-dependencies'
 import { createFoliateEbookSession } from './foliate-ebook-session'
-import { connectLegacyReaderState } from './legacy-bridge'
-import type { LegacyReaderPort } from './legacy-reader-port'
 import { createPdfSessionDependencies } from './pdf-session-dependencies'
 import { createPdfJsSession } from './pdfjs-session'
 import { runMigrationPreflight } from './migration-preflight'
@@ -39,7 +37,6 @@ async function startReader() {
   migration.ready()
   const library = useLibraryStore(pinia)
   await library.load()
-  const bridge = connectLegacyReaderState(pinia)
   const ebookSession = useEbookSessionStore(pinia)
   const pdfSession = usePdfSessionStore(pinia)
   configurePdfAnnotationRepository(bookRepository)
@@ -74,6 +71,8 @@ async function startReader() {
     createProgressService: () => new ProgressService(bookRepository),
     nextGeneration: () => ++pdfGeneration,
   })))
+  library.attachEbookPort(ebookSession)
+  library.attachPdfPort(pdfSession)
   watch(
     [() => ebookSession.record, () => ebookSession.generation, () => ebookSession.status],
     ([sessionRecord, generation, status]) => {
@@ -93,15 +92,6 @@ async function startReader() {
   pdfSession.onPageRendered((page, renderedGeneration) => {
     if (renderedGeneration === pdfAnnotations.generation) pdfAnnotations.renderPage(page)
   })
-  document.documentElement.dataset.legacyController = 'loading'
-  // The imperative controller remains JavaScript until its engine adapters move to TypeScript.
-  // @ts-expect-error JavaScript compatibility controller has no declaration file yet.
-  const legacyReader = await import('../../src/reader.js')
-  const port: LegacyReaderPort = legacyReader.createLegacyReaderPort(bridge.callbacks)
-  bridge.attachLegacyPort(port)
-  bridge.attachEbookPort(ebookSession)
-  bridge.attachPdfPort(pdfSession)
-  document.documentElement.dataset.legacyController = 'ready'
 }
 
 await startReader()

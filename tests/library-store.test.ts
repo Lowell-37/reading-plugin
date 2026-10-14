@@ -379,6 +379,16 @@ describe('reader library store', () => {
     expect(parsed.settings).not.toHaveProperty('aiApiKey')
   })
 
+  test('backup from the idle WXT library does not wait for a legacy controller', async () => {
+    repository.seed(record('idle.epub', 25))
+    const store = useStore()
+
+    await store.backup()
+
+    expect(repository.events).toEqual(['list', 'download'])
+    expect(downloads).toHaveLength(1)
+  })
+
   test('restore fully parses before one repository restore, merges safe settings, and refreshes books', async () => {
     const restored = record('restored.mobi', 55, {
       progress: { kind: 'ebook', cfi: '/8/4', fraction: 0.65 },
