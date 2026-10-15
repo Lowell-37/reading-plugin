@@ -1,7 +1,14 @@
 import { defineStore } from 'pinia'
 import type { EbookSessionSnapshot } from '../ebook-session-port'
 import type { PdfSessionSnapshot } from '../pdf-session-port'
-import type { LegacyReaderState, ReaderPanel } from '../legacy-reader-port'
+import type { ReaderPanel } from '../legacy-reader-port'
+
+interface ReaderRuntimeState {
+  title: string
+  chapter: string
+  progress: number
+  isReading: boolean
+}
 
 export const useReaderStore = defineStore('reader', {
   state: () => ({
@@ -12,14 +19,14 @@ export const useReaderStore = defineStore('reader', {
     activePanel: null as 'toc' | 'settings' | 'tools' | null,
   }),
   actions: {
-    applyLegacyState(state: Partial<LegacyReaderState>) {
+    applyReaderState(state: Partial<ReaderRuntimeState>) {
       if (state.title !== undefined) this.title = state.title
       if (state.chapter !== undefined) this.chapter = state.chapter
       if (state.progress !== undefined) this.progress = state.progress
       if (state.isReading !== undefined) this.isReading = state.isReading
     },
     applyEbookSessionSnapshot(snapshot: EbookSessionSnapshot) {
-      this.applyLegacyState({
+      this.applyReaderState({
         title: snapshot.title,
         chapter: snapshot.chapter,
         progress: snapshot.progress,
@@ -27,7 +34,7 @@ export const useReaderStore = defineStore('reader', {
       })
     },
     applyPdfSessionSnapshot(snapshot: PdfSessionSnapshot) {
-      this.applyLegacyState({
+      this.applyReaderState({
         title: snapshot.title,
         chapter: `第 ${snapshot.page} 页 / 共 ${snapshot.pageCount} 页`,
         progress: snapshot.progress,

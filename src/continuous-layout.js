@@ -29,4 +29,8 @@ export function retainedSectionIndices(indices, activeIndex, radius = 3) {
   ))
 }
 
+export function shouldCompensateHeightChange(sectionTop, previousHeight, scrollTop) {
+  return sectionTop + previousHeight <= scrollTop
+}
+
 export { clamp }

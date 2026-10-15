@@ -41,7 +41,7 @@
 - Pinia 只保存运行时 UI 状态与 Repository 投影；持久化仍由 Repository 负责，IndexedDB schema v2 和既有备份格式未改变
 - Vue 组件不直接依赖 Foliate.js 或 PDF.js 内部实现
 - Vue 模板已补齐旧控制器依赖的加载、筛选、导入导出节点，四种格式不再因空引用停止初始化
-- WXT 已迁移控件不再由旧控制器注册重复监听器；`legacy-bridge.ts` 只通过结构化回调和端口投射运行时状态
+- 阶段 C 时，WXT 已迁移控件不再由旧控制器注册重复监听器；当时的 `legacy-bridge.ts` 只通过结构化回调和端口投射运行时状态（该桥接随后已删除）
 - Vue/TypeScript 已负责 EPUB/MOBI/AZW3 会话与搜索，以及 PDF 搜索和批注；旧 `reader.js` 不再拥有 WXT PDF 批注桥接，电子书批注与根目录行为保持兼容
 
 ### 阶段 5：真实扩展端到端验证（✅ 阶段 A、B、C、D 与 PDF 搜索自动化门禁完成）
@@ -169,6 +169,12 @@
 - `npm run check`、`npm run build:wxt:verify`、`npm run release`、381 项单测通过；修正要求旧控制器启动标记的过期断言后，WXT 29 项与根目录版 25 项真实 Edge 回归分别全量通过。复核补上“收起顶部栏后重启到书架”的界面边界，收起状态仅在阅读中生效。
 - `npm run test:e2e` 的夹具准备被本机 `water-margin.epub` SHA-256 漂移阻断；使用现有夹具直接运行根目录 Playwright 25 项均通过。夹具未被接受为新基线，仍需独立核验上游版本。
 - 旧桥接兼容代码尚未删除；根目录入口停用、长期真实 Edge 等价及卸载重装验证仍未完成。
+
+## WXT store 旧桥接清理（2026-10-14）
+
+- 移除不再被 WXT 入口引用的 `legacy-bridge.ts`，以及书架和设置 store 对旧控制器端口的公开接入。备份仅在确有活跃电子书或 PDF 会话时刷新该会话进度；空闲备份仍直接读取 Repository。
+- 阅读器状态 store 统一使用 `applyReaderState`，不再以旧控制器命名。根目录 `src/reader.js`、固定扩展 ID、IndexedDB schema v2、备份格式和 AI 关闭状态保持不变。
+- 删除仅验证已停用 WXT 旧端口生命周期的测试，改用活跃 store 的边界测试。真实 EPUB 重开暴露连续滚动的高度补偿误判：当前章节变高时不再把高度增量加到滚动位置，WXT 恢复场景连续复跑 10 次通过；单测现为 375 项。根目录控制器中的 WXT 兼容分支仍待独立清理，根目录继续作为稳定加载入口。
 
 ## 后续产品阶段
 

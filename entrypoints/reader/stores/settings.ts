@@ -1,7 +1,7 @@
 import { computed, reactive } from 'vue'
 import { defineStore } from 'pinia'
 import { normalizeReaderSettings } from '../../../src/core/migration-preflight'
-import type { LegacyReaderPort, ReaderSettings } from '../legacy-reader-port'
+import type { ReaderSettings } from '../legacy-reader-port'
 import { loadReaderSettings, saveReaderSettings } from '../settings-persistence'
 import { useEbookSessionStore } from './ebook-session'
 
@@ -13,7 +13,6 @@ type SettingsKey = 'theme' | 'flow' | 'font' | 'fontSize' | 'lineHeight' | 'page
 
 export const useSettingsStore = defineStore('settings', () => {
   const settings = reactive<ReaderSettings>({ ...loadReaderSettings() })
-  let port: LegacyReaderPort | null = null
 
   function applyPageAppearance(nextSettings: ReaderSettings) {
     document.documentElement.dataset.theme = String(nextSettings.theme)
@@ -29,10 +28,6 @@ export const useSettingsStore = defineStore('settings', () => {
   const lineHeight = computed(() => settings.lineHeight as number)
   const pageWidth = computed(() => settings.pageWidth as number)
   const headerCollapsed = computed(() => settings.headerCollapsed as boolean)
-
-  function attachPort(nextPort: LegacyReaderPort | null) {
-    port = nextPort
-  }
 
   async function update<K extends SettingsKey>(key: K, value: unknown) {
     const normalized = normalizeReaderSettings({ ...settings, [key]: value })
@@ -59,7 +54,6 @@ export const useSettingsStore = defineStore('settings', () => {
 
   async function applyToReaders(nextSettings: ReaderSettings) {
     const applications: Promise<unknown>[] = []
-    if (port) applications.push(port.applySettings({ ...nextSettings }))
     const ebook = useEbookSessionStore()
     if (ebook.record) applications.push(ebook.applySettings({ ...nextSettings }))
     await Promise.allSettled(applications)
@@ -74,7 +68,6 @@ export const useSettingsStore = defineStore('settings', () => {
     lineHeight,
     pageWidth,
     headerCollapsed,
-    attachPort,
     restoreNonSensitive,
     updateTheme: (value: ReaderTheme) => update('theme', value),
     updateFlow: (value: ReaderFlow) => update('flow', value),

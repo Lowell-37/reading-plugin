@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { createLibraryBackup, parseLibraryBackup } from '../src/library-backup.js'
 import type { BookFormat, BookRecord } from '../src/core/types'
 import type { EbookSessionPort } from '../entrypoints/reader/ebook-session-port'
-import type { LegacyReaderPort } from '../entrypoints/reader/legacy-reader-port'
 import type { PdfSessionPort } from '../entrypoints/reader/pdf-session-port'
 import {
   createLibraryStore,
@@ -18,14 +17,12 @@ import { useReaderStore } from '../entrypoints/reader/stores/reader'
 
 describe('reader library store', () => {
   let repository: MemoryRepository
-  let port: RecordingPort
   let downloads: Array<{ blob: Blob, name: string }>
   let useStore: ReturnType<typeof createLibraryStore>
 
   beforeEach(() => {
     setActivePinia(createPinia())
     repository = new MemoryRepository()
-    port = new RecordingPort(repository.events)
     downloads = []
     useStore = createLibraryStore({
       repository,
@@ -58,7 +55,6 @@ describe('reader library store', () => {
   test('openFile sends PDF records only to the PDF session', async () => {
     const store = useStore()
     const pdf = new RecordingPdfPort(repository.events)
-    store.attachLegacyPort(port)
     store.attachPdfPort(pdf)
     const file = bookFile('fresh.pdf', 'application/pdf')
 
@@ -68,7 +64,6 @@ describe('reader library store', () => {
     expect(repository.savedFormats).toEqual(['pdf'])
     expect(pdf.opened).toHaveLength(1)
     expect(pdf.opened[0]).toMatchObject({ record: { name: 'fresh.pdf', format: 'pdf' } })
-    expect(port.opened).toHaveLength(0)
     expect(repository.events).toEqual(['save:fresh.pdf', 'pdf-open:fresh.pdf'])
   })
 
@@ -80,7 +75,6 @@ describe('reader library store', () => {
     const last = record('last.mobi', 300)
     repository.seed(first, next, last)
     const store = useStore()
-    store.attachLegacyPort(port)
     store.attachEbookPort(ebook)
     store.attachPdfPort(pdf)
 
@@ -93,7 +87,6 @@ describe('reader library store', () => {
       'update:next.pdf', 'ebook-close', 'pdf-open:next.pdf',
       'update:last.mobi', 'pdf-close', 'ebook-open:last.mobi',
     ])
-    expect(port.opened).toHaveLength(0)
   })
 
   test.each(['pdf', 'ebook'] as const)('replaces a loading %s owner before opening the other format and ignores its late completion', async firstKind => {
@@ -271,7 +264,6 @@ describe('reader library store', () => {
   ] as const)('openFile sends %s records only to the ebook session', async (format, type) => {
     const ebook = new RecordingEbookPort(repository.events)
     const store = useStore()
-    store.attachLegacyPort(port)
     store.attachEbookPort(ebook)
 
     await store.openFile(bookFile(`fresh.${format}`, type))
@@ -281,7 +273,6 @@ describe('reader library store', () => {
       record: { name: `fresh.${format}`, format },
       settings: expect.objectContaining({ flow: 'paginated' }),
     })
-    expect(port.opened).toHaveLength(0)
     expect(repository.events).toEqual([`save:fresh.${format}`, `ebook-open:fresh.${format}`])
   })
 
@@ -290,14 +281,12 @@ describe('reader library store', () => {
     const source = record(`stored.${format}`, 100)
     repository.seed(source)
     const store = useStore()
-    store.attachLegacyPort(port)
     store.attachEbookPort(ebook)
 
     await store.openRecord(source)
 
     expect(ebook.opened).toHaveLength(1)
     expect(ebook.opened[0]?.record).toMatchObject({ id: source.id, format, openedAt: 9000 })
-    expect(port.opened).toHaveLength(0)
     expect(repository.events).toEqual([`update:stored.${format}`, `ebook-open:stored.${format}`])
   })
 
@@ -307,24 +296,20 @@ describe('reader library store', () => {
     await Promise.resolve()
 
     expect(repository.calls.save).toBe(1)
-    expect(port.opened).toHaveLength(0)
     const ebook = new RecordingEbookPort(repository.events)
     store.attachEbookPort(ebook)
     await pending
 
     expect(ebook.opened).toHaveLength(1)
-    expect(port.opened).toHaveLength(0)
     expect(repository.events).toEqual(['save:startup.epub', 'ebook-open:startup.epub'])
   })
 
   test('openFile rejects an unsupported file before persistence or engine work', async () => {
     const store = useStore()
-    store.attachLegacyPort(port)
 
     await expect(store.openFile(bookFile('notes.txt', 'text/plain'))).rejects.toThrow(/不支持|unsupported/i)
 
     expect(repository.calls.save).toBe(0)
-    expect(port.opened).toHaveLength(0)
   })
 
   test('openRecord persists openedAt once before handing the updated record to the port', async () => {
@@ -339,7 +324,6 @@ describe('reader library store', () => {
     expect(repository.calls.update).toBe(1)
     expect(repository.updated).toEqual([{ id: source.id, changes: { openedAt: 9000 } }])
     expect(ebook.opened[0]?.record.openedAt).toBe(9000)
-    expect(port.opened).toHaveLength(0)
     expect(repository.events).toEqual(['update:stored.azw3', 'ebook-open:stored.azw3'])
   })
 
@@ -363,11 +347,13 @@ describe('reader library store', () => {
     repository.seed(record('backup.epub', 25, { progress: { kind: 'ebook', cfi: '/6/2', fraction: 0.4 } }))
     localStorage.setItem('quiet-reader-settings', JSON.stringify({ theme: 'dark', aiApiKey: 'never-export' }))
     const store = useStore()
-    store.attachLegacyPort(port)
+    const ebook = new RecordingEbookPort(repository.events)
+    store.attachEbookPort(ebook)
+    await store.openRecord((await repository.list())[0]!)
+    repository.resetCalls()
 
     await store.backup()
 
-    expect(port.calls.flushProgress).toBe(1)
     expect(repository.calls.list).toBe(1)
     expect(repository.events).toEqual(['flush', 'list', 'download'])
     expect(downloads).toHaveLength(1)
@@ -396,7 +382,6 @@ describe('reader library store', () => {
     const archive = await createLibraryBackup([restored], { theme: 'sepia', customReaderFlag: 'from-backup' })
     localStorage.setItem('quiet-reader-settings', JSON.stringify({ aiApiKey: 'keep-local', currentOnly: 'keep-too' }))
     const settings = useSettingsStore()
-    settings.attachPort(port)
     const setItem = vi.spyOn(Storage.prototype, 'setItem')
     const store = useStore()
 
@@ -413,7 +398,7 @@ describe('reader library store', () => {
       currentOnly: 'keep-too',
       aiApiKey: 'keep-local',
     })
-    expect(port.applied).toHaveLength(1)
+    expect(document.documentElement.dataset.theme).toBe('sepia')
   })
 
   test('restore writes nothing when any part of the backup is invalid', async () => {
@@ -492,34 +477,6 @@ class MemoryRepository implements LibraryRepository {
   }
 }
 
-class RecordingPort implements LegacyReaderPort {
-  opened: Array<{ record: BookRecord, options?: { newlySaved?: boolean } }> = []
-  applied: Array<Record<string, unknown>> = []
-  calls = { closeSession: 0, flushProgress: 0 }
-
-  constructor(private readonly events: string[]) {}
-
-  async openRecord(record: BookRecord, options?: { newlySaved?: boolean }) {
-    this.events.push(`open:${record.name}`)
-    this.opened.push({ record, options })
-  }
-
-  async closeSession() {
-    this.calls.closeSession += 1
-  }
-
-  async applySettings(settings: Record<string, unknown>) {
-    this.applied.push(settings)
-  }
-
-  async flushProgress() {
-    this.calls.flushProgress += 1
-    this.events.push('flush')
-  }
-
-  destroy() {}
-}
-
 class RecordingEbookPort implements EbookSessionPort {
   opened: Array<{ record: BookRecord, settings: Record<string, unknown> }> = []
 
@@ -544,7 +501,7 @@ class RecordingEbookPort implements EbookSessionPort {
 
   async applySettings() {}
 
-  async flushProgress() {}
+  async flushProgress() { this.events.push('flush') }
 
   destroy() {}
 }

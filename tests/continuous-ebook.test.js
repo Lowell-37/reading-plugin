@@ -5,6 +5,7 @@ import {
   activeSectionIndex,
   interpolateSectionProgress,
   retainedSectionIndices,
+  shouldCompensateHeightChange,
 } from '../src/continuous-layout.js'
 import { ContinuousEbookScroller } from '../src/continuous-ebook.js'
 
@@ -47,6 +48,12 @@ test('keeps a bounded section window around the active chapter', () => {
   assert.deepEqual([...retainedSectionIndices(indices, 8, 2)], [4, 5, 8, 9, 12])
   assert.deepEqual([...retainedSectionIndices(indices, 1, 3)], [1, 2, 4, 5])
   assert.deepEqual([...retainedSectionIndices(indices, 99, 3)], [])
+})
+
+test('does not move the viewport when the growing chapter still contains its top edge', () => {
+  assert.equal(shouldCompensateHeightChange(5000, 420, 5300), false)
+  assert.equal(shouldCompensateHeightChange(5000, 420, 5500), true)
+  assert.equal(shouldCompensateHeightChange(5000, 420, 5420), true)
 })
 
 test('continuous scroller teardown is safe before mount and remains idempotent', () => {

@@ -4,6 +4,7 @@ import {
   clamp,
   interpolateSectionProgress,
   retainedSectionIndices,
+  shouldCompensateHeightChange,
 } from './continuous-layout.js'
 import { normalizeAnchorText } from './text-anchor.js'
 import { resolveRangeAnchor } from './text-range.js'
@@ -229,7 +230,8 @@ export class ContinuousEbookScroller extends EventTarget {
     const updateHeight = () => {
       if (this.#destroyed || !item.doc) return
       const before = wrapper.offsetHeight
-      const aboveViewport = wrapper.offsetTop < this.#container.scrollTop
+      const aboveViewport = shouldCompensateHeightChange(
+        wrapper.offsetTop, before, this.#container.scrollTop)
       const height = Math.max(
         doc.documentElement.scrollHeight,
         doc.body?.scrollHeight || 0,

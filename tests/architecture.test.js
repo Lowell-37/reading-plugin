@@ -3,15 +3,6 @@ import { parse } from '@vue/compiler-sfc'
 import ts from 'typescript'
 import { expect, test } from 'vitest'
 
-test('legacy reader state bridge has no DOM reverse-synchronization path', async () => {
-  const source = await readFile(new URL('../entrypoints/reader/legacy-bridge.ts', import.meta.url), 'utf8')
-
-  expect(source).not.toMatch(/MutationObserver|ResizeObserver|querySelector|syncFromDom|\bdocument\b|\bwindow\b|addEventListener/)
-  expect(source).toMatch(/onState/)
-  expect(source).toMatch(/attachPort/)
-  expect(source).toMatch(/destroy/)
-})
-
 test('collects static, re-exported, dynamic, and CommonJS module specifiers', () => {
   expect(collectModuleSpecifiers(`
     import 'static-module'

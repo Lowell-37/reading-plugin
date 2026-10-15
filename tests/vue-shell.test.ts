@@ -4,7 +4,6 @@ import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import App from '../entrypoints/reader/App.vue'
-import { connectLegacyReaderState } from '../entrypoints/reader/legacy-bridge'
 import { useReaderStore } from '../entrypoints/reader/stores/reader'
 import { useSettingsStore } from '../entrypoints/reader/stores/settings'
 import { useMigrationStore } from '../entrypoints/reader/stores/migration'
@@ -32,10 +31,10 @@ describe('Vue reader shell', () => {
     const reader = useReaderStore(pinia)
 
     expect(document.body.classList.contains('header-collapsed')).toBe(false)
-    reader.applyLegacyState({ isReading: true })
+    reader.applyReaderState({ isReading: true })
     await nextTick()
     expect(document.body.classList.contains('header-collapsed')).toBe(true)
-    reader.applyLegacyState({ isReading: false })
+    reader.applyReaderState({ isReading: false })
     await nextTick()
     expect(document.body.classList.contains('header-collapsed')).toBe(false)
 
@@ -67,14 +66,13 @@ describe('Vue reader shell', () => {
     expect('annotations' in store.$state).toBe(false)
   })
 
-  test('projects structured legacy reader state callbacks into Pinia', () => {
+  test('projects structured reader state updates into Pinia', () => {
     const pinia = createPinia()
     const store = useReaderStore(pinia)
-    const bridge = connectLegacyReaderState(pinia)
 
-    bridge.callbacks.onState({ title: '海边的卡夫卡', isReading: true })
-    bridge.callbacks.onState({ chapter: '第一章', progress: 0.375 })
-    bridge.callbacks.onPanelRequest('toc')
+    store.applyReaderState({ title: '海边的卡夫卡', isReading: true })
+    store.applyReaderState({ chapter: '第一章', progress: 0.375 })
+    store.requestPanel('toc')
 
     expect(store.$state).toEqual({
       title: '海边的卡夫卡',
@@ -369,7 +367,7 @@ describe('Vue reader shell', () => {
     const ebook = useEbookSessionStore(pinia)
     ebook.record = { id: 'ebook-keyboard', name: 'keyboard.epub', format: 'epub' }
     ebook.status = 'ready'
-    reader.applyLegacyState({ isReading: true })
+    reader.applyReaderState({ isReading: true })
     const navigate = vi.spyOn(ebook, 'navigate').mockResolvedValue(undefined)
     const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
     const event = new KeyboardEvent('keydown', { key: 'PageDown', bubbles: true, cancelable: true })
@@ -422,7 +420,7 @@ describe('Vue reader shell', () => {
     const ebook = useEbookSessionStore(pinia)
     ebook.record = { id: 'ebook-editable-focus', name: 'editable.epub', format: 'epub' }
     ebook.status = 'ready'
-    reader.applyLegacyState({ isReading: true })
+    reader.applyReaderState({ isReading: true })
     const navigate = vi.spyOn(ebook, 'navigate').mockResolvedValue(undefined)
     const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
     const host = document.createElement('div')
@@ -517,11 +515,11 @@ describe('Vue reader shell', () => {
     await wrapper.vm.$nextTick()
     const loader = wrapper.find('#loading-view').element as HTMLElement
     loader.hidden = false
-    reader.applyLegacyState({ isReading: true })
+    reader.applyReaderState({ isReading: true })
     await wrapper.vm.$nextTick()
     expect(loader.hidden).toBe(false)
     loader.hidden = true
-    reader.applyLegacyState({ chapter: 'PDF page 2' })
+    reader.applyReaderState({ chapter: 'PDF page 2' })
     await wrapper.vm.$nextTick()
     expect(loader.hidden).toBe(true)
     wrapper.unmount()
@@ -673,7 +671,7 @@ describe('Vue reader shell', () => {
     chapter.textContent = '第 7 页'
     slider.value = '0.7'
     label.textContent = '70%'
-    reader.applyLegacyState({ chapter: 'legacy store update', progress: 0.2 })
+    reader.applyReaderState({ chapter: 'reader store update', progress: 0.2 })
     await wrapper.vm.$nextTick()
     expect(chapter.textContent).toBe('第 7 页')
     expect(slider.value).toBe('0.7')

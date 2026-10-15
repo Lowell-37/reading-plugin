@@ -3,7 +3,6 @@ import { defineStore } from 'pinia'
 import type { BookRecord } from '../../../src/core/types'
 import { detectFormat } from '../../../src/core/formats'
 import type { EbookSessionPort } from '../ebook-session-port'
-import type { LegacyReaderPort } from '../legacy-reader-port'
 import type { PdfSessionPort } from '../pdf-session-port'
 import { useSettingsStore } from './settings'
 import {
@@ -19,23 +18,16 @@ export function createLibraryStore(dependencies: LibraryDependencies = defaultLi
     const books = shallowRef<BookRecord[]>([])
     const backupState = shallowRef<'idle' | 'working' | 'exported' | 'restored' | 'error'>('idle')
     const backupStatus = shallowRef('备份包含书籍、进度、高亮、批注和设置，不包含 API 密钥')
-    let legacyPort: LegacyReaderPort | null = null
     let ebookPort: EbookSessionPort | null = null
     let pdfPort: PdfSessionPort | null = null
     type SessionPort = EbookSessionPort | PdfSessionPort
     let activeOwner: { port: SessionPort, request: number } | null = null
     let routeGeneration = 0
     let closeBarrier: Promise<void> = Promise.resolve()
-    let resolveLegacyPortReady: (port: LegacyReaderPort) => void = () => undefined
-    let legacyPortReady: Promise<LegacyReaderPort>
     let resolveEbookPortReady: (port: EbookSessionPort) => void = () => undefined
     let ebookPortReady: Promise<EbookSessionPort>
     let resolvePdfPortReady: (port: PdfSessionPort) => void = () => undefined
     let pdfPortReady: Promise<PdfSessionPort>
-
-    function resetLegacyPortReady() {
-      legacyPortReady = new Promise(resolve => { resolveLegacyPortReady = resolve })
-    }
 
     function resetEbookPortReady() {
       ebookPortReady = new Promise(resolve => { resolveEbookPortReady = resolve })
@@ -45,15 +37,8 @@ export function createLibraryStore(dependencies: LibraryDependencies = defaultLi
       pdfPortReady = new Promise(resolve => { resolvePdfPortReady = resolve })
     }
 
-    resetLegacyPortReady()
     resetEbookPortReady()
     resetPdfPortReady()
-
-    function attachLegacyPort(nextPort: LegacyReaderPort | null) {
-      legacyPort = nextPort
-      if (nextPort) resolveLegacyPortReady(nextPort)
-      else resetLegacyPortReady()
-    }
 
     function attachEbookPort(nextPort: EbookSessionPort | null) {
       ebookPort = nextPort
@@ -67,16 +52,8 @@ export function createLibraryStore(dependencies: LibraryDependencies = defaultLi
       else resetPdfPortReady()
     }
 
-    function attachPort(nextPort: LegacyReaderPort | null) {
-      attachLegacyPort(nextPort)
-    }
-
     function sorted(records: BookRecord[]) {
       return [...records].sort((left, right) => right.openedAt - left.openedAt)
-    }
-
-    function requireLegacyPort() {
-      return legacyPort ? Promise.resolve(legacyPort) : legacyPortReady
     }
 
     function requireEbookPort() {
@@ -169,7 +146,6 @@ export function createLibraryStore(dependencies: LibraryDependencies = defaultLi
       backupStatus.value = '正在校验并打包本地书库…'
       try {
         if (activeOwner) await activeOwner.port.flushProgress()
-        else if (legacyPort) await legacyPort.flushProgress()
         const records = await dependencies.repository.list()
         books.value = sorted(records)
         const settings = useSettingsStore()
@@ -205,8 +181,6 @@ export function createLibraryStore(dependencies: LibraryDependencies = defaultLi
       books,
       backupState,
       backupStatus,
-      attachPort,
-      attachLegacyPort,
       attachEbookPort,
       attachPdfPort,
       load,
