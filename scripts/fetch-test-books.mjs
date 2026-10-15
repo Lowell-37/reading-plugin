@@ -6,6 +6,17 @@ export const TEST_BOOKS = [
   { name: 'alice.mobi', format: 'mobi', url: 'https://www.gutenberg.org/ebooks/11.kindle.images' },
   { name: 'alice.azw3', format: 'azw3', url: 'https://www.gutenberg.org/ebooks/11.kf8.images' },
   {
+    name: 'frankenstein-gutenberg.mobi',
+    format: 'mobi',
+    title: 'Frankenstein; Or, The Modern Prometheus',
+    creator: 'Mary Wollstonecraft Shelley',
+    source: 'Project Gutenberg eBook #84 older Kindle/MOBI image edition, downloaded 2026-10-15; fixture committed to this repository',
+    license: 'Project Gutenberg public domain in the USA; check local law outside the USA',
+    licenseUrl: 'https://www.gutenberg.org/policy/license',
+    url: 'https://www.gutenberg.org/cache/epub/84/pg84-images.mobi',
+    sha256: '87d68581b9f1ff1b1caf7b01691be0ebe579b62c96418822f87fed5770b70d09',
+  },
+  {
     name: 'water-margin.epub',
     format: 'epub',
     title: '水滸傳',

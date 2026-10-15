@@ -5,6 +5,32 @@ import { launchExtension } from './helpers/extension-launch'
 const extensionPath = resolve('.')
 const booksPath = resolve('tests/fixtures/books')
 
+test('Project Gutenberg Frankenstein MOBI navigates real chapters and restores the last chapter', async () => {
+  const { context, page, pageErrors } = await launchExtension(extensionPath)
+  try {
+    await openBook(page, 'frankenstein-gutenberg.mobi')
+    await expect(page.locator('#sidebar-title')).toContainText('Frankenstein')
+    const toc = page.locator('#toc button')
+    await expect.poll(() => toc.count()).toBeGreaterThan(20)
+    await expect(toc.filter({ hasText: /^Chapter \d+$/ })).toHaveText(
+      Array.from({ length: 24 }, (_, index) => `Chapter ${index + 1}`),
+    )
+    await toc.filter({ hasText: /^Chapter 24$/ }).evaluate((button: HTMLElement) => button.click())
+    await expect.poll(() => readableText(page.frames())).toContain('My present situation was one in which all voluntary thought was swallowed up and lost.')
+    await expect(page.locator('#toc button.active')).toHaveText('Chapter 24')
+    await expect.poll(() => progress(page)).toBeGreaterThan(0.8)
+    const savedProgress = await progress(page)
+
+    await reopenBook(page, /Frankenstein/i)
+    await expect.poll(() => progress(page)).toBeCloseTo(savedProgress, 2)
+    await expect(page.locator('#toc button.active')).toHaveText('Chapter 24')
+    await expect.poll(() => readableText(page.frames())).toContain('My present situation was one in which all voluntary thought was swallowed up and lost.')
+    expect(pageErrors).toEqual([])
+  } finally {
+    await context.close()
+  }
+})
+
 test('GITenberg Chinese MOBI with license-only TOC shows readable text and restores position', async () => {
   const { context, page, pageErrors } = await launchExtension(extensionPath)
   try {
