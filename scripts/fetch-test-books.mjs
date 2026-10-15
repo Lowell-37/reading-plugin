@@ -26,6 +26,17 @@ export const TEST_BOOKS = [
     sha256: '4865e0cfbfe7f1218f43f4ef7e8e31647ec227ecb59cc520abbe4a39e9a4a000',
   },
   {
+    name: 'dracula-standard-ebooks.epub',
+    format: 'epub',
+    title: 'Dracula',
+    creator: 'Bram Stoker',
+    source: 'Standard Ebooks compatible EPUB, package version e9e81aadf8b235fb6498728bce54b0967e224612-4.0.3-epub/compatible, modified 2026-08-04; fixture committed to this repository',
+    license: 'Source text and artwork believed public domain in the USA; Standard Ebooks contributions CC0 1.0; check local law outside the USA',
+    licenseUrl: 'https://standardebooks.org/ebooks/bram-stoker/dracula',
+    url: 'https://standardebooks.org/ebooks/bram-stoker/dracula/downloads/bram-stoker_dracula.epub?source=download',
+    sha256: '568ee9d37b2cc12dfd5e24ebf7b16ae71a805e269af159dc836647751739340a',
+  },
+  {
     name: 'tracemonkey.pdf',
     format: 'pdf',
     url: 'https://raw.githubusercontent.com/mozilla/pdf.js/master/web/compressed.tracemonkey-pldi-09.pdf',

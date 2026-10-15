@@ -41,6 +41,33 @@ test('complex EPUB survives a broken TOC entry and navigates valid chapters', as
   }
 })
 
+test('Standard Ebooks EPUB renders nested chapters and restores deep reading progress', async () => {
+  const { context, page } = await launchExtension()
+  try {
+    await openBook(page, 'dracula-standard-ebooks.epub')
+    await expect(page.locator('#sidebar-title')).toContainText('Dracula')
+    const nestedChapters = page.locator('#toc > ul > li:has(> button:text-is("Dracula")) > ul > li > button')
+    await expect(nestedChapters).toHaveCount(28)
+
+    await nestedChapters.filter({ hasText: /^I$/ })
+      .evaluate((button: HTMLElement) => button.click())
+    await expect.poll(() => chapterText(page.frames(), '#chapter-1')).toContain('Jonathan Harker’s Journal')
+
+    await nestedChapters.filter({ hasText: /^XXVII$/ })
+      .evaluate((button: HTMLElement) => button.click())
+    await expect.poll(() => chapterText(page.frames(), '#chapter-27')).toContain('Mina Harker’s Journal')
+    await expect(page.locator('#toc button.active')).toHaveText('XXVII')
+    await expect.poll(() => progress(page)).toBeGreaterThan(0.8)
+    const savedProgress = await progress(page)
+    await assertReopenRestoresProgress(page, /Dracula/i)
+    await expect.poll(() => chapterText(page.frames(), '#chapter-27')).toContain('Mina Harker’s Journal')
+    await expect(page.locator('#toc button.active')).toHaveText('XXVII')
+    await expect.poll(() => progress(page)).toBeCloseTo(savedProgress, 2)
+  } finally {
+    await context.close()
+  }
+})
+
 async function launchExtension(): Promise<{ context: BrowserContext, page: Page }> {
   const context = await chromium.launchPersistentContext('', {
     executablePath: existsSync(edgePath) ? edgePath : undefined,
@@ -79,6 +106,14 @@ async function findChapterText(frames: Frame[]) {
   for (const frame of frames.slice(1)) {
     const text = await frame.locator('body').innerText().catch(() => '')
     if (text) return text
+  }
+  return ''
+}
+
+async function chapterText(frames: Frame[], selector: string) {
+  for (const frame of frames.slice(1)) {
+    const chapter = frame.locator(selector)
+    if (await chapter.count().catch(() => 0)) return chapter.innerText()
   }
   return ''
 }

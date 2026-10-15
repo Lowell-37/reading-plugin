@@ -79,9 +79,16 @@ async function usedHeap(session: CDPSession) {
 
 async function scrollToSection(page: Page, index: number, marker: string) {
   const section = page.locator('.continuous-section').nth(index)
-  await section.evaluate((element: HTMLElement) => element.scrollIntoView({ block: 'center' }))
-  await expect.poll(() => section.locator('iframe').evaluate((frame: HTMLIFrameElement, expectedMarker) =>
-    frame.contentDocument?.body?.innerText.includes(expectedMarker) ?? false, marker).catch(() => false)).toBe(true)
+  await expect.poll(async () => {
+    await section.evaluate((element: HTMLElement) => element.scrollIntoView({ block: 'center' }))
+    return section.evaluate((element: HTMLElement, expectedMarker) => {
+      const viewport = element.closest('.continuous-ebook')?.getBoundingClientRect()
+      const sectionRect = element.getBoundingClientRect()
+      const frame = element.querySelector('iframe')
+      return Boolean(viewport && sectionRect.top < viewport.bottom && sectionRect.bottom > viewport.top
+        && frame?.contentDocument?.body?.innerText.includes(expectedMarker))
+    }, marker).catch(() => false)
+  }, { timeout: 20_000 }).toBe(true)
 }
 
 async function hasFrame(page: Page, index: number) {
