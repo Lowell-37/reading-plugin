@@ -1,7 +1,7 @@
 import { test, expect, chromium, type BrowserContext, type Page } from '@playwright/test'
 import AdmZip from 'adm-zip'
 import { existsSync } from 'node:fs'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -69,6 +69,39 @@ test('rolling back an unpacked release preserves the extension library', async (
     await rolledBack.page.locator('.library-card').filter({ hasText: 'Alice' }).click()
     await expect(rolledBack.page.locator('#loading-view')).toBeHidden({ timeout: 30_000 })
     await expect.poll(() => progress(rolledBack.page)).toBeGreaterThanOrEqual(savedProgress * 0.8)
+  } finally {
+    await context?.close()
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test('moving an unpacked release preserves its extension ID, library and reading progress', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'quiet-reader-move-'))
+  const originalPath = join(directory, 'extension-original')
+  const movedPath = join(directory, 'extension-moved')
+  const profilePath = join(directory, 'profile')
+  let context: BrowserContext | null = null
+  try {
+    new AdmZip(archivePath).extractAllTo(originalPath, true)
+    const initial = await launchExtension(originalPath, profilePath)
+    context = initial.context
+    const extensionId = new URL(initial.page.url()).host
+    await initial.page.locator('#file-input').setInputFiles(bookPath)
+    await expect(initial.page.locator('#loading-view')).toBeHidden({ timeout: 30_000 })
+    await initial.page.locator('#next-button').evaluate((button: HTMLElement) => button.click())
+    await expect.poll(() => progress(initial.page)).toBeGreaterThan(0)
+    const savedProgress = await progress(initial.page)
+    await context.close()
+    context = null
+
+    await rename(originalPath, movedPath)
+    const moved = await launchExtension(movedPath, profilePath)
+    context = moved.context
+    expect(new URL(moved.page.url()).host).toBe(extensionId)
+    await expect(moved.page.locator('.library-card')).toContainText('Alice')
+    await moved.page.locator('.library-card').filter({ hasText: 'Alice' }).click()
+    await expect(moved.page.locator('#loading-view')).toBeHidden({ timeout: 30_000 })
+    await expect.poll(() => progress(moved.page)).toBeGreaterThanOrEqual(savedProgress * 0.8)
   } finally {
     await context?.close()
     await rm(directory, { recursive: true, force: true })

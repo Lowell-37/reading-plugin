@@ -1,6 +1,8 @@
 import { test, expect, chromium, type BrowserContext, type Page } from '@playwright/test'
 import { existsSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 
 const extensionPath = resolve('.')
 const bookPath = resolve('tests/fixtures/books/alice.epub')
@@ -41,8 +43,44 @@ test('root extension backs up and restores a real EPUB with reading progress', a
   }
 })
 
-async function launchRootExtension(): Promise<{ context: BrowserContext, page: Page }> {
-  const context = await chromium.launchPersistentContext('', {
+test('a fresh Edge profile can restore a backed-up EPUB and reading progress', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'quiet-reader-fresh-profile-'))
+  const backupPath = join(directory, 'library.quietreader')
+  let context: BrowserContext | null = null
+  try {
+    const original = await launchRootExtension(join(directory, 'original-profile'))
+    context = original.context
+    const extensionId = new URL(original.page.url()).host
+    await original.page.locator('#file-input').setInputFiles(bookPath)
+    await expect(original.page.locator('#loading-view')).toBeHidden({ timeout: 30_000 })
+    await original.page.locator('#toc button').nth(2).evaluate((button: HTMLElement) => button.click())
+    await expect.poll(() => progress(original.page)).toBeGreaterThan(0)
+    const savedProgress = await progress(original.page)
+    await original.page.locator('#home-button').evaluate((button: HTMLElement) => button.click())
+    const downloadPromise = original.page.waitForEvent('download')
+    await original.page.locator('#backup-library').click()
+    await (await downloadPromise).saveAs(backupPath)
+    await context.close()
+    context = null
+
+    const fresh = await launchRootExtension(join(directory, 'fresh-profile'))
+    context = fresh.context
+    expect(new URL(fresh.page.url()).host).toBe(extensionId)
+    await expect(fresh.page.locator('.library-card')).toHaveCount(0)
+    await fresh.page.locator('#backup-file-input').setInputFiles(backupPath)
+    await expect(fresh.page.locator('#backup-status')).toHaveAttribute('data-state', 'restored')
+    await expect(fresh.page.locator('.library-card')).toContainText('Alice')
+    await fresh.page.locator('.library-card').evaluate((card: HTMLElement) => card.click())
+    await expect(fresh.page.locator('#loading-view')).toBeHidden({ timeout: 30_000 })
+    await expect.poll(() => progress(fresh.page)).toBeGreaterThanOrEqual(savedProgress * 0.8)
+  } finally {
+    await context?.close()
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+async function launchRootExtension(profilePath = ''): Promise<{ context: BrowserContext, page: Page }> {
+  const context = await chromium.launchPersistentContext(profilePath, {
     executablePath: existsSync(edgePath) ? edgePath : undefined,
     channel: existsSync(edgePath) ? undefined : 'chromium',
     headless: true,
