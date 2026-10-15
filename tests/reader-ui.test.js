@@ -95,20 +95,17 @@ test('root and Vue library shells expose versioned backup and restore controls',
   assert.match(source, /parseLibraryBackup/)
 })
 
-test('root startup retains ebook listeners while WXT startup excludes them', async () => {
+test('root startup retains ebook listeners and rejects the retired WXT listener mode', async () => {
   const ownership = await import('../src/reader-listener-registry.js').catch(() => null)
   assert.ok(ownership, 'reader listener ownership must be represented by an importable production registry')
 
   assert.deepEqual(signatures(ownership.ROOT_UI_LISTENERS), EXPECTED_ROOT_UI_LISTENERS)
   assert.deepEqual(signatures(ownership.ROOT_LIBRARY_LISTENERS), EXPECTED_ROOT_LIBRARY_LISTENERS)
   assert.deepEqual(signatures(ownership.ROOT_EBOOK_LISTENERS), EXPECTED_ROOT_EBOOK_LISTENERS)
-  assert.deepEqual(ownership.LISTENER_STARTUP.wxt, ['engine'])
   assert.deepEqual(ownership.LISTENER_STARTUP.root, ['engine', 'rootUi', 'rootLibrary'])
-  assert.deepEqual(
-    ownership.WXT_ENGINE_LISTENERS.filter(binding => EXPECTED_ROOT_EBOOK_LISTENERS
-      .some(signature => signature.startsWith(`${binding.action}@`))),
-    [],
-  )
+  assert.throws(() => ownership.startReaderListenerMode('wxt', {
+    engine: () => undefined,
+  }), /Unknown reader listener mode/)
 
   const allBindings = [
     ...ownership.ENGINE_LISTENERS,
@@ -145,8 +142,8 @@ function signatures(bindings) {
   return bindings.map(binding => `${binding.action}@${binding.target}:${binding.event}`)
 }
 
-test('root PDF engine bindings remain active while WXT binds only shared tools', async () => {
-  const { ENGINE_LISTENERS, WXT_ENGINE_LISTENERS, bindRegisteredListeners } = await import('../src/reader-listener-registry.js')
+test('root PDF engine bindings remain active', async () => {
+  const { ENGINE_LISTENERS, bindRegisteredListeners } = await import('../src/reader-listener-registry.js')
   const rootOnly = ['reader-prev', 'reader-next', 'reader-progress', 'reader-keyboard',
     'pdf-zoom-out', 'pdf-zoom-in', 'pdf-fit-width', 'pdf-page-change', 'pdf-page-keyboard', 'search-submit',
     'annotation-highlight', 'annotation-note', 'annotation-filter-query', 'annotation-filter-type',
@@ -159,8 +156,4 @@ test('root PDF engine bindings remain active while WXT binds only shared tools',
   }])
   fire(ENGINE_LISTENERS)
   for (const action of rootOnly) assert.ok(calls.includes(action), `root lost ${action}`)
-  calls.length = 0
-  fire(WXT_ENGINE_LISTENERS)
-  assert.deepEqual(calls.filter(action => rootOnly.includes(action)), [])
-  for (const action of ['ai-settings-toggle', 'ai-action']) assert.ok(calls.includes(action), `WXT lost ${action}`)
 })

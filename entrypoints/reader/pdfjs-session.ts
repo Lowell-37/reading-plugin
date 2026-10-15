@@ -5,7 +5,7 @@ import type {
   PdfSessionPort,
   PdfSessionSnapshot,
 } from './pdf-session-port'
-import type { ReaderSettings } from './legacy-reader-port'
+import type { ReaderSettings } from './reader-types'
 import type {
   PdfDocumentLike,
   PdfJsLike,

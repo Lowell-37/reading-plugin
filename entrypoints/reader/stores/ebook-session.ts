@@ -16,7 +16,7 @@ import type {
   EbookSessionTocItem,
   EbookSelectionInput,
 } from '../ebook-session-port'
-import type { ReaderSettings } from '../legacy-reader-port'
+import type { ReaderSettings } from '../reader-types'
 import { useReaderStore } from './reader'
 
 export type EbookSessionRecord = Pick<BookRecord, 'id' | 'name' | 'format'>

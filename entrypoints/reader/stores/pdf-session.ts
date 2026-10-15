@@ -10,7 +10,7 @@ import type {
   PdfSessionSnapshot,
   PdfSessionStatus,
 } from '../pdf-session-port'
-import type { ReaderSettings } from '../legacy-reader-port'
+import type { ReaderSettings } from '../reader-types'
 import { useReaderStore } from './reader'
 
 export type PdfSessionRecord = Pick<BookRecord, 'id' | 'name' | 'format'>

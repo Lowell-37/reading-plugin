@@ -8,7 +8,7 @@ import type {
   EbookSessionTocItem,
   EbookSelectionInput,
 } from './ebook-session-port'
-import type { ReaderSettings } from './legacy-reader-port'
+import type { ReaderSettings } from './reader-types'
 import { EbookSearchIndex, type EbookSearchOptions, type EbookSearchSnapshot } from '../../src/core/ebook-search-index'
 // @ts-expect-error JavaScript compatibility text-range module has no declaration file yet.
 import { rangeFromTextOffsets, createRangeAnchor, resolveRangeAnchor } from '../../src/text-range.js'

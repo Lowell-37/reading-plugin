@@ -1,6 +1,6 @@
 // @ts-expect-error JavaScript compatibility storage has no declaration file yet.
 import { loadSettings, saveSettings } from '../../src/storage.js'
-import type { ReaderSettings } from './legacy-reader-port'
+import type { ReaderSettings } from './reader-types'
 
 /** Keeps browser storage behind a non-Vue composition boundary. */
 export function loadReaderSettings(): ReaderSettings {

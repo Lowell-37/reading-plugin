@@ -1,6 +1,6 @@
 import type { BookRecord } from '../../src/core/types'
 import type { Annotation, EbookAnnotationAnchor } from '../../src/core/types'
-import type { ReaderSettings } from './legacy-reader-port'
+import type { ReaderSettings } from './reader-types'
 import type { EbookSearchOptions, EbookSearchSnapshot } from '../../src/core/ebook-search-index'
 
 export type EbookSessionStatus = 'idle' | 'loading' | 'ready' | 'error'

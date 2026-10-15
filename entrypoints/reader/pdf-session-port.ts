@@ -1,5 +1,5 @@
 import type { BookRecord } from '../../src/core/types'
-import type { ReaderSettings } from './legacy-reader-port'
+import type { ReaderSettings } from './reader-types'
 
 export type PdfSessionStatus = 'idle' | 'loading' | 'ready' | 'error'
 

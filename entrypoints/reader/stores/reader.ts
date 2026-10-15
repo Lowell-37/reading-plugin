@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import type { EbookSessionSnapshot } from '../ebook-session-port'
 import type { PdfSessionSnapshot } from '../pdf-session-port'
-import type { ReaderPanel } from '../legacy-reader-port'
+import type { ReaderPanel } from '../reader-types'
 
 interface ReaderRuntimeState {
   title: string

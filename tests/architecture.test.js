@@ -94,16 +94,6 @@ test('PDF.js adapter files own no persistence, search, annotation, or Vue depend
   }
 })
 
-test('WXT legacy reader port exposes no PDF annotation bridge', async () => {
-  const source = await readFile(new URL('../entrypoints/reader/legacy-reader-port.ts', import.meta.url), 'utf8')
-  const script = createScriptSourceFile(source, 'legacy-reader-port.ts')
-  const tools = script.statements.find(node => ts.isInterfaceDeclaration(node) && node.name.text === 'LegacyPdfAnnotationTools')
-  expect(tools).toBeUndefined()
-  expect(source).not.toContain('attachPdfTools')
-  expect(collectModuleSpecifiers(source, 'legacy-reader-port.ts').some(specifier =>
-    /pdfjs|pdf-session-dependencies|reader\.js|promise-cache/.test(specifier))).toBe(false)
-})
-
 function collectModuleSpecifiers(source, filename) {
   const sourceFile = createScriptSourceFile(source, filename)
   const specifiers = []

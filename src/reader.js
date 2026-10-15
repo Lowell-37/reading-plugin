@@ -25,7 +25,6 @@ import {
   ENGINE_LISTENERS,
   ROOT_LIBRARY_LISTENERS,
   ROOT_UI_LISTENERS,
-  WXT_ENGINE_LISTENERS,
   bindRegisteredListeners,
   startReaderListenerMode,
 } from './reader-listener-registry.js'
@@ -178,38 +177,7 @@ let coverObjectUrl = null
 let libraryObjectUrls = []
 const tocButtons = new Map()
 const progressService = new ProgressService(bookRepository)
-const emptyLegacyCallbacks = Object.freeze({
-  onState() {},
-  onPanelRequest() {},
-  onLibraryChanged() {},
-})
-let legacyCallbacks = emptyLegacyCallbacks
-let legacyReaderState = {
-  title: '未命名书籍',
-  chapter: '开始',
-  progress: 0,
-  isReading: false,
-}
 let controllerInitialized = false
-let controllerMode = 'root'
-let vueOwnsMigratedControls = false
-
-function emitLegacyState(state) {
-  legacyReaderState = { ...legacyReaderState, ...state }
-  legacyCallbacks.onState({ ...legacyReaderState })
-}
-
-function requestLegacyPanel(panel) {
-  legacyCallbacks.onPanelRequest(panel)
-}
-
-async function notifyLegacyLibraryChanged() {
-  try {
-    await legacyCallbacks.onLibraryChanged()
-  } catch (error) {
-    console.error('Failed to refresh the library projection.', error)
-  }
-}
 
 function showToast(message, type = '') {
   elements.toast.textContent = message
@@ -245,30 +213,20 @@ function openPicker() {
 }
 
 function closePanels() {
-  if (!vueOwnsMigratedControls) {
-    elements.sidebar.classList.remove('open')
-    elements.settingsPanel.classList.remove('open')
-    elements.toolsPanel.classList.remove('open')
-    elements.scrim.classList.remove('show')
-  }
-  requestLegacyPanel(null)
+  elements.sidebar.classList.remove('open')
+  elements.settingsPanel.classList.remove('open')
+  elements.toolsPanel.classList.remove('open')
+  elements.scrim.classList.remove('show')
 }
 
 function openPanel(panel) {
-  const requestedPanel = panel === elements.sidebar ? 'toc' : panel === elements.settingsPanel ? 'settings' : 'tools'
-  if (vueOwnsMigratedControls) {
-    requestLegacyPanel(requestedPanel)
-    return
-  }
   closePanels()
   panel.classList.add('open')
   elements.scrim.classList.add('show')
-  requestLegacyPanel(requestedPanel)
 }
 
 function showReader(title) {
   document.body.classList.add('is-reading')
-  emitLegacyState({ title, chapter: '开始', progress: 0, isReading: true })
   setHeaderCollapsed(Boolean(settings.headerCollapsed), false)
   elements.welcomeView.hidden = true
   elements.readerView.hidden = false
@@ -280,8 +238,7 @@ async function showLibrary() {
   elements.readerView.hidden = true
   elements.welcomeView.hidden = false
   document.title = '静读'
-  emitLegacyState({ isReading: false })
-  if (!vueOwnsMigratedControls) await renderLibrary()
+  await renderLibrary()
 }
 
 function setHeaderCollapsed(collapsed, persist = true) {
@@ -293,37 +250,27 @@ function setHeaderCollapsed(collapsed, persist = true) {
   settings.headerCollapsed = collapsed
   saveSettings(settings)
 }
-function closeReader(options = {}) {
-  const preserveSearchUi = options.preserveSearchUi
-    ?? (controllerMode === 'wxt' && currentFormat === 'pdf')
-  if (controllerMode === 'root') progressService.flush().catch(console.error)
+function closeReader() {
+  progressService.flush().catch(console.error)
   readerAdapter?.destroy?.()
   readerAdapter = null
   closePanels()
   searchAbortController?.abort()
   searchAbortController = null
-  if (controllerMode === 'root') {
-    continuousEbook?.destroy()
-    continuousEbook = null
-    ebookSearchIndex?.clear()
-    ebookSearchIndex = null
-    ebookView?.close?.()
-    ebookView?.remove()
-    ebookView = null
-  }
-  if (controllerMode === 'root') {
-    pdfObserver?.disconnect()
-    pdfObserver = null
-    pdfLoadingTask?.destroy?.()
-    pdfLoadingTask = null
-    pdfDocument?.destroy?.()
-    pdfDocument = null
-    pdfTextCache.clear()
-  }
-  if (controllerMode === 'wxt') {
-    clearTimeout(annotationRepairSave)
-    annotationRepairSave = null
-  }
+  continuousEbook?.destroy()
+  continuousEbook = null
+  ebookSearchIndex?.clear()
+  ebookSearchIndex = null
+  ebookView?.close?.()
+  ebookView?.remove()
+  ebookView = null
+  pdfObserver?.disconnect()
+  pdfObserver = null
+  pdfLoadingTask?.destroy?.()
+  pdfLoadingTask = null
+  pdfDocument?.destroy?.()
+  pdfDocument = null
+  pdfTextCache.clear()
   pdfSearchQuery = ''
   pendingSelection = null
   aiAbortController?.abort()
@@ -332,25 +279,17 @@ function closeReader(options = {}) {
   elements.selectionAiMenu.hidden = true
   elements.aiResult.hidden = true
   elements.aiResultContent.textContent = ''
-  if (!preserveSearchUi) {
-    elements.searchResults.replaceChildren()
-    elements.searchStatus.textContent = '输入关键词搜索整本书'
-  }
-  if (controllerMode === 'root') {
-    elements.pdfToolbar.hidden = true
-    elements.pdfPageJump.hidden = true
-    elements.ebookHost.replaceChildren()
-    elements.pdfPages.replaceChildren()
-  } else {
-    elements.pdfPages.querySelectorAll('.pdf-annotation-layer').forEach(node => node.remove())
-    elements.pdfPages.querySelectorAll('.pdf-search-match').forEach(node => node.classList.remove('pdf-search-match'))
-  }
+  elements.searchResults.replaceChildren()
+  elements.searchStatus.textContent = '输入关键词搜索整本书'
+  elements.pdfToolbar.hidden = true
+  elements.pdfPageJump.hidden = true
+  elements.ebookHost.replaceChildren()
+  elements.pdfPages.replaceChildren()
   if (coverObjectUrl) URL.revokeObjectURL(coverObjectUrl)
   coverObjectUrl = null
   tocButtons.clear()
   currentRecord = null
   currentFormat = null
-  if (controllerMode === 'wxt') loadAnnotations()
 }
 
 function applySettingsToControls() {
@@ -358,7 +297,6 @@ function applySettingsToControls() {
   elements.aiEndpoint.value = settings.aiEndpoint || 'https://api.openai.com/v1'
   elements.aiModel.value = settings.aiModel || ''
   elements.aiApiKey.value = settings.aiApiKey || ''
-  if (vueOwnsMigratedControls) return
   elements.fontSelect.value = settings.font
   elements.fontSize.value = settings.fontSize
   elements.fontSizeValue.value = settings.fontSize
@@ -406,7 +344,7 @@ function getContinuousBookStyles() {
 function applyReaderSettings(persist = true) {
   applySettingsToControls()
   if (persist) saveSettings(settings)
-  if (controllerMode !== 'root' || !ebookView?.renderer) return
+  if (!ebookView?.renderer) return
   ebookView.renderer.setAttribute('flow', 'paginated')
   ebookView.renderer.setAttribute('animated', '')
   ebookView.renderer.setAttribute('margin', '64px')
@@ -480,7 +418,6 @@ function updateProgress(fraction, chapter = '') {
   elements.progressSlider.value = safeFraction
   elements.progressLabel.textContent = `${Math.round(safeFraction * 100)}%`
   if (chapter) elements.chapterLabel.textContent = chapter
-  emitLegacyState({ progress: safeFraction, ...(chapter ? { chapter } : {}) })
 }
 
 function setCover(cover, title) {
@@ -507,12 +444,10 @@ async function setMetadata({ title, author, cover }) {
   elements.sidebarFormat.textContent = currentFormat.toUpperCase()
   elements.coverLetter.textContent = resolvedTitle.slice(0, 1)
   document.title = `${resolvedTitle} · 静读`
-  emitLegacyState({ title: resolvedTitle })
   setCover(cover, resolvedTitle)
   if (currentRecord?.id) {
     currentRecord = { ...currentRecord, metadata: { title: resolvedTitle, author: resolvedAuthor }, cover }
     await bookRepository.update(currentRecord.id, { metadata: currentRecord.metadata, cover }).catch(console.error)
-    await notifyLegacyLibraryChanged()
   }
 }
 
@@ -911,7 +846,6 @@ async function searchEbook(query, signal) {
 }
 
 async function getPdfPageText(pageNumber) {
-  if (controllerMode === 'wxt') return { text: '', content: { items: [] }, available: false }
   return pdfTextCache.get(pageNumber, async () => {
     const page = await pdfDocument.getPage(pageNumber)
     const content = await page.getTextContent()
@@ -928,7 +862,7 @@ async function searchPdf(query, signal) {
   const pageCount = pdfToolPageCount()
   for (let page = 1; page <= pageCount; page += 1) {
     signal.throwIfAborted()
-    const wasCached = controllerMode === 'wxt' || pdfTextCache.has(page)
+    const wasCached = pdfTextCache.has(page)
     const { text, available } = await getPdfPageText(page)
     if (available === false) unavailablePages += 1
     signal.throwIfAborted()
@@ -954,7 +888,6 @@ async function searchPdf(query, signal) {
 
 async function runSearch(event) {
   event?.preventDefault()
-  if (controllerMode === 'wxt' && currentFormat === 'pdf') return
   const query = elements.searchInput.value.trim()
   searchAbortController?.abort()
   searchAbortController = null
@@ -991,9 +924,9 @@ function markPdfSearchMatches(textLayer) {
   })
 }
 
-function pdfToolPageCount() { return controllerMode === 'wxt' ? 0 : pdfDocument?.numPages || 0 }
+function pdfToolPageCount() { return pdfDocument?.numPages || 0 }
 
-function navigatePdfTool(page, smooth = true) { return controllerMode === 'wxt' ? undefined : goToPdfPage(page, smooth) }
+function navigatePdfTool(page, smooth = true) { return goToPdfPage(page, smooth) }
 
 function updateAiSelectionUi() {
   if (!AI_FEATURE_ENABLED) {
@@ -1615,7 +1548,6 @@ async function openBook(file, existingRecord = null, { newlySaved = false } = {}
     const description = describeOpenError(error, format)
     if (savedNewBook && currentRecord?.id) {
       await bookRepository.delete(currentRecord.id).catch(cleanupError => console.error('Failed to remove invalid book.', cleanupError))
-      await notifyLegacyLibraryChanged()
     }
     closeReader()
     showOpenError(description)
@@ -1627,7 +1559,7 @@ async function openStoredBook(record, options) {
   const file = record.blob instanceof File
     ? record.blob
     : new File([record.blob], record.name, { type: record.type, lastModified: record.lastModified })
-  if (!vueOwnsMigratedControls) await bookRepository.update(record.id, { openedAt: Date.now() }).catch(console.error)
+  await bookRepository.update(record.id, { openedAt: Date.now() }).catch(console.error)
   await openBook(file, record, options)
 }
 
@@ -1679,7 +1611,6 @@ async function renderLibrary() {
         await bookRepository.delete(record.id)
         card.remove()
         if (!elements.bookGrid.children.length) elements.librarySection.hidden = true
-        await notifyLegacyLibraryChanged()
       },
     }, { card, remove })
     card.append(cover, info, remove)
@@ -1728,7 +1659,6 @@ async function restoreLibraryBackup(file) {
     settings = { ...settings, ...backup.settings, aiApiKey: currentApiKey }
     applyReaderSettings()
     await renderLibrary()
-    await notifyLegacyLibraryChanged()
     const message = `恢复完成：${backup.records.length} 本书；现有同名记录已更新`
     setBackupBusy(false, message)
     elements.backupStatus.dataset.state = 'restored'
@@ -1764,9 +1694,7 @@ function bindReaderListeners(bindings, handlers, elementLookup = elements) {
 
 function bindEngineControls() {
   const jumpToInputPage = () => goToPdfPage(Number(elements.pdfPageInput.value))
-  bindReaderListeners(controllerMode === 'wxt'
-    ? WXT_ENGINE_LISTENERS
-    : ENGINE_LISTENERS, {
+  bindReaderListeners(ENGINE_LISTENERS, {
     'loading-return-library': showLibrary,
     'loading-retry-file': openPicker,
     'ai-settings-toggle': () => {
@@ -1819,7 +1747,7 @@ function bindEngineControls() {
     },
     'reader-keyboard': event => {
       if (!document.body.classList.contains('is-reading')) return
-      if (!vueOwnsMigratedControls && (elements.settingsPanel.classList.contains('open') || elements.toolsPanel.classList.contains('open'))) return
+      if (elements.settingsPanel.classList.contains('open') || elements.toolsPanel.classList.contains('open')) return
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return
       if (event.key === 'ArrowLeft' || event.key === 'PageUp') { event.preventDefault(); navigate(-1) }
       if (event.key === 'ArrowRight' || event.key === 'PageDown') { event.preventDefault(); navigate(1) }
@@ -1884,66 +1812,16 @@ function bindRootUiControls() {
   })
 }
 
-function initializeLegacyReaderController({ mode = 'root' } = {}) {
+function initializeReaderController() {
   if (controllerInitialized) return
   controllerInitialized = true
-  controllerMode = mode
-  if (mode === 'root') pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
+  pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
   applySettingsToControls()
-  startReaderListenerMode(mode, {
+  startReaderListenerMode('root', {
     engine: bindEngineControls,
     rootUi: bindRootUiControls,
     rootLibrary: renderLibrary,
   })
 }
 
-export function createLegacyReaderPort(callbacks = {}) {
-  vueOwnsMigratedControls = true
-  legacyCallbacks = {
-    onState: typeof callbacks.onState === 'function' ? callbacks.onState : emptyLegacyCallbacks.onState,
-    onPanelRequest: typeof callbacks.onPanelRequest === 'function' ? callbacks.onPanelRequest : emptyLegacyCallbacks.onPanelRequest,
-    onLibraryChanged: typeof callbacks.onLibraryChanged === 'function' ? callbacks.onLibraryChanged : emptyLegacyCallbacks.onLibraryChanged,
-  }
-  initializeLegacyReaderController({ mode: 'wxt' })
-  emitLegacyState({})
-
-  let destroyed = false
-  const ensureActive = () => {
-    if (destroyed) throw new Error('Legacy reader port has been destroyed')
-  }
-
-  return {
-    async openRecord(record) {
-      ensureActive()
-      if (record.format !== 'pdf') throw new Error('WXT legacy reader port cannot open ebook records')
-      throw new Error('WXT legacy reader port cannot open PDF records')
-    },
-    async closeSession() {
-      ensureActive()
-      closeReader()
-    },
-    async applySettings(nextSettings) {
-      ensureActive()
-      const previousFlow = settings.flow
-      settings = { ...settings, ...nextSettings }
-      applyReaderSettings(false)
-      setHeaderCollapsed(Boolean(settings.headerCollapsed), false)
-      if (controllerMode === 'root' && settings.flow !== previousFlow) await setEbookFlow(settings.flow)
-    },
-    async flushProgress() {
-      ensureActive()
-      if (controllerMode === 'root') await progressService.flush()
-    },
-    destroy() {
-      if (destroyed) return
-      destroyed = true
-      closeReader({ preserveSearchUi: controllerMode === 'wxt' })
-      emitLegacyState({ title: '未命名书籍', chapter: '开始', progress: 0, isReading: false })
-      legacyCallbacks = emptyLegacyCallbacks
-    },
-  }
-}
-
-if (document.documentElement.dataset.legacyController !== 'loading') {
-  initializeLegacyReaderController({ mode: 'root' })
-}
+initializeReaderController()

@@ -1,7 +1,7 @@
 import { computed, reactive } from 'vue'
 import { defineStore } from 'pinia'
 import { normalizeReaderSettings } from '../../../src/core/migration-preflight'
-import type { ReaderSettings } from '../legacy-reader-port'
+import type { ReaderSettings } from '../reader-types'
 import { loadReaderSettings, saveReaderSettings } from '../settings-persistence'
 import { useEbookSessionStore } from './ebook-session'
 

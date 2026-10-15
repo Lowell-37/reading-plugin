@@ -176,6 +176,12 @@
 - 阅读器状态 store 统一使用 `applyReaderState`，不再以旧控制器命名。根目录 `src/reader.js`、固定扩展 ID、IndexedDB schema v2、备份格式和 AI 关闭状态保持不变。
 - 删除仅验证已停用 WXT 旧端口生命周期的测试，改用活跃 store 的边界测试。真实 EPUB 重开暴露连续滚动的高度补偿误判：当前章节变高时不再把高度增量加到滚动位置，WXT 恢复场景连续复跑 10 次通过；单测现为 375 项。根目录控制器中的 WXT 兼容分支仍待独立清理，根目录继续作为稳定加载入口。
 
+## 旧控制器 WXT 模式清理（2026-10-15）
+
+- 根目录 `src/reader.js` 只保留根目录启动路径，删除不再由 WXT 调用的旧端口、回调投射和 WXT 专用条件分支；监听器注册表也不再提供 WXT 模式。
+- WXT 活跃会话共享的 `ReaderPanel` 与 `ReaderSettings` 类型移入独立 `reader-types.ts`；删除已无运行时调用方的 `legacy-reader-port.ts`。
+- 当前扩展加载入口仍是项目根目录。IndexedDB schema v2、书库备份格式和 AI 关闭状态未改变；WXT 构建尚不能取代用户环境中的根目录稳定入口。
+
 ## 后续产品阶段
 
 - 整本书语义搜索与带出处问答
