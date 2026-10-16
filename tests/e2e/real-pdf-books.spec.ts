@@ -77,6 +77,43 @@ test('adjacent PDF page jump survives an immediate zoom and reopening', async ()
   }
 })
 
+test('wheel scrolling through a real PDF page updates durable progress', async () => {
+  const { context, page, pageErrors } = await launchExtension(extensionPath)
+  try {
+    await page.locator('#file-input').setInputFiles(handbook)
+    await expect(page.locator('#loading-view')).toBeHidden({ timeout: 45_000 })
+    await page.locator('#pdf-page-input').evaluate((input: HTMLInputElement) => {
+      input.value = '52'
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await expect.poll(() => scrollDistanceFromPage(page, 52)).toBeLessThan(5)
+    await expect(page.locator('#pdf-page-input')).toHaveValue('52')
+    const before = await progress(page)
+    const scrollTopBefore = await page.locator('#pdf-viewport').evaluate((viewport: HTMLElement) => viewport.scrollTop)
+
+    const viewport = page.locator('#pdf-viewport')
+    const bounds = await viewport.boundingBox()
+    expect(bounds).not.toBeNull()
+    await page.mouse.move(bounds!.x + bounds!.width / 2, bounds!.y + bounds!.height / 2)
+    await page.mouse.wheel(0, 950)
+    await expect.poll(() => viewport.evaluate((element: HTMLElement) => element.scrollTop))
+      .toBeGreaterThan(scrollTopBefore)
+    await expect(page.locator('#pdf-page-input')).toHaveValue('53')
+    await expect.poll(() => progress(page)).toBeGreaterThan(before)
+
+    await page.locator('#home-button').evaluate((button: HTMLElement) => button.click())
+    await expect(page.locator('#welcome-view')).toBeVisible()
+    await page.locator('.library-card').filter({ hasText: /NASA Systems Engineering Handbook/i })
+      .first().evaluate((card: HTMLElement) => card.click())
+    await expect(page.locator('#loading-view')).toBeHidden({ timeout: 45_000 })
+    await expect(page.locator('#pdf-page-input')).toHaveValue('53')
+    await expect.poll(() => scrollDistanceFromPage(page, 53)).toBeLessThan(5)
+    expect(pageErrors).toEqual([])
+  } finally {
+    await context.close()
+  }
+})
+
 async function progress(page: Page) {
   return Number(await page.locator('#progress-slider').inputValue())
 }
