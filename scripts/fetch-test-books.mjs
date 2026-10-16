@@ -59,6 +59,17 @@ export const TEST_BOOKS = [
     sha256: '568ee9d37b2cc12dfd5e24ebf7b16ae71a805e269af159dc836647751739340a',
   },
   {
+    name: 'moby-dick-wikisource.epub',
+    format: 'epub',
+    title: 'Moby-Dick',
+    creator: 'Herman Melville',
+    source: 'English Wikisource WS Export of the 1851 US edition, downloaded 2026-10-16; fixture committed to this repository',
+    license: 'Original 1851 text is public domain in the USA; exported Wikisource contributions are marked CC BY-SA 3.0 and GFDL inside the EPUB; retain its attribution and check local law outside the USA',
+    licenseUrl: 'https://en.wikisource.org/wiki/Moby-Dick_(1851)_US_edition',
+    url: 'https://ws-export.wmcloud.org/?format=epub&lang=en&page=Moby-Dick_%281851%29_US_edition',
+    sha256: 'ec0547f5669ede4a63dbb7cbe315a46fcac0d0eb18fa51de6902b4070841b811',
+  },
+  {
     name: 'dracula-standard-ebooks.azw3',
     format: 'azw3',
     title: 'Dracula',

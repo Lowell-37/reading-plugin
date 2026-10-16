@@ -88,6 +88,7 @@
 - ✅ GITenberg《水滸傳》MOBI 已固定样本与 SHA-256，真实 Edge 验证中文正文及中段进度恢复；该出版文件的目录仅含许可页，不计入章节目录验收。
 - ✅ Project Gutenberg《Frankenstein》MOBI 已固定样本与 SHA-256，真实 Edge 验证完整章节目录、末章正文与重开进度恢复。
 - ✅ Standard Ebooks《Macbeth》AZW3 已固定样本与 SHA-256，真实 Edge 验证五幕目录、第五幕第八场正文与重开进度恢复；与《Dracula》属于同一出版来源，不计新增来源类别。
+- ✅ English Wikisource《Moby-Dick》（1851 美版）EPUB 已固定样本与 SHA-256，真实 Edge 验证 135 个独立章节、139 项目录、相邻章节同屏及滚轮跨章、末章目录远跳与重开进度恢复；同时修复连续模式的远跳越章问题，导出文件保留来源与贡献者授权信息。
 - ✅ NASA《Systems Engineering Handbook》PDF 已固定样本与 SHA-256，真实 Edge 验证 297 页文档的目录深跳、文本层、130% 缩放和第 53 页重开恢复；测试发现并修复远距离平滑滚动与恢复时的页码竞争。
 
 待完成：

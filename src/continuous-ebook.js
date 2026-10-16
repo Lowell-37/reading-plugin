@@ -375,9 +375,11 @@ export class ContinuousEbookScroller extends EventTarget {
     } else if (anchor?.getBoundingClientRect) {
       offset = anchor.getBoundingClientRect().top
     }
+    const destination = item.wrapper.offsetTop + Math.max(0, offset)
+    const nearby = Math.abs(destination - this.#container.scrollTop) <= this.#container.clientHeight * 2
     this.#container.scrollTo({
-      top: item.wrapper.offsetTop + Math.max(0, offset),
-      behavior: smooth ? 'smooth' : 'auto',
+      top: destination,
+      behavior: smooth && nearby ? 'smooth' : 'auto',
     })
   }
 
