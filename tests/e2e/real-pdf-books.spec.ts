@@ -47,13 +47,43 @@ test('NASA handbook PDF navigates its outline, renders text and restores page 53
   }
 })
 
+test('adjacent PDF page jump survives an immediate zoom and reopening', async () => {
+  const { context, page, pageErrors } = await launchExtension(extensionPath)
+  try {
+    await page.locator('#file-input').setInputFiles(handbook)
+    await expect(page.locator('#loading-view')).toBeHidden({ timeout: 45_000 })
+    await page.locator('#pdf-page-input').evaluate((input: HTMLInputElement) => {
+      input.value = '52'
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await expect.poll(() => scrollDistanceFromPage(page, 52)).toBeLessThan(5)
+
+    await page.locator('#next-button').evaluate((button: HTMLElement) => button.click())
+    await page.locator('#pdf-zoom-in').evaluate((button: HTMLElement) => button.click())
+    await expect(page.locator('#pdf-zoom-label')).toHaveText('110%')
+    await expect(page.locator('#pdf-page-input')).toHaveValue('53')
+    await expect.poll(() => scrollDistanceFromPage(page, 53)).toBeLessThan(5)
+
+    await page.locator('#home-button').evaluate((button: HTMLElement) => button.click())
+    await expect(page.locator('#welcome-view')).toBeVisible()
+    await page.locator('.library-card').filter({ hasText: /NASA Systems Engineering Handbook/i })
+      .first().evaluate((card: HTMLElement) => card.click())
+    await expect(page.locator('#loading-view')).toBeHidden({ timeout: 45_000 })
+    await expect(page.locator('#pdf-page-input')).toHaveValue('53')
+    await expect.poll(() => scrollDistanceFromPage(page, 53)).toBeLessThan(5)
+    expect(pageErrors).toEqual([])
+  } finally {
+    await context.close()
+  }
+})
+
 async function progress(page: Page) {
   return Number(await page.locator('#progress-slider').inputValue())
 }
 
 async function scrollDistanceFromPage(page: Page, pageNumber: number) {
   return page.locator('#pdf-viewport').evaluate((viewport: HTMLElement, number: number) => {
-    const target = viewport.querySelector<HTMLElement>(`.pdf-page[data-page="${number}"]`)!
-    return Math.abs(viewport.scrollTop - target.offsetTop)
+    const target = viewport.querySelector<HTMLElement>(`.pdf-page[data-page="${number}"]`)
+    return target ? Math.abs(viewport.scrollTop - target.offsetTop) : Infinity
   }, pageNumber)
 }

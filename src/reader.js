@@ -875,7 +875,7 @@ async function searchPdf(query, signal) {
       addSearchResult({
         label: `第 ${page} 页`,
         text: createSearchContext(text, match.start, match.end - match.start).text,
-        onSelect: () => navigatePdfTool(page, false),
+        onSelect: () => navigatePdfTool(page),
       })
     }
     elements.searchStatus.textContent = `正在搜索 ${Math.round(page / pageCount * 100)}%…`
@@ -927,7 +927,7 @@ function markPdfSearchMatches(textLayer) {
 
 function pdfToolPageCount() { return pdfDocument?.numPages || 0 }
 
-function navigatePdfTool(page, smooth = true) { return goToPdfPage(page, smooth) }
+function navigatePdfTool(page) { return goToPdfPage(page) }
 
 function updateAiSelectionUi() {
   if (!AI_FEATURE_ENABLED) {
@@ -1425,7 +1425,7 @@ function setPdfZoom(nextZoom) {
   pdfZoom = Math.max(.6, Math.min(2.5, Math.round(nextZoom * 10) / 10))
   elements.pdfZoomLabel.textContent = `${Math.round(pdfZoom * 100)}%`
   invalidatePdfPages()
-  requestAnimationFrame(() => goToPdfPage(currentPdfPage, false))
+  requestAnimationFrame(() => goToPdfPage(currentPdfPage))
 }
 function updatePdfPosition() {
   const viewportRect = elements.pdfViewport.getBoundingClientRect()
@@ -1448,14 +1448,12 @@ function updatePdfProgress() {
   scheduleProgressSave({ kind: 'pdf', page: currentPdfPage, fraction })
 }
 
-function goToPdfPage(pageNumber, smooth = true) {
+function goToPdfPage(pageNumber) {
   if (!pdfDocument) return
   const targetPage = Math.max(1, Math.min(pdfDocument.numPages, Math.round(pageNumber)))
-  const nearby = Math.abs(targetPage - currentPdfPage) <= 2
   currentPdfPage = targetPage
   const page = elements.pdfPages.querySelector(`[data-page="${currentPdfPage}"]`)
-  if (page && smooth && nearby) elements.pdfViewport.scrollTo({ top: page.offsetTop, behavior: 'smooth' })
-  else if (page) elements.pdfViewport.scrollTop = page.offsetTop
+  if (page) elements.pdfViewport.scrollTop = page.offsetTop
   updatePdfProgress()
   renderPdfPage(currentPdfPage)
 }
@@ -1519,7 +1517,7 @@ async function openPdf(file) {
   await loadPdfOutline(pdfDocument)
   const restoredPage = currentRecord?.progress?.kind === 'pdf' ? currentRecord.progress.page : 1
   hideLoading()
-  requestAnimationFrame(() => goToPdfPage(restoredPage || 1, false))
+  requestAnimationFrame(() => goToPdfPage(restoredPage || 1))
 }
 
 async function openBook(file, existingRecord = null, { newlySaved = false } = {}) {
