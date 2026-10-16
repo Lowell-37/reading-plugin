@@ -81,6 +81,30 @@ test('Standard Ebooks AZW3 reaches its final chapter and restores it', async () 
   }
 })
 
+test('Standard Ebooks Macbeth AZW3 navigates an act and scene and restores it', async () => {
+  const { context, page, pageErrors } = await launchExtension(extensionPath)
+  try {
+    await openBook(page, 'macbeth-standard-ebooks.azw3')
+    await expect(page.locator('#sidebar-title')).toContainText('Macbeth')
+    await expect(page.locator('#toc button').filter({ hasText: /^Act [IVX]+$/ })).toHaveText([
+      'Act I', 'Act II', 'Act III', 'Act IV', 'Act V',
+    ])
+    await page.locator('#toc button').filter({ hasText: /^Scene VIII$/ }).evaluate((button: HTMLElement) => button.click())
+    await expect(page.locator('#toc button.active')).toHaveText('Scene VIII')
+    await expect.poll(() => readableText(page.frames())).toContain('Turn, hell-hound, turn!')
+    await expect.poll(() => progress(page)).toBeGreaterThan(0.9)
+    const savedProgress = await progress(page)
+
+    await reopenBook(page, /Macbeth/i)
+    await expect.poll(() => progress(page)).toBeCloseTo(savedProgress, 2)
+    await expect(page.locator('#toc button.active')).toHaveText('Scene VIII')
+    await expect.poll(() => readableText(page.frames())).toContain('Turn, hell-hound, turn!')
+    expect(pageErrors).toEqual([])
+  } finally {
+    await context.close()
+  }
+})
+
 async function openBook(page: Page, filename: string) {
   await page.locator('#file-input').setInputFiles(resolve(booksPath, filename))
   await expect(page.locator('#loading-view')).toBeHidden({ timeout: 45_000 })

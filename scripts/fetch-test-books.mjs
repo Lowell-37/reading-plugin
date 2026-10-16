@@ -70,6 +70,17 @@ export const TEST_BOOKS = [
     sha256: '0ee71a7b6e692ccf9ea993a2dbf79359dd637260383c546c0e6cad8be7b51b84',
   },
   {
+    name: 'macbeth-standard-ebooks.azw3',
+    format: 'azw3',
+    title: 'Macbeth',
+    creator: 'William Shakespeare',
+    source: 'Standard Ebooks AZW3 download on 2026-10-16; fixture committed to this repository',
+    license: 'Source text and artwork believed public domain in the USA; Standard Ebooks contributions CC0 1.0; check local law outside the USA',
+    licenseUrl: 'https://standardebooks.org/ebooks/william-shakespeare/macbeth',
+    url: 'https://standardebooks.org/ebooks/william-shakespeare/macbeth/downloads/william-shakespeare_macbeth.azw3?source=download',
+    sha256: 'a46dbfe006adbe58923e9b8cc39e97b84667a7c56b5c7a34313e33b66653c95a',
+  },
+  {
     name: 'tracemonkey.pdf',
     format: 'pdf',
     url: 'https://raw.githubusercontent.com/mozilla/pdf.js/master/web/compressed.tracemonkey-pldi-09.pdf',
