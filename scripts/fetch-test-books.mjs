@@ -85,6 +85,16 @@ export const TEST_BOOKS = [
     format: 'pdf',
     url: 'https://raw.githubusercontent.com/mozilla/pdf.js/master/web/compressed.tracemonkey-pldi-09.pdf',
   },
+  {
+    name: 'nasa-systems-engineering-handbook.pdf',
+    format: 'pdf',
+    title: 'NASA Systems Engineering Handbook, Rev 2',
+    source: 'NASA/SP-2016-6105 Rev 2; PDF downloaded 2026-10-16 and committed to this repository',
+    license: 'NASA NTRS labels this publication Public Use Permitted; NASA insignia is not public domain and inclusion does not imply endorsement',
+    licenseUrl: 'https://ntrs.nasa.gov/citations/20170001761',
+    url: 'https://www.nasa.gov/wp-content/uploads/2018/09/nasa_systems_engineering_handbook_0.pdf',
+    sha256: '8eeb4887a4dc57a23049da7dd2ed556833cf98e214b240468d987873164ff688',
+  },
 ]
 
 const directory = new URL('../tests/fixtures/books/', import.meta.url)

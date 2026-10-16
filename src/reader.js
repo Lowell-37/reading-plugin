@@ -270,6 +270,7 @@ function closeReader() {
   pdfLoadingTask = null
   pdfDocument?.destroy?.()
   pdfDocument = null
+  currentPdfPage = 1
   pdfTextCache.clear()
   pdfSearchQuery = ''
   pendingSelection = null
@@ -1438,6 +1439,9 @@ function updatePdfPosition() {
   }
   if (!closest) return
   currentPdfPage = Number(closest.dataset.page)
+  updatePdfProgress()
+}
+function updatePdfProgress() {
   elements.pdfPageInput.value = currentPdfPage
   const fraction = pdfDocument.numPages > 1 ? (currentPdfPage - 1) / (pdfDocument.numPages - 1) : 1
   updateProgress(fraction, `第 ${currentPdfPage} 页 / 共 ${pdfDocument.numPages} 页`)
@@ -1446,11 +1450,13 @@ function updatePdfPosition() {
 
 function goToPdfPage(pageNumber, smooth = true) {
   if (!pdfDocument) return
-  currentPdfPage = Math.max(1, Math.min(pdfDocument.numPages, Math.round(pageNumber)))
+  const targetPage = Math.max(1, Math.min(pdfDocument.numPages, Math.round(pageNumber)))
+  const nearby = Math.abs(targetPage - currentPdfPage) <= 2
+  currentPdfPage = targetPage
   const page = elements.pdfPages.querySelector(`[data-page="${currentPdfPage}"]`)
-  if (page && smooth) elements.pdfViewport.scrollTo({ top: page.offsetTop, behavior: 'smooth' })
+  if (page && smooth && nearby) elements.pdfViewport.scrollTo({ top: page.offsetTop, behavior: 'smooth' })
   else if (page) elements.pdfViewport.scrollTop = page.offsetTop
-  elements.pdfPageInput.value = currentPdfPage
+  updatePdfProgress()
   renderPdfPage(currentPdfPage)
 }
 
@@ -1513,7 +1519,7 @@ async function openPdf(file) {
   await loadPdfOutline(pdfDocument)
   const restoredPage = currentRecord?.progress?.kind === 'pdf' ? currentRecord.progress.page : 1
   hideLoading()
-  requestAnimationFrame(() => goToPdfPage(restoredPage || 1))
+  requestAnimationFrame(() => goToPdfPage(restoredPage || 1, false))
 }
 
 async function openBook(file, existingRecord = null, { newlySaved = false } = {}) {
