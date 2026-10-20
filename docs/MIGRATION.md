@@ -4,6 +4,8 @@
 
 当前稳定版本仍是在 Edge 中直接加载项目根目录的原生 JavaScript 阅读器。总体进度、产品阶段与最终验收标准统一以 [ROADMAP.md](ROADMAP.md) 为准。
 
+最新长书等价回归使用固定的 Wikisource《Moby-Dick》EPUB：WXT/Vue 的连续跨章、末章目录远跳与重开恢复，以及同一临时 Edge 用户配置中根目录版→WXT→根目录版的深层进度和书籍 Blob 连续性均纳入自动化门禁。这不替代用户日常 Edge 配置中的人工验收。
+
 ## 当前技术栈
 
 - WXT：Manifest、入口、开发服务器和 Edge/Chrome 构建

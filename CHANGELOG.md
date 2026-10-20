@@ -6,6 +6,7 @@
 
 ### Added
 
+- 增加真实长篇 EPUB 的 WXT/Vue Edge 等价验收：连续滚动跨章、远距离目录跳转与重开恢复，并验证同一扩展身份下根目录版→WXT→根目录版的深层章节进度连续性。
 - 增加 Wikisource《Moby-Dick》固定 EPUB 兼容样本与真实 Edge 回归，覆盖 135 章目录、连续滚动跨章、末章导航和进度恢复。
 - 增加可重复生成并自动校验的 Edge Add-ons / Chrome Web Store 小宣传图和大宣传图。
 - 增加 WXT 构建身份、权限、CSP、图标与 PDF 运行资源契约，以及独立的 Microsoft Edge 四格式基线。

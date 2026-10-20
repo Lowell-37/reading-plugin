@@ -82,6 +82,61 @@ test.describe('@wxt-session', () => {
       await context.close()
     }
   })
+
+  test('WXT keeps Wikisource long-book chapter boundaries, deep TOC jumps and restored position', async () => {
+    const { context, page, pageErrors } = await launchExtension(wxtExtension)
+    try {
+      await openBook(page, 'moby-dick-wikisource.epub')
+      await expect(page.locator('#header-title')).toContainText('Moby-Dick')
+      await page.locator('#sidebar-button').evaluate((button: HTMLElement) => button.click())
+      await expect(page.locator('#toc button')).toHaveCount(139)
+
+      await page.locator('#settings-button').evaluate((button: HTMLElement) => button.click())
+      await page.locator('[data-flow="scrolled"]').evaluate((button: HTMLElement) => button.click())
+      await page.locator('#close-settings').evaluate((button: HTMLElement) => button.click())
+      await expect(page.locator('.continuous-ebook')).toBeVisible()
+
+      await page.locator('#toc button').filter({ hasText: /^Loomings$/ })
+        .evaluate((button: HTMLElement) => button.click())
+      await expect.poll(() => continuousChapterText(page, 2)).toContain('Call me Ishmael')
+      await page.locator('.continuous-ebook').evaluate((container: HTMLElement) => {
+        const first = container.querySelectorAll<HTMLElement>('.continuous-section')[2]
+        if (!first) throw new Error('First chapter is missing')
+        container.scrollTop = first.offsetTop + first.offsetHeight - container.clientHeight * 0.8
+        container.dispatchEvent(new Event('scroll'))
+      })
+      await expect.poll(() => continuousChapterText(page, 3)).toContain('I stuffed a shirt or two')
+      await expect.poll(() => adjacentContinuousSectionsVisible(page)).toBe(true)
+      await expect.poll(() => centerContinuousSectionIndex(page)).toBe(2)
+      const beforeWheel = await page.locator('.continuous-ebook').evaluate((element: HTMLElement) => element.scrollTop)
+      await page.locator('.continuous-ebook').hover()
+      await page.mouse.wheel(0, 350)
+      await expect.poll(() => page.locator('.continuous-ebook').evaluate((element: HTMLElement) => element.scrollTop))
+        .toBeGreaterThan(beforeWheel)
+      await expect.poll(() => centerContinuousSectionIndex(page)).toBe(3)
+      await expect.poll(() => visibleContinuousText(page)).toContain('I stuffed a shirt or two')
+
+      await page.locator('#toc button').filter({ hasText: /^The Chase\. Third Day$/ })
+        .evaluate((button: HTMLElement) => button.click())
+      await expect.poll(() => centerContinuousSectionIndex(page)).toBe(136)
+      await expect.poll(() => continuousChapterText(page, 136)).toContain('The morning of the third day dawned fair and fresh')
+      await expect.poll(() => progress(page)).toBeGreaterThan(0.9)
+      const savedProgress = await progress(page)
+
+      await page.locator('#home-button').evaluate((button: HTMLElement) => button.click())
+      await expect(page.locator('#welcome-view')).toBeVisible()
+      await page.reload()
+      await page.locator('.library-card').filter({ hasText: /Moby-Dick/i }).first()
+        .evaluate((card: HTMLElement) => card.click())
+      await expect(page.locator('#loading-view')).toBeHidden({ timeout: 45_000 })
+      await expect.poll(() => centerContinuousSectionIndex(page)).toBe(136)
+      await expect.poll(() => continuousChapterText(page, 136)).toContain('The morning of the third day dawned fair and fresh')
+      await expect.poll(() => progress(page)).toBeCloseTo(savedProgress, 2)
+      expect(pageErrors.map(pageErrorDetails)).toEqual([])
+    } finally {
+      await context.close()
+    }
+  })
 })
 
 async function openBook(page: Page, name: string) {
@@ -92,6 +147,47 @@ async function openBook(page: Page, name: string) {
 
 async function progress(page: Page) {
   return Number(await page.locator('#progress-slider').inputValue())
+}
+
+async function continuousChapterText(page: Page, sectionIndex: number) {
+  return page.locator('.continuous-ebook').evaluate((container: HTMLElement, index) =>
+    [...container.querySelectorAll<HTMLElement>('.continuous-section')]
+      .find(section => Number(section.dataset.sectionIndex) === index)
+      ?.querySelector('iframe')?.contentDocument?.body?.innerText ?? '', sectionIndex)
+}
+
+async function centerContinuousSectionIndex(page: Page) {
+  return page.locator('.continuous-ebook').evaluate((container: HTMLElement) => {
+    const viewport = container.getBoundingClientRect()
+    const middle = viewport.top + viewport.height / 2
+    const section = [...container.querySelectorAll<HTMLElement>('.continuous-section')]
+      .find(item => item.getBoundingClientRect().top <= middle && item.getBoundingClientRect().bottom > middle)
+    return Number(section?.dataset.sectionIndex ?? -1)
+  })
+}
+
+async function adjacentContinuousSectionsVisible(page: Page) {
+  return page.locator('.continuous-ebook').evaluate((container: HTMLElement) => {
+    const viewport = container.getBoundingClientRect()
+    return [...container.querySelectorAll<HTMLElement>('.continuous-section')].slice(2, 4)
+      .every(section => {
+        const rect = section.getBoundingClientRect()
+        return rect.top < viewport.bottom && rect.bottom > viewport.top
+      })
+  })
+}
+
+async function visibleContinuousText(page: Page) {
+  return page.locator('.continuous-ebook').evaluate((container: HTMLElement) => {
+    const viewport = container.getBoundingClientRect()
+    return [...container.querySelectorAll<HTMLElement>('.continuous-section')]
+      .filter(section => {
+        const rect = section.getBoundingClientRect()
+        return rect.top < viewport.bottom && rect.bottom > viewport.top
+      })
+      .map(section => section.querySelector('iframe')?.contentDocument?.body?.innerText ?? '')
+      .join('\n')
+  })
 }
 
 async function foliateContentText(page: Page) {

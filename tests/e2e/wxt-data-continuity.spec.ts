@@ -9,6 +9,7 @@ import { releaseFiles } from '../../scripts/release-files.mjs'
 const projectRoot = resolve('.')
 const wxtExtension = resolve('.output/chrome-mv3')
 const bookPath = resolve('tests/fixtures/books/alice.epub')
+const longBookPath = resolve('tests/fixtures/books/moby-dick-wikisource.epub')
 
 test('@wxt-data root → WXT → root preserves and extends the same local library', async () => {
   const workspace = await mkdtemp(join(tmpdir(), 'quiet-reader-continuity-'))
@@ -126,6 +127,74 @@ test('@wxt-data root → WXT → root preserves and extends the same local libra
   }
 })
 
+test('@wxt-data long EPUB keeps its deep continuous chapter across root → WXT → root', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'quiet-reader-continuity-'))
+  const profile = join(workspace, 'edge-profile')
+  const extension = join(workspace, 'unpacked-extension')
+  try {
+    await stageRootExtension(extension)
+    const root = await launchExtension(extension, { userDataDir: profile })
+    const extensionId = root.extensionId
+    let rootState: any
+    try {
+      await root.page.locator('#file-input').setInputFiles(longBookPath)
+      await expect(root.page.locator('#loading-view')).toBeHidden({ timeout: 45_000 })
+      await root.page.locator('[data-flow="scrolled"]').evaluate((button: HTMLElement) => button.click())
+      await root.page.locator('#toc button').filter({ hasText: /^The Chase\. Second Day$/ })
+        .evaluate((button: HTMLElement) => button.click())
+      await expect.poll(() => continuousChapterIndex(root.page)).toBe(135)
+      await root.page.locator('#home-button').evaluate((button: HTMLElement) => button.click())
+      await expect(root.page.locator('#welcome-view')).toBeVisible()
+      rootState = await readContinuityState(root.page)
+      expect(rootState.books).toHaveLength(1)
+      expect(rootState.books[0].progress.fraction).toBeGreaterThan(0.9)
+      expect(root.pageErrors).toEqual([])
+    } finally { await root.context.close() }
+
+    await stageWxtExtension(extension)
+    const wxt = await launchExtension(extension, { userDataDir: profile, extensionId })
+    let wxtState: any
+    try {
+      expect(wxt.extensionId).toBe(extensionId)
+      const initialState = await readContinuityState(wxt.page)
+      expect(initialState.books).toHaveLength(1)
+      expect(initialState.books[0].id).toBe(rootState.books[0].id)
+      expect(initialState.books[0].blobSha256).toBe(rootState.books[0].blobSha256)
+      expect(initialState.books[0].progress).toEqual(rootState.books[0].progress)
+      await wxt.page.locator('.library-card').filter({ hasText: /Moby-Dick/i }).click()
+      await expect(wxt.page.locator('#loading-view')).toBeHidden({ timeout: 45_000 })
+      await expect(wxt.page.locator('.continuous-ebook')).toBeVisible()
+      await expect.poll(() => continuousChapterIndex(wxt.page)).toBe(135)
+      await wxt.page.locator('#toc button').filter({ hasText: /^The Chase\. Third Day$/ })
+        .evaluate((button: HTMLElement) => button.click())
+      await expect.poll(() => continuousChapterIndex(wxt.page)).toBe(136)
+      await wxt.page.locator('#home-button').evaluate((button: HTMLElement) => button.click())
+      await expect(wxt.page.locator('#welcome-view')).toBeVisible()
+      wxtState = await readContinuityState(wxt.page)
+      expect(wxtState.books).toHaveLength(1)
+      expect(wxtState.books[0].id).toBe(rootState.books[0].id)
+      expect(wxtState.books[0].progress.fraction).toBeGreaterThan(rootState.books[0].progress.fraction)
+      expect(wxt.pageErrors).toEqual([])
+    } finally { await wxt.context.close() }
+
+    await stageRootExtension(extension)
+    const rollback = await launchExtension(extension, { userDataDir: profile, extensionId })
+    try {
+      expect(rollback.extensionId).toBe(extensionId)
+      const rollbackState = await readContinuityState(rollback.page)
+      expect(rollbackState.books).toHaveLength(1)
+      expect(rollbackState.books[0].id).toBe(rootState.books[0].id)
+      expect(rollbackState.books[0].blobSha256).toBe(rootState.books[0].blobSha256)
+      expect(rollbackState.books[0].progress).toEqual(wxtState.books[0].progress)
+      await rollback.page.locator('.library-card').filter({ hasText: /Moby-Dick/i }).click()
+      await expect(rollback.page.locator('#loading-view')).toBeHidden({ timeout: 45_000 })
+      await expect(rollback.page.locator('.continuous-ebook')).toBeVisible()
+      await expect.poll(() => continuousChapterIndex(rollback.page)).toBe(136)
+      expect(rollback.pageErrors).toEqual([])
+    } finally { await rollback.context.close() }
+  } finally { await removeOwnedWorkspace(workspace) }
+})
+
 test('@wxt-data PDF root → WXT → root renders persisted pages without changing ebook data', async () => {
   const workspace = await mkdtemp(join(tmpdir(), 'quiet-reader-continuity-'))
   const profile = join(workspace, 'edge-profile')
@@ -238,6 +307,16 @@ async function jumpPdf(page: Page, value: number) {
     input.value = String(value)
     input.dispatchEvent(new Event('change', { bubbles: true }))
   }, value)
+}
+
+async function continuousChapterIndex(page: Page) {
+  return page.locator('.continuous-ebook').evaluate((container: HTMLElement) => {
+    const viewport = container.getBoundingClientRect()
+    const middle = viewport.top + viewport.height / 2
+    const chapter = [...container.querySelectorAll<HTMLElement>('.continuous-section')]
+      .find(section => section.getBoundingClientRect().top <= middle && section.getBoundingClientRect().bottom > middle)
+    return Number(chapter?.dataset.sectionIndex ?? -1)
+  })
 }
 
 async function renderedPdfPage(page: Page, value: number) {
