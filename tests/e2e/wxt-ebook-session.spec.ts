@@ -59,6 +59,54 @@ test.describe('@wxt-session', () => {
     })
   }
 
+  for (const book of [
+    {
+      filename: 'frankenstein-gutenberg.mobi',
+      title: /Frankenstein/i,
+      format: 'MOBI',
+      chapter: /^Chapter 24$/,
+      passage: 'My present situation was one in which all voluntary thought was swallowed up and lost.',
+      minimumProgress: 0.8,
+    },
+    {
+      filename: 'dracula-standard-ebooks.azw3',
+      title: /Dracula/i,
+      format: 'AZW3',
+      chapter: /^XXVII$/,
+      passage: 'Mina Harker’s Journal',
+      minimumProgress: 0.8,
+    },
+  ]) {
+    test(`WXT restores a deep chapter in real ${book.format} from ${book.filename}`, async () => {
+      const { context, page, pageErrors } = await launchExtension(wxtExtension)
+      try {
+        await openBook(page, book.filename)
+        await expect(page.locator('#sidebar-title')).toContainText(book.title)
+        await expect(page.locator('#sidebar-format')).toHaveText(book.format)
+        await page.locator('#sidebar-button').evaluate((button: HTMLElement) => button.click())
+        await expect.poll(() => page.locator('#toc button').count()).toBeGreaterThan(20)
+        await page.locator('#toc button').filter({ hasText: book.chapter }).first()
+          .evaluate((button: HTMLElement) => button.click())
+        await expect.poll(() => foliateContentText(page)).toContain(book.passage)
+        await expect.poll(() => progress(page)).toBeGreaterThan(book.minimumProgress)
+        const savedProgress = await progress(page)
+
+        await page.locator('#home-button').evaluate((button: HTMLElement) => button.click())
+        await expect(page.locator('#welcome-view')).toBeVisible()
+        await page.reload()
+        await page.locator('.library-card').filter({ hasText: book.title }).first()
+          .evaluate((card: HTMLElement) => card.click())
+        await expect(page.locator('#loading-view')).toBeHidden({ timeout: 45_000 })
+        await expect(page.locator('#sidebar-format')).toHaveText(book.format)
+        await expect.poll(() => progress(page)).toBeCloseTo(savedProgress, 2)
+        await expect.poll(() => foliateContentText(page)).toContain(book.passage)
+        expect(pageErrors.map(pageErrorDetails)).toEqual([])
+      } finally {
+        await context.close()
+      }
+    })
+  }
+
   test('WXT keeps only the newest real EPUB session after rapid sequential opening', async () => {
     const { context, page, pageErrors } = await launchExtension(wxtExtension)
     try {
@@ -202,6 +250,7 @@ async function foliateContentText(page: Page) {
     return contents
       .map(content => content.doc?.body?.innerText || content.doc?.body?.textContent || '')
       .join('\n')
+      .replace(/\u00ad/g, '')
       .trim()
   })
 }

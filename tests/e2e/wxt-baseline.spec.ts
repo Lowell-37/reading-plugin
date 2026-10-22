@@ -32,6 +32,7 @@ for (const format of ['epub', 'mobi', 'azw3'] as const) {
     try {
       await openBook(page, `alice.${format}`)
       await expect(page.locator('#sidebar-title')).toContainText(/Alice/i)
+      await expect(page.locator('#sidebar-format')).toHaveText(format.toUpperCase())
       await expect.poll(async () => page.locator('#toc button').count()).toBeGreaterThan(2)
 
       const initialProgress = await progress(page)
@@ -68,6 +69,7 @@ test('WXT renders a real PDF text layer, page jump and zoom', async () => {
   const { context, page, pageErrors } = await launchExtension(wxtExtension)
   try {
     await openBook(page, 'tracemonkey.pdf')
+    await expect(page.locator('#sidebar-format')).toHaveText('PDF')
     await expect(page.locator('#ebook-host')).toBeHidden()
     await expect(page.locator('#reader-view')).toHaveClass(/pdf-session-active/)
     await expect(page.locator('#pdf-page-total')).toHaveText('/ 14')

@@ -87,7 +87,7 @@ const PdfOutlineItems: Component = defineComponent({
     <div class="sidebar-book">
       <div id="sidebar-cover" class="cover-placeholder"><span id="cover-letter">静</span></div>
       <div class="sidebar-meta">
-        <strong id="sidebar-title"><template v-if="pdfSessionActive">{{ pdfTitle }}</template><template v-else-if="ebookSessionActive">{{ title }}</template><template v-else>未命名书籍</template></strong><span id="sidebar-author">未知作者</span><small id="sidebar-format">{{ pdfSessionActive ? 'PDF' : 'EPUB' }}</small>
+        <strong id="sidebar-title"><template v-if="pdfSessionActive">{{ pdfTitle }}</template><template v-else-if="ebookSessionActive">{{ title }}</template><template v-else>未命名书籍</template></strong><span id="sidebar-author">未知作者</span><small id="sidebar-format">{{ pdfSessionActive ? 'PDF' : record?.format.toUpperCase() ?? 'EPUB' }}</small>
       </div>
     </div>
     <div class="sidebar-label"><span>目录</span><span id="toc-count"><template v-if="pdfSessionActive">{{ outline.length }}</template><template v-else-if="ebookSessionActive">{{ toc.length }}</template></span></div>
