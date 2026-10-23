@@ -1,6 +1,7 @@
 import { test, expect, chromium, type BrowserContext, type Page } from '@playwright/test'
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { assertPdfReadingKeyboard } from './helpers/reading-keyboard'
 
 const extensionPath = resolve('.')
 const booksPath = resolve('tests/fixtures/books')
@@ -59,6 +60,7 @@ test('PDF renders text, zooms, jumps pages and restores progress', async () => {
     })
     await expect(page.locator('#pdf-page-total')).not.toHaveText('/ 1')
     await expect.poll(async () => page.locator('.textLayer span').count()).toBeGreaterThan(0)
+    await assertPdfReadingKeyboard(page)
     await clickDom(page, '#pdf-zoom-in')
     await expect(page.locator('#pdf-zoom-label')).toHaveText('110%')
     await page.locator('#pdf-page-input').evaluate((input: HTMLInputElement) => {

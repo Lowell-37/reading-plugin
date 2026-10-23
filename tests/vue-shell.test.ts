@@ -380,6 +380,33 @@ describe('Vue reader shell', () => {
     wrapper.unmount()
   })
 
+  for (const format of ['epub', 'pdf'] as const) {
+    test(`preserves modified, composing and consumed keys in the ${format} reader`, () => {
+      const pinia = createPinia()
+      const reader = useReaderStore(pinia)
+      const session = format === 'pdf' ? usePdfSessionStore(pinia) : useEbookSessionStore(pinia)
+      session.record = { id: 'keyboard', name: `keyboard.${format}`, format }
+      session.status = 'ready'
+      reader.applyReaderState({ isReading: true })
+      const navigate = vi.spyOn(session, 'navigate').mockResolvedValue(undefined)
+      const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
+      try {
+        for (const options of [{ ctrlKey: true }, { altKey: true }, { metaKey: true }, { shiftKey: true }, { isComposing: true }]) {
+          const event = new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true, ...options })
+          window.dispatchEvent(event)
+          expect(event.defaultPrevented).toBe(false)
+        }
+        const consumed = new KeyboardEvent('keydown', { key: 'PageDown', cancelable: true })
+        consumed.preventDefault()
+        window.dispatchEvent(consumed)
+        expect(navigate).not.toHaveBeenCalled()
+
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'PageDown', cancelable: true }))
+        expect(navigate).toHaveBeenCalledExactlyOnceWith(1)
+      } finally { wrapper.unmount() }
+    })
+  }
+
   test('does not route reading keys while the WXT workspace is inactive', async () => {
     const pinia = createPinia()
     const ebook = useEbookSessionStore(pinia)

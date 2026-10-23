@@ -201,6 +201,7 @@ function hasEditableFocus(root: Document | ShadowRoot = document): boolean {
 }
 
 function handleReaderKeyboard(event: KeyboardEvent) {
+  if (event.defaultPrevented || event.isComposing || event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return
   if (!workspaceVisible.value || reader.activePanel !== null || (!pdfSessionActive.value && !ebookSessionActive.value)) return
   if (hasEditableFocus()) return
   const direction = event.key === 'ArrowLeft' || event.key === 'PageUp'

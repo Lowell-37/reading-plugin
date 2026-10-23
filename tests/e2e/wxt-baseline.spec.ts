@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { resolve } from 'node:path'
 import { launchExtension } from './helpers/extension-launch'
+import { assertPdfReadingKeyboard } from './helpers/reading-keyboard'
 
 const rootExtension = resolve('.')
 const wxtExtension = resolve('.output/chrome-mv3')
@@ -76,6 +77,7 @@ test('WXT renders a real PDF text layer, page jump and zoom', async () => {
     await expect(page.locator('#reader-view')).toHaveClass(/pdf-session-active/)
     await expect(page.locator('#pdf-page-total')).toHaveText('/ 14')
     await expect(page.locator('.pdf-page[data-page="1"] .textLayer')).toContainText('Trace-based Just-in-Time')
+    await assertPdfReadingKeyboard(page)
 
     await page.locator('#pdf-zoom-in').evaluate((element: HTMLElement) => element.click())
     await expect(page.locator('#pdf-zoom-label')).toHaveText('110%')

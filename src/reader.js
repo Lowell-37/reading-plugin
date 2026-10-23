@@ -1750,6 +1750,7 @@ function bindEngineControls() {
       readerAdapter?.goToFraction(fraction)
     },
     'reader-keyboard': event => {
+      if (event.defaultPrevented || event.isComposing || event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return
       if (!document.body.classList.contains('is-reading')) return
       if (elements.settingsPanel.classList.contains('open') || elements.toolsPanel.classList.contains('open')) return
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return
