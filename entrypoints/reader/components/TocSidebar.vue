@@ -14,6 +14,13 @@ const { record, title, toc } = storeToRefs(ebook)
 const { record: pdfRecord, title: pdfTitle, outline } = storeToRefs(pdf)
 const ebookSessionActive = computed(() => record.value !== null)
 const pdfSessionActive = computed(() => pdfRecord.value !== null)
+const tocCount = computed(() => pdfSessionActive.value
+  ? countItems(outline.value, item => item.children)
+  : ebookSessionActive.value ? countItems(toc.value, item => item.subitems) : 0)
+
+function countItems<T>(items: T[], children: (item: T) => T[] | undefined): number {
+  return items.reduce((total, item) => total + 1 + countItems(children(item) ?? [], children), 0)
+}
 
 function goTo(event: MouseEvent, href: unknown) {
   if (!ebookSessionActive.value) return
@@ -90,9 +97,10 @@ const PdfOutlineItems: Component = defineComponent({
         <strong id="sidebar-title"><template v-if="pdfSessionActive">{{ pdfTitle }}</template><template v-else-if="ebookSessionActive">{{ title }}</template><template v-else>未命名书籍</template></strong><span id="sidebar-author">未知作者</span><small id="sidebar-format">{{ pdfSessionActive ? 'PDF' : record?.format.toUpperCase() ?? 'EPUB' }}</small>
       </div>
     </div>
-    <div class="sidebar-label"><span>目录</span><span id="toc-count"><template v-if="pdfSessionActive">{{ outline.length }}</template><template v-else-if="ebookSessionActive">{{ toc.length }}</template></span></div>
+    <div class="sidebar-label"><span>目录</span><span id="toc-count">{{ tocCount ? `${tocCount} 项` : '' }}</span></div>
     <nav id="toc" class="toc">
-      <PdfOutlineItems v-if="pdfSessionActive" :items="outline" @go-to="goToPdf" />
+      <p v-if="(pdfSessionActive || ebookSessionActive) && !tocCount" class="toc-empty">这本书没有提供目录</p>
+      <PdfOutlineItems v-else-if="pdfSessionActive" :items="outline" @go-to="goToPdf" />
       <TocItems v-else-if="ebookSessionActive" :items="toc" @go-to="goTo" />
     </nav>
   </aside>

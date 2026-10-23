@@ -85,6 +85,7 @@ test.describe('@wxt-session', () => {
         await expect(page.locator('#sidebar-format')).toHaveText(book.format)
         await page.locator('#sidebar-button').evaluate((button: HTMLElement) => button.click())
         await expect.poll(() => page.locator('#toc button').count()).toBeGreaterThan(20)
+        await expect(page.locator('#toc-count')).toHaveText(`${await page.locator('#toc button').count()} 项`)
         await page.locator('#toc button').filter({ hasText: book.chapter }).first()
           .evaluate((button: HTMLElement) => button.click())
         await expect.poll(() => foliateContentText(page)).toContain(book.passage)

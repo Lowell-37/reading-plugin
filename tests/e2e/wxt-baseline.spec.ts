@@ -70,6 +70,8 @@ test('WXT renders a real PDF text layer, page jump and zoom', async () => {
   try {
     await openBook(page, 'tracemonkey.pdf')
     await expect(page.locator('#sidebar-format')).toHaveText('PDF')
+    await expect(page.locator('#toc-count')).toHaveText('')
+    await expect(page.locator('#toc')).toHaveText('这本书没有提供目录')
     await expect(page.locator('#ebook-host')).toBeHidden()
     await expect(page.locator('#reader-view')).toHaveClass(/pdf-session-active/)
     await expect(page.locator('#pdf-page-total')).toHaveText('/ 14')

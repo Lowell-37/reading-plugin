@@ -211,6 +211,7 @@ describe('Vue reader shell', () => {
     expect(wrapper.find('#pdf-page-total').text()).toBe('/ 9')
     expect(wrapper.find('#pdf-zoom-label').text()).toBe('120%')
     expect(wrapper.findAll('#toc button').map(button => button.text())).toEqual(['Part one', 'Chapter two', 'Section four'])
+    expect(wrapper.find('#toc-count').text()).toBe('3 项')
 
     const legacyControl = vi.fn()
     for (const selector of ['#prev-button', '#next-button', '#pdf-page-input', '#progress-slider', '#pdf-zoom-in']) {
@@ -722,11 +723,19 @@ describe('Vue reader shell', () => {
     const tocButtons = wrapper.findAll('#toc button')
     expect(tocButtons).toHaveLength(3)
     expect(tocButtons.map(button => button.text())).toEqual(['Part one', 'Chapter one', 'Section one'])
+    expect(wrapper.find('#toc-count').text()).toBe('3 项')
 
     await tocButtons[2]!.trigger('click')
 
     expect(goTo).toHaveBeenCalledTimes(1)
     expect(goTo).toHaveBeenCalledWith('/6/6')
+    ebook.toc = []
+    await nextTick()
+    expect(wrapper.find('#toc-count').text()).toBe('')
+    expect(wrapper.find('#toc').text()).toBe('这本书没有提供目录')
+    ebook.record = null
+    await nextTick()
+    expect(wrapper.find('#toc').text()).toBe('')
     wrapper.unmount()
   })
 
