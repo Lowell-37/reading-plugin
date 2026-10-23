@@ -39,6 +39,7 @@ export function createEbookSessionStore(initialPortFactory?: EbookSessionPortFac
     const title = shallowRef('未命名书籍')
     const toc = shallowRef<EbookSessionTocItem[]>([])
     const chapter = shallowRef('开始')
+    const activeTocHref = shallowRef<string | null>(null)
     const progress = shallowRef(0)
     const flow = shallowRef<EbookSessionFlow>('paginated')
     const error = shallowRef<EbookSessionError | null>(null)
@@ -73,6 +74,7 @@ export function createEbookSessionStore(initialPortFactory?: EbookSessionPortFac
       title.value = snapshot.title
       toc.value = copyToc(snapshot.toc)
       chapter.value = snapshot.chapter
+      activeTocHref.value = snapshot.activeTocHref ?? null
       progress.value = snapshot.progress
       flow.value = snapshot.flow
       error.value = snapshot.error
@@ -158,6 +160,7 @@ export function createEbookSessionStore(initialPortFactory?: EbookSessionPortFac
       title,
       toc,
       chapter,
+      activeTocHref,
       progress,
       flow,
       error,

@@ -89,6 +89,7 @@ test.describe('@wxt-session', () => {
         await page.locator('#toc button').filter({ hasText: book.chapter }).first()
           .evaluate((button: HTMLElement) => button.click())
         await expect.poll(() => foliateContentText(page)).toContain(book.passage)
+        await expect(page.locator('#toc button[aria-current="location"]')).toHaveText(book.chapter)
         await expect.poll(() => progress(page)).toBeGreaterThan(book.minimumProgress)
         const savedProgress = await progress(page)
 
@@ -100,6 +101,7 @@ test.describe('@wxt-session', () => {
         await expect(page.locator('#loading-view')).toBeHidden({ timeout: 45_000 })
         await expect(page.locator('#sidebar-format')).toHaveText(book.format)
         await expect.poll(() => progress(page)).toBeCloseTo(savedProgress, 2)
+        await expect(page.locator('#toc button.active')).toHaveText(book.chapter)
         await expect.poll(() => foliateContentText(page)).toContain(book.passage)
         expect(pageErrors.map(pageErrorDetails)).toEqual([])
       } finally {
@@ -168,6 +170,7 @@ test.describe('@wxt-session', () => {
       await page.locator('#toc button').filter({ hasText: /^The Chase\. Third Day$/ })
         .evaluate((button: HTMLElement) => button.click())
       await expect.poll(() => centerContinuousSectionIndex(page)).toBe(136)
+      await expect(page.locator('#toc button[aria-current="location"]')).toHaveText('The Chase. Third Day')
       await expect.poll(() => continuousChapterText(page, 136)).toContain('The morning of the third day dawned fair and fresh')
       await expect.poll(() => progress(page)).toBeGreaterThan(0.9)
       const savedProgress = await progress(page)
@@ -181,6 +184,7 @@ test.describe('@wxt-session', () => {
       await expect.poll(() => centerContinuousSectionIndex(page)).toBe(136)
       await expect.poll(() => continuousChapterText(page, 136)).toContain('The morning of the third day dawned fair and fresh')
       await expect.poll(() => progress(page)).toBeCloseTo(savedProgress, 2)
+      await expect(page.locator('#toc button.active')).toHaveText('The Chase. Third Day')
       expect(pageErrors.map(pageErrorDetails)).toEqual([])
     } finally {
       await context.close()

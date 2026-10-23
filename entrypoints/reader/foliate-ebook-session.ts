@@ -113,6 +113,7 @@ export function createFoliateEbookSession(
           || titleFromName(record.name),
         toc: copyTocForSnapshot(view.book.toc),
         chapter: displayEngineValue(location?.tocItem?.label) || '开始',
+        activeTocHref: currentTocHref(location),
         progress: normalizeFraction(location?.fraction ?? record.progress?.fraction),
         flow: currentFlow,
         error: null,
@@ -396,6 +397,7 @@ export function createFoliateEbookSession(
       currentSnapshot = {
         ...currentSnapshot,
         chapter: displayEngineValue(detail.tocItem?.label) || '正文',
+        activeTocHref: currentTocHref(detail),
         progress: fraction,
         flow: currentFlow,
       }
@@ -543,6 +545,7 @@ export function createFoliateEbookSession(
     return {
       ...snapshot,
       chapter: displayEngineValue(location.tocItem?.label) || snapshot.chapter,
+      activeTocHref: currentTocHref(location),
       progress: normalizeFraction(location.fraction ?? snapshot.progress),
     }
   }
@@ -606,6 +609,10 @@ function createLoadingSnapshot(
     error: null,
     generation,
   }
+}
+
+function currentTocHref(location: EbookLocationLike | null | undefined): string | null {
+  return typeof location?.tocItem?.href === 'string' ? location.tocItem.href : null
 }
 
 function restorePosition(view: EbookViewLike, progress: ReadingLocation | undefined): Promise<unknown> {

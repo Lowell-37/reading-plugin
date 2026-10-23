@@ -227,12 +227,13 @@ describe('Foliate ebook session', () => {
     harness.view.relocate({
       cfi: 'epubcfi(/6/8)',
       fraction: 1.4,
-      tocItem: { label: [{ name: 'Part one' }, { name: 'Chapter two' }] },
+      tocItem: { label: [{ name: 'Part one' }, { name: 'Chapter two' }], href: 'chapter-2.xhtml' },
     })
 
     expect(harness.snapshots).toHaveLength(1)
     expect(harness.snapshots[0]).toMatchObject({
       chapter: 'Part one、Chapter two',
+      activeTocHref: 'chapter-2.xhtml',
       progress: 1,
       status: 'ready',
     })
@@ -924,7 +925,7 @@ interface FakeLocation {
   index?: number
   cfi?: string | null
   fraction?: number
-  tocItem?: { label?: unknown }
+  tocItem?: { label?: unknown, href?: unknown }
 }
 
 function record(name: string, progress?: BookRecord['progress']): BookRecord {

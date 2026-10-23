@@ -27,6 +27,7 @@ export interface EbookSessionSnapshot {
   title: string
   toc: EbookSessionTocItem[]
   chapter: string
+  activeTocHref?: string | null
   progress: number
   flow: EbookSessionFlow
   error: EbookSessionError | null

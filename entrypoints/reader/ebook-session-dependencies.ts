@@ -12,7 +12,7 @@ export interface EbookLocationLike {
   index?: number
   cfi?: string | null
   fraction?: number
-  tocItem?: { label?: unknown } | null
+  tocItem?: { label?: unknown, href?: unknown } | null
   section?: { current?: number } | null
 }
 

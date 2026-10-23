@@ -10,7 +10,7 @@ import { useReaderStore } from '../stores/reader'
 const { activePanel } = storeToRefs(useReaderStore())
 const ebook = useEbookSessionStore()
 const pdf = usePdfSessionStore()
-const { record, title, toc } = storeToRefs(ebook)
+const { record, title, toc, activeTocHref } = storeToRefs(ebook)
 const { record: pdfRecord, title: pdfTitle, outline } = storeToRefs(pdf)
 const ebookSessionActive = computed(() => record.value !== null)
 const pdfSessionActive = computed(() => pdfRecord.value !== null)
@@ -47,6 +47,8 @@ const TocItems: Component = defineComponent({
       return h('li', { key }, [
         h('button', {
           type: 'button',
+          class: { active: activeTocHref.value !== null && item.href === activeTocHref.value },
+          'aria-current': activeTocHref.value !== null && item.href === activeTocHref.value ? 'location' : undefined,
           onClick: (event: MouseEvent) => emit('go-to', event, item.href),
         }, item.label),
         item.subitems?.length

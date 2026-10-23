@@ -730,6 +730,31 @@ describe('Vue reader shell', () => {
     wrapper.unmount()
   })
 
+  test('marks the current nested chapter by href even when labels repeat', async () => {
+    const pinia = createPinia()
+    const ebook = useEbookSessionStore(pinia)
+    ebook.record = { id: 'nested', name: 'nested.epub', format: 'epub' }
+    ebook.toc = [{ label: 'Part', href: 'part', subitems: [
+      { label: 'Introduction', href: 'first' }, { label: 'Introduction', href: 'second' },
+    ] }]
+    ebook.activeTocHref = 'second'
+    const wrapper = mount(App, { global: { plugins: [pinia] } })
+    try {
+      const buttons = wrapper.findAll('#toc button')
+      expect(wrapper.findAll('#toc button.active')).toHaveLength(1)
+      expect(buttons[2]!.attributes('aria-current')).toBe('location')
+      expect(buttons[1]!.attributes('aria-current')).toBeUndefined()
+      ebook.activeTocHref = 'first'
+      await nextTick()
+      expect(buttons[1]!.attributes('aria-current')).toBe('location')
+      expect(buttons[2]!.classes()).not.toContain('active')
+      ebook.activeTocHref = null
+      await nextTick()
+      expect(wrapper.findAll('#toc button.active')).toHaveLength(0)
+      expect(wrapper.findAll('[aria-current]')).toHaveLength(0)
+    } finally { wrapper.unmount() }
+  })
+
   test('renders and routes every nested ebook TOC level', async () => {
     const pinia = createPinia()
     const ebook = useEbookSessionStore(pinia)

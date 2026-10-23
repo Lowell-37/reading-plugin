@@ -15,12 +15,15 @@ describe('ebook session store', () => {
     fake.emit(snapshot(1, {
       title: 'First title',
       chapter: 'First chapter',
+      activeTocHref: '/6/2',
       progress: 0.75,
       flow: 'scrolled',
       toc: [{ label: 'First chapter', href: '/6/2' }],
     }))
 
+    expect(store.activeTocHref).toBe('/6/2')
     await store.open(record('second.epub'), { flow: 'scrolled', fontSize: 99 })
+    expect(store.activeTocHref).toBeNull()
 
     expect(fake.opens.at(-1)).toMatchObject({
       record: { id: 'second.epub', name: 'second.epub', format: 'epub' },
