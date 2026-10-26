@@ -730,6 +730,39 @@ describe('Vue reader shell', () => {
     wrapper.unmount()
   })
 
+  test('tracks the nearest preceding PDF bookmark through nested and unsorted outlines', async () => {
+    const pinia = createPinia()
+    const pdf = usePdfSessionStore(pinia)
+    pdf.record = { id: 'outline', name: 'outline.pdf', format: 'pdf' }
+    pdf.outline = [
+      { label: 'Part one', page: 2, children: [
+        { label: 'Introduction', page: 2 }, { label: 'Details', page: 5 },
+      ] },
+      { label: 'Introduction', page: 12 },
+      { label: 'Earlier bookmark', page: 4 },
+    ]
+    pdf.page = 3
+    const wrapper = mount(App, { global: { plugins: [pinia] } })
+    try {
+      expect(wrapper.findAll('#toc button.active')).toHaveLength(1)
+      expect(wrapper.findAll('#toc button')[1]!.attributes('aria-current')).toBe('location')
+      pdf.page = 8
+      await nextTick()
+      expect(wrapper.find('#toc button.active').text()).toBe('Details')
+      pdf.page = 12
+      await nextTick()
+      expect(wrapper.findAll('#toc button.active')).toHaveLength(1)
+      expect(wrapper.findAll('#toc button')[3]!.attributes('aria-current')).toBe('location')
+      pdf.page = 1
+      await nextTick()
+      expect(wrapper.findAll('[aria-current]')).toHaveLength(0)
+      pdf.outline = []
+      pdf.page = 12
+      await nextTick()
+      expect(wrapper.findAll('#toc button.active')).toHaveLength(0)
+    } finally { wrapper.unmount() }
+  })
+
   test('marks the current nested chapter by href even when labels repeat', async () => {
     const pinia = createPinia()
     const ebook = useEbookSessionStore(pinia)

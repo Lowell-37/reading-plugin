@@ -11,9 +11,27 @@ const { activePanel } = storeToRefs(useReaderStore())
 const ebook = useEbookSessionStore()
 const pdf = usePdfSessionStore()
 const { record, title, toc, activeTocHref } = storeToRefs(ebook)
-const { record: pdfRecord, title: pdfTitle, outline } = storeToRefs(pdf)
+const { record: pdfRecord, title: pdfTitle, outline, page: pdfPage } = storeToRefs(pdf)
 const ebookSessionActive = computed(() => record.value !== null)
 const pdfSessionActive = computed(() => pdfRecord.value !== null)
+const activePdfPath = computed(() => {
+  if (!pdfSessionActive.value) return null
+  let selected: string | null = null
+  let nearestPage = 0
+  const visit = (items: PdfOutlineItem[], path = '') => {
+    items.forEach((item, index) => {
+      const key = `${path}${index}`
+      // The outline may be unsorted. Equal-page entries follow document order.
+      if (item.page > 0 && item.page <= pdfPage.value && item.page >= nearestPage) {
+        selected = key
+        nearestPage = item.page
+      }
+      if (item.children) visit(item.children, `${key}/`)
+    })
+  }
+  visit(outline.value)
+  return selected
+})
 const tocCount = computed(() => pdfSessionActive.value
   ? countItems(outline.value, item => item.children)
   : ebookSessionActive.value ? countItems(toc.value, item => item.subitems) : 0)
@@ -72,10 +90,12 @@ const PdfOutlineItems: Component = defineComponent({
   emits: ['go-to'],
   setup(props, { emit }) {
     return () => h('ul', props.items.map((item, index) => {
-      const key = `${props.path}${index}-${item.label}`
+      const key = `${props.path}${index}`
       return h('li', { key }, [
         h('button', {
           type: 'button',
+          class: { active: activePdfPath.value === key },
+          'aria-current': activePdfPath.value === key ? 'location' : undefined,
           onClick: (event: MouseEvent) => emit('go-to', event, item.page),
         }, item.label),
         item.children?.length

@@ -7,6 +7,38 @@ const extension = resolve('.output/chrome-mv3')
 const realPdf = resolve('tests/fixtures/books/tracemonkey.pdf')
 
 test.describe('@wxt-pdf-session', () => {
+  test('NASA PDF current bookmark follows TOC navigation, scrolling and restored page', async () => {
+    const { context, page, pageErrors } = await launchExtension(extension)
+    try {
+      await page.locator('#file-input').setInputFiles(resolve('tests/fixtures/books/nasa-systems-engineering-handbook.pdf'))
+      await expect(page.locator('#loading-view')).toBeHidden({ timeout: 45_000 })
+      await expectPdfPage(page, 1)
+      await expect(page.locator('#pdf-page-total')).toHaveText('/ 297')
+      await page.locator('#toc button').filter({ hasText: '4.0 System Design Processes' })
+        .evaluate((button: HTMLElement) => button.click())
+      await expectPdfPage(page, 53)
+      const active = page.locator('#toc button[aria-current="location"]')
+      await expect(active).toHaveText('4.0 System Design Processes')
+      await page.locator('#pdf-viewport').evaluate((viewport: HTMLElement) => { viewport.scrollTop = 0 })
+      await expectPdfPage(page, 1)
+      await expect(page.locator('#toc button.active').filter({ hasText: '4.0 System Design Processes' })).toHaveCount(0)
+      await page.locator('#pdf-viewport').evaluate((viewport: HTMLElement) => {
+        const target = viewport.querySelector<HTMLElement>('.pdf-page[data-page="53"]')!
+        viewport.scrollTop += target.getBoundingClientRect().top - viewport.getBoundingClientRect().top
+      })
+      await expectPdfPage(page, 53)
+      await expect(active).toHaveText('4.0 System Design Processes')
+      await click(page, '#home-button')
+      await expect(page.locator('#welcome-view')).toBeVisible()
+      await expect.poll(async () => (await pdfRecords(page))[0]?.progress?.page).toBe(53)
+      await page.reload()
+      await page.locator('.library-card').click()
+      await expectPdfPage(page, 53)
+      await expect(active).toHaveText('4.0 System Design Processes')
+      expect(pageErrors.map(error => error.stack || error.message)).toEqual([])
+    } finally { await context.close() }
+  })
+
   test('direct viewport scrolling updates page and progress, survives close and reopen', async () => {
     const { context, page, pageErrors } = await launchExtension(extension)
     try {
