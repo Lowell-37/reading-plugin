@@ -5,7 +5,7 @@ export type PdfSessionStatus = 'idle' | 'loading' | 'ready' | 'error'
 
 export interface PdfOutlineItem {
   label: string
-  page: number
+  page: number | null
   children?: PdfOutlineItem[]
 }
 

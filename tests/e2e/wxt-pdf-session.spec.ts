@@ -7,6 +7,25 @@ const extension = resolve('.output/chrome-mv3')
 const realPdf = resolve('tests/fixtures/books/tracemonkey.pdf')
 
 test.describe('@wxt-pdf-session', () => {
+  test('invalid PDF outline target stays disabled while a valid sibling navigates', async () => {
+    const { context, page, pageErrors } = await launchExtension(extension)
+    try {
+      await page.locator('#file-input').setInputFiles({ name: 'broken-outline.pdf', mimeType: 'application/pdf', buffer: fixturePdf(false, true) })
+      await expectPdfPage(page, 1)
+      const valid = page.locator('#toc button').filter({ hasText: 'Second destination' })
+      const invalid = page.locator('#toc button').filter({ hasText: 'Broken destination' })
+      await expect(valid).toBeEnabled()
+      await expect(invalid).toBeDisabled()
+      await expect(page.locator('#toc button[aria-current="location"]')).toHaveCount(0)
+      await page.locator('#sidebar-button').click()
+      await valid.click()
+      await expectPdfPage(page, 2)
+      await expect(valid).toHaveAttribute('aria-current', 'location')
+      await expect(invalid).not.toHaveAttribute('aria-current', 'location')
+      expect(pageErrors.map(error => error.stack || error.message)).toEqual([])
+    } finally { await context.close() }
+  })
+
   test('NASA PDF current bookmark follows TOC navigation, scrolling and restored page', async () => {
     const { context, page, pageErrors } = await launchExtension(extension)
     try {
@@ -323,7 +342,7 @@ async function pdfRecords(page: Page): Promise<Array<{ name: string, progress?: 
 
 // Small self-contained PDF syntax fixture: real PDF.js parsing/rendering, never an engine mock.
 // Standard security R2 with nonmatching password entries exercises PasswordException before content parsing.
-function fixturePdf(encrypted = false) {
+function fixturePdf(encrypted = false, invalidOutline = false) {
   const stream = 'BT /F1 18 Tf 40 700 Td (Second session page two) Tj ET'
   const objects = [
     '<< /Type /Catalog /Pages 2 0 R /Outlines 7 0 R >>',
@@ -332,11 +351,12 @@ function fixturePdf(encrypted = false) {
     '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 6 0 R >>',
     '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
     `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
-    '<< /Type /Outlines /First 8 0 R /Last 8 0 R /Count 1 >>',
-    '<< /Title (Second destination) /Parent 7 0 R /Dest [4 0 R /Fit] >>',
+    invalidOutline ? '<< /Type /Outlines /First 8 0 R /Last 11 0 R /Count 2 >>' : '<< /Type /Outlines /First 8 0 R /Last 8 0 R /Count 1 >>',
+    invalidOutline ? '<< /Title (Second destination) /Parent 7 0 R /Next 11 0 R /Dest [4 0 R /Fit] >>' : '<< /Title (Second destination) /Parent 7 0 R /Dest [4 0 R /Fit] >>',
     '<< /Title (Second PDF) >>',
     `<< /Filter /Standard /V 1 /R 2 /Length 40 /O <${'00'.repeat(32)}> /U <${'00'.repeat(32)}> /P -4 >>`,
   ]
+  if (invalidOutline) objects.push('<< /Title (Broken destination) /Parent 7 0 R /Prev 8 0 R /Dest [99 0 R /Fit] >>')
   let content = '%PDF-1.4\n'
   const offsets = [0]
   objects.forEach((object, index) => {

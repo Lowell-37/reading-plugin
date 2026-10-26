@@ -763,6 +763,29 @@ describe('Vue reader shell', () => {
     } finally { wrapper.unmount() }
   })
 
+  test('leaves unresolved PDF bookmarks visible but unselectable', async () => {
+    const pinia = createPinia()
+    const pdf = usePdfSessionStore(pinia)
+    pdf.record = { id: 'broken-outline', name: 'broken-outline.pdf', format: 'pdf' }
+    pdf.outline = [
+      { label: 'Real first page', page: 1 },
+      { label: 'Missing destination', page: null, children: [{ label: 'Valid child', page: 2 }] },
+    ]
+    pdf.page = 1
+    const wrapper = mount(App, { global: { plugins: [pinia] } })
+    try {
+      const buttons = wrapper.findAll('#toc button')
+      expect(buttons.map(button => button.text())).toEqual(['Real first page', 'Missing destination', 'Valid child'])
+      expect(buttons[0]!.attributes('aria-current')).toBe('location')
+      expect(buttons[1]!.attributes('disabled')).toBeDefined()
+      expect(buttons[1]!.attributes('aria-current')).toBeUndefined()
+      pdf.page = 2
+      await nextTick()
+      expect(buttons[2]!.attributes('aria-current')).toBe('location')
+      expect(buttons[1]!.classes()).not.toContain('active')
+    } finally { wrapper.unmount() }
+  })
+
   test('marks the current nested chapter by href even when labels repeat', async () => {
     const pinia = createPinia()
     const ebook = useEbookSessionStore(pinia)

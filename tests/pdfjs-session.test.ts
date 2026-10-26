@@ -34,6 +34,29 @@ describe('PDF.js session adapter', () => {
     }])
   })
 
+  test('keeps unresolved and out-of-range outline entries without assigning them page one', async () => {
+    const harness = createHarness()
+    harness.document.outline = [
+      { title: 'Real first page', dest: [0] },
+      { title: 'Missing destination', dest: 'missing', items: [{ title: 'Valid child', dest: [1] }] },
+      { title: 'No destination' },
+      { title: 'Outside document', dest: [8] },
+      { title: 'Malformed destination', dest: { index: 0 } },
+      { title: 'Fractional page index', dest: [0.5] },
+    ]
+
+    await harness.session.open(record('broken-outline.pdf'), {})
+
+    expect(harness.snapshots.at(-1)?.outline).toEqual([
+      { label: 'Real first page', page: 1 },
+      { label: 'Missing destination', page: null, children: [{ label: 'Valid child', page: 2 }] },
+      { label: 'No destination', page: null },
+      { label: 'Outside document', page: null },
+      { label: 'Malformed destination', page: null },
+      { label: 'Fractional page index', page: null },
+    ])
+  })
+
   test('renders the visible page and text layer lazily through observer callbacks', async () => {
     const harness = createHarness()
 

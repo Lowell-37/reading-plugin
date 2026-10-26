@@ -22,7 +22,7 @@ const activePdfPath = computed(() => {
     items.forEach((item, index) => {
       const key = `${path}${index}`
       // The outline may be unsorted. Equal-page entries follow document order.
-      if (item.page > 0 && item.page <= pdfPage.value && item.page >= nearestPage) {
+      if (item.page !== null && item.page > 0 && item.page <= pdfPage.value && item.page >= nearestPage) {
         selected = key
         nearestPage = item.page
       }
@@ -46,8 +46,8 @@ function goTo(event: MouseEvent, href: unknown) {
   void ebook.goTo(href)
 }
 
-function goToPdf(event: MouseEvent, page: number) {
-  if (!pdfSessionActive.value) return
+function goToPdf(event: MouseEvent, page: number | null) {
+  if (!pdfSessionActive.value || page === null) return
   event.stopImmediatePropagation()
   void pdf.goTo(page)
 }
@@ -94,6 +94,7 @@ const PdfOutlineItems: Component = defineComponent({
       return h('li', { key }, [
         h('button', {
           type: 'button',
+          disabled: item.page === null,
           class: { active: activePdfPath.value === key },
           'aria-current': activePdfPath.value === key ? 'location' : undefined,
           onClick: (event: MouseEvent) => emit('go-to', event, item.page),
@@ -102,7 +103,7 @@ const PdfOutlineItems: Component = defineComponent({
           ? h(PdfOutlineItems, {
               items: item.children,
               path: `${key}/`,
-              onGoTo: (event: MouseEvent, page: number) => emit('go-to', event, page),
+              onGoTo: (event: MouseEvent, page: number | null) => emit('go-to', event, page),
             })
           : null,
       ])

@@ -418,14 +418,15 @@ async function convertOutline(document: PdfDocumentLike, items: import('./pdf-se
   })))
 }
 
-async function outlinePage(document: PdfDocumentLike, destination: unknown): Promise<number> {
+async function outlinePage(document: PdfDocumentLike, destination: unknown): Promise<number | null> {
   try {
     const resolved = typeof destination === 'string' ? await document.getDestination(destination) : destination
     const reference = Array.isArray(resolved) ? resolved[0] : null
-    if (typeof reference === 'number') return reference + 1
-    if (reference && typeof reference === 'object') return await document.getPageIndex(reference) + 1
+    const index = typeof reference === 'number' ? reference
+      : reference && typeof reference === 'object' ? await document.getPageIndex(reference) : null
+    if (typeof index === 'number' && Number.isInteger(index) && index >= 0 && index < document.numPages) return index + 1
   } catch {}
-  return 1
+  return null
 }
 
 function loadingSnapshot(record: BookRecord, generation: number): PdfSessionSnapshot {
