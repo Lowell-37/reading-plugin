@@ -765,6 +765,7 @@ describe('Vue reader shell', () => {
 
   test('leaves unresolved PDF bookmarks visible but unselectable', async () => {
     const pinia = createPinia()
+    const reader = useReaderStore(pinia)
     const pdf = usePdfSessionStore(pinia)
     pdf.record = { id: 'broken-outline', name: 'broken-outline.pdf', format: 'pdf' }
     pdf.outline = [
@@ -772,6 +773,8 @@ describe('Vue reader shell', () => {
       { label: 'Missing destination', page: null, children: [{ label: 'Valid child', page: 2 }] },
     ]
     pdf.page = 1
+    const goTo = vi.spyOn(pdf, 'goTo').mockResolvedValue(undefined)
+    reader.requestPanel('toc')
     const wrapper = mount(App, { global: { plugins: [pinia] } })
     try {
       const buttons = wrapper.findAll('#toc button')
@@ -779,10 +782,18 @@ describe('Vue reader shell', () => {
       expect(buttons[0]!.attributes('aria-current')).toBe('location')
       expect(buttons[1]!.attributes('disabled')).toBeDefined()
       expect(buttons[1]!.attributes('aria-current')).toBeUndefined()
+      const invalidButton = buttons[1]!.element as HTMLButtonElement
+      invalidButton.click()
+      await nextTick()
+      expect(reader.activePanel).toBe('toc')
+      expect(goTo).not.toHaveBeenCalled()
       pdf.page = 2
       await nextTick()
       expect(buttons[2]!.attributes('aria-current')).toBe('location')
       expect(buttons[1]!.classes()).not.toContain('active')
+      await buttons[2]!.trigger('click')
+      expect(goTo).toHaveBeenCalledWith(2)
+      expect(reader.activePanel).toBeNull()
     } finally { wrapper.unmount() }
   })
 
@@ -813,6 +824,7 @@ describe('Vue reader shell', () => {
 
   test('renders and routes every nested ebook TOC level', async () => {
     const pinia = createPinia()
+    const reader = useReaderStore(pinia)
     const ebook = useEbookSessionStore(pinia)
     ebook.record = { id: 'book', name: 'book.epub', format: 'epub' }
     ebook.status = 'ready'
@@ -826,6 +838,7 @@ describe('Vue reader shell', () => {
       }],
     }]
     const goTo = vi.spyOn(ebook, 'goTo').mockResolvedValue(undefined)
+    reader.requestPanel('toc')
     const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
 
     const tocButtons = wrapper.findAll('#toc button')
@@ -837,6 +850,7 @@ describe('Vue reader shell', () => {
 
     expect(goTo).toHaveBeenCalledTimes(1)
     expect(goTo).toHaveBeenCalledWith('/6/6')
+    expect(reader.activePanel).toBeNull()
     ebook.toc = []
     await nextTick()
     expect(wrapper.find('#toc-count').text()).toBe('')

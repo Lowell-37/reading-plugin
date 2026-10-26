@@ -21,6 +21,8 @@ test.describe('@wxt-session', () => {
         await page.locator('#toc button').nth(5).evaluate((button: HTMLElement) => button.click())
         await expect.poll(() => progress(page)).toBeGreaterThan(initialProgress)
         await expect.poll(() => foliateContentText(page)).toMatch(/Alice|Rabbit|Wonderland/i)
+        await expect(page.locator('#sidebar')).not.toHaveClass(/open/)
+        await expect(page.locator('#scrim')).not.toHaveClass(/show/)
 
         const afterToc = await progress(page)
         await page.locator('#prev-button').evaluate((button: HTMLElement) => button.click())
@@ -28,7 +30,6 @@ test.describe('@wxt-session', () => {
         await page.locator('#next-button').evaluate((button: HTMLElement) => button.click())
         await expect.poll(() => progress(page)).toBeGreaterThan(0)
 
-        await page.locator('#sidebar-button').evaluate((button: HTMLElement) => button.click())
         const keyboardHandled = await page.evaluate(() => {
           const event = new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true })
           window.dispatchEvent(event)

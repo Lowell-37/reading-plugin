@@ -7,7 +7,8 @@ import { useEbookSessionStore } from '../stores/ebook-session'
 import { usePdfSessionStore } from '../stores/pdf-session'
 import { useReaderStore } from '../stores/reader'
 
-const { activePanel } = storeToRefs(useReaderStore())
+const reader = useReaderStore()
+const { activePanel } = storeToRefs(reader)
 const ebook = useEbookSessionStore()
 const pdf = usePdfSessionStore()
 const { record, title, toc, activeTocHref } = storeToRefs(ebook)
@@ -44,12 +45,14 @@ function goTo(event: MouseEvent, href: unknown) {
   if (!ebookSessionActive.value) return
   event.stopImmediatePropagation()
   void ebook.goTo(href)
+  reader.closePanel()
 }
 
 function goToPdf(event: MouseEvent, page: number | null) {
   if (!pdfSessionActive.value || page === null) return
   event.stopImmediatePropagation()
   void pdf.goTo(page)
+  reader.closePanel()
 }
 
 const TocItems: Component = defineComponent({

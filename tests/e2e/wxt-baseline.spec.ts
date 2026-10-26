@@ -129,7 +129,7 @@ test('WXT switches and restores real EPUB flow, theme and progress', async () =>
     }))
     const expectedProgress = await progress(page)
 
-    await page.locator('#scrim').click()
+    await expect(page.locator('#sidebar')).not.toHaveClass(/open/)
     await expect(page.locator('#scrim')).not.toHaveClass(/show/)
     await page.locator('#home-button').click()
     await expect(page.locator('#welcome-view')).toBeVisible()

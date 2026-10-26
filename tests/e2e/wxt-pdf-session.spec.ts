@@ -20,8 +20,12 @@ test.describe('@wxt-pdf-session', () => {
       await page.locator('#sidebar-button').click()
       await valid.click()
       await expectPdfPage(page, 2)
+      await expect(page.locator('#sidebar')).not.toHaveClass(/open/)
+      await expect(page.locator('#scrim')).not.toHaveClass(/show/)
       await expect(valid).toHaveAttribute('aria-current', 'location')
       await expect(invalid).not.toHaveAttribute('aria-current', 'location')
+      await page.keyboard.press('ArrowLeft')
+      await expectPdfPage(page, 1)
       expect(pageErrors.map(error => error.stack || error.message)).toEqual([])
     } finally { await context.close() }
   })
