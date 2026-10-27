@@ -2,6 +2,7 @@
 import { storeToRefs } from 'pinia'
 import { useReaderStore } from '../stores/reader'
 import { useSettingsStore, type ReaderFont } from '../stores/settings'
+import { dismissReaderPanel } from '../panel-focus'
 
 const reader = useReaderStore()
 const settings = useSettingsStore()
@@ -21,7 +22,7 @@ function updateNumber(event: Event, update: (value: number) => Promise<boolean>)
   <aside id="settings-panel" class="settings-panel" :class="{ open: activePanel === 'settings' }" :inert="activePanel !== 'settings'" aria-label="阅读设置">
     <div class="panel-header">
       <div><p class="eyebrow">READING</p><h2>阅读设置</h2></div>
-      <button id="close-settings" class="icon-button" aria-label="关闭设置" @click="reader.closePanel()">×</button>
+      <button id="close-settings" class="icon-button" aria-label="关闭设置" @click="dismissReaderPanel(reader)">×</button>
     </div>
     <div class="setting-group ebook-setting">
       <label>阅读方式</label>

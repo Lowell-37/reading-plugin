@@ -2,6 +2,7 @@
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useReaderStore } from '../stores/reader'
+import { dismissReaderPanel } from '../panel-focus'
 import { usePdfSessionStore } from '../stores/pdf-session'
 import { usePdfSearchStore } from '../stores/pdf-search'
 import { usePdfAnnotationStore } from '../stores/pdf-annotations'
@@ -248,7 +249,7 @@ onUnmounted(() => {
 
 <template>
   <aside id="tools-panel" class="tools-panel" :class="{ open: activePanel === 'tools' }" :inert="activePanel !== 'tools'" aria-label="搜索与批注">
-    <div class="panel-header"><div><p class="eyebrow">TOOLS</p><h2>搜索与批注</h2></div><button id="close-tools" class="icon-button" aria-label="关闭工具" @click="reader.closePanel()">×</button></div>
+    <div class="panel-header"><div><p class="eyebrow">TOOLS</p><h2>搜索与批注</h2></div><button id="close-tools" class="icon-button" aria-label="关闭工具" @click="dismissReaderPanel(reader)">×</button></div>
     <form id="search-form" class="search-form" @submit="handleSearchSubmit"><input id="search-input" v-model="searchQuery" type="search" placeholder="搜索书中内容" autocomplete="off"><button type="submit">搜索</button></form>
     <div id="search-status" class="search-status" aria-live="polite">{{ pdfSessionActive || ebookSessionActive ? searchStatus : '输入关键词搜索整本书' }}</div>
     <div id="search-results" class="search-results">

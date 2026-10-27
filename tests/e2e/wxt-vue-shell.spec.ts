@@ -5,6 +5,34 @@ import { launchExtension } from './helpers/extension-launch'
 const wxtExtension = resolve('.output/chrome-mv3')
 const bookPath = resolve('tests/fixtures/books/alice.epub')
 
+test('@wxt-vue dismissing a reader panel restores focus to its header button', async () => {
+  const { context, page, pageErrors } = await launchExtension(wxtExtension)
+  try {
+    await page.locator('#file-input').setInputFiles(bookPath)
+    await expect(page.locator('#loading-view')).toBeHidden({ timeout: 45_000 })
+    await expect.poll(async () => page.locator('#toc button').count()).toBeGreaterThan(3)
+    const focusedId = () => page.evaluate(() => document.activeElement?.id)
+
+    await page.locator('#sidebar-button').click()
+    await page.locator('#toc button').first().focus()
+    await page.keyboard.press('Escape')
+    await expect(page.locator('#sidebar')).not.toHaveClass(/open/)
+    await expect.poll(focusedId).toBe('sidebar-button')
+
+    await page.locator('#settings-button').click()
+    await page.locator('#close-settings').click()
+    await expect(page.locator('#settings-panel')).not.toHaveClass(/open/)
+    await expect.poll(focusedId).toBe('settings-button')
+
+    await page.locator('#tools-button').click()
+    await page.locator('#search-input').focus()
+    await page.locator('#scrim').click()
+    await expect(page.locator('#tools-panel')).not.toHaveClass(/open/)
+    await expect.poll(focusedId).toBe('tools-button')
+    expect(pageErrors.map(error => error.stack || error.message)).toEqual([])
+  } finally { await context.close() }
+})
+
 test('@wxt-vue closed reader panels are absent from Tab order and the accessibility tree', async () => {
   const { context, page, pageErrors } = await launchExtension(wxtExtension)
   try {
