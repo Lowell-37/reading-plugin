@@ -230,7 +230,7 @@ async function recoverSessionError(event: MouseEvent, retry: boolean) {
 <template>
   <main id="reader-view" class="reader-view" :class="{ 'ebook-session-active': ebookSessionActive, 'pdf-session-active': pdfSessionActive }" :hidden="!workspaceVisible">
     <TocSidebar />
-    <div id="reader-stage" class="reader-stage">
+    <div id="reader-stage" class="reader-stage" role="region" aria-label="阅读内容" tabindex="-1">
       <div id="loading-view" class="loading-view">
         <div id="loading-spinner" class="spinner" /><strong id="loading-title">正在打开书籍</strong><span id="loading-detail">解析内容与目录…</span>
         <div id="loading-actions" class="loading-actions" hidden>

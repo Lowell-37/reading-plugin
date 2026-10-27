@@ -41,18 +41,23 @@ function countItems<T>(items: T[], children: (item: T) => T[] | undefined): numb
   return items.reduce((total, item) => total + 1 + countItems(children(item) ?? [], children), 0)
 }
 
+function closeAndFocusReader() {
+  reader.closePanel()
+  document.getElementById('reader-stage')?.focus({ preventScroll: true })
+}
+
 function goTo(event: MouseEvent, href: unknown) {
   if (!ebookSessionActive.value) return
   event.stopImmediatePropagation()
   void ebook.goTo(href)
-  reader.closePanel()
+  closeAndFocusReader()
 }
 
 function goToPdf(event: MouseEvent, page: number | null) {
   if (!pdfSessionActive.value || page === null) return
   event.stopImmediatePropagation()
   void pdf.goTo(page)
-  reader.closePanel()
+  closeAndFocusReader()
 }
 
 const TocItems: Component = defineComponent({

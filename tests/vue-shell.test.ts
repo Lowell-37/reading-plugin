@@ -775,7 +775,7 @@ describe('Vue reader shell', () => {
     pdf.page = 1
     const goTo = vi.spyOn(pdf, 'goTo').mockResolvedValue(undefined)
     reader.requestPanel('toc')
-    const wrapper = mount(App, { global: { plugins: [pinia] } })
+    const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
     try {
       const buttons = wrapper.findAll('#toc button')
       expect(buttons.map(button => button.text())).toEqual(['Real first page', 'Missing destination', 'Valid child'])
@@ -791,9 +791,12 @@ describe('Vue reader shell', () => {
       await nextTick()
       expect(buttons[2]!.attributes('aria-current')).toBe('location')
       expect(buttons[1]!.classes()).not.toContain('active')
+      const validButton = buttons[2]!.element as HTMLButtonElement
+      validButton.focus()
       await buttons[2]!.trigger('click')
       expect(goTo).toHaveBeenCalledWith(2)
       expect(reader.activePanel).toBeNull()
+      expect(document.activeElement?.id).toBe('reader-stage')
     } finally { wrapper.unmount() }
   })
 
@@ -846,11 +849,16 @@ describe('Vue reader shell', () => {
     expect(tocButtons.map(button => button.text())).toEqual(['Part one', 'Chapter one', 'Section one'])
     expect(wrapper.find('#toc-count').text()).toBe('3 项')
 
+    const sectionButton = tocButtons[2]!.element as HTMLButtonElement
+    const focusReaderStage = vi.spyOn(wrapper.find('#reader-stage').element as HTMLElement, 'focus')
+    sectionButton.focus()
     await tocButtons[2]!.trigger('click')
 
     expect(goTo).toHaveBeenCalledTimes(1)
     expect(goTo).toHaveBeenCalledWith('/6/6')
     expect(reader.activePanel).toBeNull()
+    expect(focusReaderStage).toHaveBeenCalledWith({ preventScroll: true })
+    expect(document.activeElement?.id).toBe('reader-stage')
     ebook.toc = []
     await nextTick()
     expect(wrapper.find('#toc-count').text()).toBe('')

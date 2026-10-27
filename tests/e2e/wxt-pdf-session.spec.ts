@@ -22,6 +22,7 @@ test.describe('@wxt-pdf-session', () => {
       await expectPdfPage(page, 2)
       await expect(page.locator('#sidebar')).not.toHaveClass(/open/)
       await expect(page.locator('#scrim')).not.toHaveClass(/show/)
+      await expect.poll(() => page.evaluate(() => document.activeElement?.id)).toBe('reader-stage')
       await expect(valid).toHaveAttribute('aria-current', 'location')
       await expect(invalid).not.toHaveAttribute('aria-current', 'location')
       await page.keyboard.press('ArrowLeft')
