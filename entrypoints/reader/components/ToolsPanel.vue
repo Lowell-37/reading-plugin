@@ -2,7 +2,7 @@
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useReaderStore } from '../stores/reader'
-import { dismissReaderPanel } from '../panel-focus'
+import { closePanelAndFocusReader, dismissReaderPanel } from '../panel-focus'
 import { usePdfSessionStore } from '../stores/pdf-session'
 import { usePdfSearchStore } from '../stores/pdf-search'
 import { usePdfAnnotationStore } from '../stores/pdf-annotations'
@@ -259,7 +259,7 @@ onUnmounted(() => {
         </button>
       </template>
       <template v-else-if="ebookSessionActive">
-        <button v-for="result in ebookResults" :key="`${result.section}:${result.offset}`" class="search-result" type="button" @click="ebookSearch.goToResult(result); reader.closePanel()">
+        <button v-for="result in ebookResults" :key="`${result.section}:${result.offset}`" class="search-result" type="button" @click="ebookSearch.goToResult(result); closePanelAndFocusReader(reader)">
           <strong>{{ result.label }}</strong><span>{{ result.context.text }}</span>
         </button>
       </template>

@@ -59,6 +59,8 @@ test(`WXT searches a real ${format.toUpperCase()} through Vue and navigates to t
     const before = await progress(page)
     await page.locator('.search-result').first().click()
     await expect.poll(() => progress(page)).not.toBe(before)
+    await expect(page.locator('#tools-panel')).not.toHaveClass(/open/)
+    await expect.poll(() => page.evaluate(() => document.activeElement?.id)).toBe('reader-stage')
     expect(pageErrors.map(error => error.stack || error.message)).toEqual([])
   } finally {
     await context.close()

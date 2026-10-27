@@ -17,3 +17,8 @@ export function dismissReaderPanel(reader: PanelController) {
   reader.closePanel()
   document.getElementById(panelTriggers[panel])?.focus({ preventScroll: true })
 }
+
+export function closePanelAndFocusReader(reader: PanelController) {
+  reader.closePanel()
+  document.getElementById('reader-stage')?.focus({ preventScroll: true })
+}
