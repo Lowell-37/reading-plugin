@@ -121,7 +121,7 @@ const PdfOutlineItems: Component = defineComponent({
 </script>
 
 <template>
-  <aside id="sidebar" class="sidebar" :class="{ open: activePanel === 'toc', 'ebook-session-toc': ebookSessionActive, 'pdf-session-toc': pdfSessionActive }" aria-label="书籍目录">
+  <aside id="sidebar" class="sidebar" :class="{ open: activePanel === 'toc', 'ebook-session-toc': ebookSessionActive, 'pdf-session-toc': pdfSessionActive }" :inert="activePanel !== 'toc'" aria-label="书籍目录">
     <div class="sidebar-book">
       <div id="sidebar-cover" class="cover-placeholder"><span id="cover-letter">静</span></div>
       <div class="sidebar-meta">

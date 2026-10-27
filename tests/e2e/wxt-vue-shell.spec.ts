@@ -5,6 +5,48 @@ import { launchExtension } from './helpers/extension-launch'
 const wxtExtension = resolve('.output/chrome-mv3')
 const bookPath = resolve('tests/fixtures/books/alice.epub')
 
+test('@wxt-vue closed reader panels are absent from Tab order and the accessibility tree', async () => {
+  const { context, page, pageErrors } = await launchExtension(wxtExtension)
+  try {
+    await page.locator('#file-input').setInputFiles(bookPath)
+    await expect(page.locator('#loading-view')).toBeHidden({ timeout: 45_000 })
+    await expect.poll(async () => page.locator('#toc button').count()).toBeGreaterThan(3)
+
+    const panelFocus = () => page.evaluate(() => document.activeElement?.closest('#sidebar, #settings-panel, #tools-panel')?.id ?? null)
+    await page.locator('#header-toggle').focus()
+    await page.keyboard.press('Tab')
+    expect(await panelFocus()).toBeNull()
+    await page.locator('#progress-slider').focus()
+    await page.keyboard.press('Tab')
+    expect(await panelFocus()).toBeNull()
+
+    const cdp = await context.newCDPSession(page)
+    const accessibleRole = async (selector: string) => {
+      const { root } = await cdp.send('DOM.getDocument')
+      const { nodeId } = await cdp.send('DOM.querySelector', { nodeId: root.nodeId, selector })
+      const { nodes } = await cdp.send('Accessibility.getPartialAXTree', { nodeId })
+      return nodes[0]?.ignored ? null : nodes[0]?.role?.value
+    }
+    const panels = [
+      { trigger: '#sidebar-button', selector: '#sidebar', action: '#toc button' },
+      { trigger: '#settings-button', selector: '#settings-panel', action: '#close-settings' },
+      { trigger: '#tools-button', selector: '#tools-panel', action: '#close-tools' },
+    ]
+    for (const panel of panels) {
+      expect(await accessibleRole(panel.selector)).toBeNull()
+      await page.locator(panel.trigger).click()
+      expect(await accessibleRole(panel.selector)).toBe('complementary')
+      const action = page.locator(panel.action).first()
+      await action.focus()
+      expect(await panelFocus()).toBe(panel.selector.slice(1))
+      await page.keyboard.press('Enter')
+      await expect.poll(() => accessibleRole(panel.selector)).toBeNull()
+    }
+    await cdp.detach()
+    expect(pageErrors.map(error => error.stack || error.message)).toEqual([])
+  } finally { await context.close() }
+})
+
 test('@wxt-vue Vue library imports, reopens, deletes and restores a real annotated EPUB', async () => {
   const { context, page, pageErrors } = await launchExtension(wxtExtension)
   try {
