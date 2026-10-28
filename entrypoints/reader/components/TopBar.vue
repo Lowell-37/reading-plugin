@@ -1,5 +1,8 @@
 <script setup lang="ts">
+import { nextTick } from 'vue'
 import { storeToRefs } from 'pinia'
+import type { ReaderPanel } from '../reader-types'
+import { focusReaderPanel } from '../panel-focus'
 import { useReaderStore } from '../stores/reader'
 import { useSettingsStore } from '../stores/settings'
 import { useLibraryStore } from '../stores/library'
@@ -16,6 +19,14 @@ const { headerCollapsed } = storeToRefs(settings)
 
 function openFilePicker() {
   document.getElementById('file-input')?.click()
+}
+
+async function togglePanel(panel: Exclude<ReaderPanel, null>) {
+  const opening = reader.activePanel !== panel
+  reader.togglePanel(panel)
+  if (!opening) return
+  await nextTick()
+  if (reader.activePanel === panel) focusReaderPanel(panel)
 }
 
 async function closeReader() {
@@ -37,7 +48,7 @@ async function closeReader() {
 <template>
   <header id="app-header" class="app-header">
     <div class="header-left">
-      <button id="sidebar-button" class="icon-button reader-only" aria-label="打开目录" title="目录" @click="reader.togglePanel('toc')">
+      <button id="sidebar-button" class="icon-button reader-only" aria-label="打开目录" title="目录" @click="togglePanel('toc')">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
       </button>
       <button id="home-button" class="brand" title="返回书架" @click="closeReader().catch(console.error)">
@@ -52,10 +63,10 @@ async function closeReader() {
       <label id="open-button" class="soft-button" for="file-input" role="button" tabindex="0" @keydown.enter.prevent="openFilePicker" @keydown.space.prevent="openFilePicker">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v12m-5-5 5 5 5-5M5 20h14" /></svg>打开书籍
       </label>
-      <button id="tools-button" class="icon-button header-icon-button reader-only" aria-label="搜索与批注" title="搜索与批注" @click="reader.togglePanel('tools')">
+      <button id="tools-button" class="icon-button header-icon-button reader-only" aria-label="搜索与批注" title="搜索与批注" @click="togglePanel('tools')">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4 4" /></svg>
       </button>
-      <button id="settings-button" class="icon-button header-icon-button reader-only" aria-label="阅读设置" title="阅读设置" @click="reader.togglePanel('settings')">
+      <button id="settings-button" class="icon-button header-icon-button reader-only" aria-label="阅读设置" title="阅读设置" @click="togglePanel('settings')">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10" /><circle cx="16" cy="7" r="2" /><circle cx="8" cy="17" r="2" /></svg>
       </button>
     </div>

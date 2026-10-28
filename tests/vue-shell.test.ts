@@ -998,6 +998,35 @@ describe('Vue reader shell', () => {
     wrapper.unmount()
   })
 
+  test('moves keyboard focus into each reader panel when it opens', async () => {
+    const pinia = createPinia()
+    const ebook = useEbookSessionStore(pinia)
+    ebook.record = { id: 'focus-book', name: 'focus.epub', format: 'epub' }
+    ebook.toc = [{ label: 'First chapter', href: '/6/2' }]
+    const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
+
+    await wrapper.find('#sidebar-button').trigger('click')
+    await nextTick()
+    expect(document.activeElement).toBe(wrapper.find('#toc button').element)
+
+    await wrapper.find('#sidebar-button').trigger('click')
+    ebook.toc = []
+    await nextTick()
+    await wrapper.find('#sidebar-button').trigger('click')
+    await nextTick()
+    expect(document.activeElement?.id).toBe('sidebar')
+
+    await wrapper.find('#settings-button').trigger('click')
+    await nextTick()
+    expect(document.activeElement?.id).toBe('close-settings')
+
+    await wrapper.find('#tools-button').trigger('click')
+    await nextTick()
+    expect(document.activeElement?.id).toBe('search-input')
+
+    wrapper.unmount()
+  })
+
   test('binds settings controls to Pinia state and Vue events', async () => {
     localStorage.setItem('quiet-reader-settings', JSON.stringify({
       theme: 'sepia',
