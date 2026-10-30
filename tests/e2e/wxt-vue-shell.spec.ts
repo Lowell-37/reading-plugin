@@ -15,24 +15,40 @@ test('@wxt-vue reader panels receive initial focus and restore it when dismissed
 
     await page.locator('#sidebar-button').click()
     await expect(page.locator('#toc button').first()).toBeFocused()
+    await assertPanelFocusLoop(page, '#toc button:first-of-type', '#toc button:last-of-type')
     await page.keyboard.press('Escape')
     await expect(page.locator('#sidebar')).not.toHaveClass(/open/)
     await expect.poll(focusedId).toBe('sidebar-button')
 
     await page.locator('#settings-button').click()
     await expect(page.locator('#close-settings')).toBeFocused()
+    await assertPanelFocusLoop(page, '#close-settings', '.theme-options button:last-child')
     await page.locator('#close-settings').click()
     await expect(page.locator('#settings-panel')).not.toHaveClass(/open/)
     await expect.poll(focusedId).toBe('settings-button')
 
     await page.locator('#tools-button').click()
     await expect(page.locator('#search-input')).toBeFocused()
+    await assertPanelFocusLoop(page, '#close-tools', '#export-annotations-json')
     await page.locator('#scrim').click()
     await expect(page.locator('#tools-panel')).not.toHaveClass(/open/)
     await expect.poll(focusedId).toBe('tools-button')
     expect(pageErrors.map(error => error.stack || error.message)).toEqual([])
   } finally { await context.close() }
 })
+
+async function assertPanelFocusLoop(page: Page, firstSelector: string, lastSelector: string) {
+  const first = page.locator(firstSelector).first()
+  const last = page.locator(lastSelector).last()
+  await last.focus()
+  await page.keyboard.press('Tab')
+  await expect(first).toBeFocused()
+  await page.keyboard.press('Shift+Tab')
+  await expect(last).toBeFocused()
+  await page.locator('#home-button').focus()
+  await page.keyboard.press('Tab')
+  await expect(first).toBeFocused()
+}
 
 test('@wxt-vue closed reader panels are absent from Tab order and the accessibility tree', async () => {
   const { context, page, pageErrors } = await launchExtension(wxtExtension)

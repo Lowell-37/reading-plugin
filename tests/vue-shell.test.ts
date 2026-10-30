@@ -1027,6 +1027,57 @@ describe('Vue reader shell', () => {
     wrapper.unmount()
   })
 
+  test('keeps Tab focus inside the active reader panel', async () => {
+    const pinia = createPinia()
+    const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
+
+    await wrapper.find('#tools-button').trigger('click')
+    await nextTick()
+    const first = wrapper.find<HTMLButtonElement>('#close-tools').element
+    const last = wrapper.find<HTMLButtonElement>('#export-annotations-json').element
+    const disabledBoundary = document.createElement('button')
+    disabledBoundary.disabled = true
+    disabledBoundary.tabIndex = 0
+    wrapper.find('#tools-panel').element.append(disabledBoundary)
+
+    last.focus()
+    expect(document.activeElement).toBe(last)
+    const forwardTab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+    window.dispatchEvent(forwardTab)
+    expect(forwardTab.defaultPrevented).toBe(true)
+    expect(document.activeElement).toBe(first)
+
+    const backwardTab = new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true })
+    window.dispatchEvent(backwardTab)
+    expect(backwardTab.defaultPrevented).toBe(true)
+    expect(document.activeElement).toBe(last)
+
+    wrapper.find<HTMLButtonElement>('#home-button').element.focus()
+    const escapedFocusTab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+    window.dispatchEvent(escapedFocusTab)
+    expect(escapedFocusTab.defaultPrevented).toBe(true)
+    expect(document.activeElement).toBe(first)
+
+    wrapper.unmount()
+  })
+
+  test('leaves modified Tab shortcuts unhandled while a reader panel is open', async () => {
+    const pinia = createPinia()
+    const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
+    await wrapper.find('#tools-button').trigger('click')
+    await nextTick()
+    const propagated = vi.fn()
+    window.addEventListener('keydown', propagated)
+
+    const modifiedTab = new KeyboardEvent('keydown', { key: 'Tab', ctrlKey: true, bubbles: true, cancelable: true })
+    window.dispatchEvent(modifiedTab)
+
+    expect(modifiedTab.defaultPrevented).toBe(false)
+    expect(propagated).toHaveBeenCalledWith(modifiedTab)
+    window.removeEventListener('keydown', propagated)
+    wrapper.unmount()
+  })
+
   test('binds settings controls to Pinia state and Vue events', async () => {
     localStorage.setItem('quiet-reader-settings', JSON.stringify({
       theme: 'sepia',

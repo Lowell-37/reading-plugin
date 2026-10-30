@@ -3,7 +3,7 @@ import { storeToRefs } from 'pinia'
 import { onBeforeUnmount, onMounted } from 'vue'
 import { useReaderStore } from '../stores/reader'
 import { useLibraryStore } from '../stores/library'
-import { dismissReaderPanel } from '../panel-focus'
+import { dismissReaderPanel, trapReaderPanelFocus } from '../panel-focus'
 
 const reader = useReaderStore()
 const library = useLibraryStore()
@@ -11,8 +11,10 @@ const { activePanel } = storeToRefs(reader)
 
 function handleKeydown(event: KeyboardEvent) {
   if (reader.activePanel === null) return
+  if (event.key === 'Tab' && (event.altKey || event.ctrlKey || event.metaKey)) return
   event.stopImmediatePropagation()
   if (event.key === 'Escape') dismissReaderPanel(reader)
+  else trapReaderPanelFocus(reader.activePanel, event)
 }
 
 function clearSelectedFile(event: MouseEvent) {
