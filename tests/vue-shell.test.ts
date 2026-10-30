@@ -1027,6 +1027,37 @@ describe('Vue reader shell', () => {
     wrapper.unmount()
   })
 
+  test('reports the controlled panel and expanded state from each header trigger', async () => {
+    const pinia = createPinia()
+    const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
+    const triggers = [
+      { selector: '#sidebar-button', controls: 'sidebar' },
+      { selector: '#tools-button', controls: 'tools-panel' },
+      { selector: '#settings-button', controls: 'settings-panel' },
+    ]
+
+    for (const trigger of triggers) {
+      expect(wrapper.find(trigger.selector).attributes('aria-controls')).toBe(trigger.controls)
+      expect(wrapper.find(trigger.selector).attributes('aria-expanded')).toBe('false')
+    }
+
+    for (const active of triggers) {
+      await wrapper.find(active.selector).trigger('click')
+      for (const trigger of triggers) {
+        expect(wrapper.find(trigger.selector).attributes('aria-expanded')).toBe(
+          trigger.selector === active.selector ? 'true' : 'false',
+        )
+      }
+    }
+
+    await wrapper.find('#settings-button').trigger('click')
+    for (const trigger of triggers) {
+      expect(wrapper.find(trigger.selector).attributes('aria-expanded')).toBe('false')
+    }
+
+    wrapper.unmount()
+  })
+
   test('keeps Tab focus inside the active reader panel', async () => {
     const pinia = createPinia()
     const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })

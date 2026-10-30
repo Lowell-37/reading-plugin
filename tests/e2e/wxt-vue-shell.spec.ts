@@ -12,30 +12,52 @@ test('@wxt-vue reader panels receive initial focus and restore it when dismissed
     await expect(page.locator('#loading-view')).toBeHidden({ timeout: 45_000 })
     await expect.poll(async () => page.locator('#toc button').count()).toBeGreaterThan(3)
     const focusedId = () => page.evaluate(() => document.activeElement?.id)
+    await assertPanelTriggerState(page, null)
 
     await page.locator('#sidebar-button').click()
+    await assertPanelTriggerState(page, 'sidebar')
     await expect(page.locator('#toc button').first()).toBeFocused()
     await assertPanelFocusLoop(page, '#toc button:first-of-type', '#toc button:last-of-type')
     await page.keyboard.press('Escape')
     await expect(page.locator('#sidebar')).not.toHaveClass(/open/)
+    await assertPanelTriggerState(page, null)
     await expect.poll(focusedId).toBe('sidebar-button')
 
     await page.locator('#settings-button').click()
+    await assertPanelTriggerState(page, 'settings-panel')
     await expect(page.locator('#close-settings')).toBeFocused()
     await assertPanelFocusLoop(page, '#close-settings', '.theme-options button:last-child')
     await page.locator('#close-settings').click()
     await expect(page.locator('#settings-panel')).not.toHaveClass(/open/)
+    await assertPanelTriggerState(page, null)
     await expect.poll(focusedId).toBe('settings-button')
 
     await page.locator('#tools-button').click()
+    await assertPanelTriggerState(page, 'tools-panel')
     await expect(page.locator('#search-input')).toBeFocused()
     await assertPanelFocusLoop(page, '#close-tools', '#export-annotations-json')
     await page.locator('#scrim').click()
     await expect(page.locator('#tools-panel')).not.toHaveClass(/open/)
+    await assertPanelTriggerState(page, null)
     await expect.poll(focusedId).toBe('tools-button')
     expect(pageErrors.map(error => error.stack || error.message)).toEqual([])
   } finally { await context.close() }
 })
+
+async function assertPanelTriggerState(page: Page, expandedPanel: string | null) {
+  const triggers = [
+    { selector: '#sidebar-button', controls: 'sidebar' },
+    { selector: '#tools-button', controls: 'tools-panel' },
+    { selector: '#settings-button', controls: 'settings-panel' },
+  ]
+  for (const trigger of triggers) {
+    await expect(page.locator(trigger.selector)).toHaveAttribute('aria-controls', trigger.controls)
+    await expect(page.locator(trigger.selector)).toHaveAttribute(
+      'aria-expanded',
+      trigger.controls === expandedPanel ? 'true' : 'false',
+    )
+  }
+}
 
 async function assertPanelFocusLoop(page: Page, firstSelector: string, lastSelector: string) {
   const first = page.locator(firstSelector).first()

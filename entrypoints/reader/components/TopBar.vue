@@ -14,7 +14,7 @@ const settings = useSettingsStore()
 const library = useLibraryStore()
 const ebook = useEbookSessionStore()
 const pdf = usePdfSessionStore()
-const { title } = storeToRefs(reader)
+const { title, activePanel } = storeToRefs(reader)
 const { headerCollapsed } = storeToRefs(settings)
 
 function openFilePicker() {
@@ -48,7 +48,7 @@ async function closeReader() {
 <template>
   <header id="app-header" class="app-header">
     <div class="header-left">
-      <button id="sidebar-button" class="icon-button reader-only" aria-label="打开目录" title="目录" @click="togglePanel('toc')">
+      <button id="sidebar-button" class="icon-button reader-only" aria-label="打开目录" aria-controls="sidebar" :aria-expanded="activePanel === 'toc'" title="目录" @click="togglePanel('toc')">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
       </button>
       <button id="home-button" class="brand" title="返回书架" @click="closeReader().catch(console.error)">
@@ -63,10 +63,10 @@ async function closeReader() {
       <label id="open-button" class="soft-button" for="file-input" role="button" tabindex="0" @keydown.enter.prevent="openFilePicker" @keydown.space.prevent="openFilePicker">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v12m-5-5 5 5 5-5M5 20h14" /></svg>打开书籍
       </label>
-      <button id="tools-button" class="icon-button header-icon-button reader-only" aria-label="搜索与批注" title="搜索与批注" @click="togglePanel('tools')">
+      <button id="tools-button" class="icon-button header-icon-button reader-only" aria-label="搜索与批注" aria-controls="tools-panel" :aria-expanded="activePanel === 'tools'" title="搜索与批注" @click="togglePanel('tools')">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4 4" /></svg>
       </button>
-      <button id="settings-button" class="icon-button header-icon-button reader-only" aria-label="阅读设置" title="阅读设置" @click="togglePanel('settings')">
+      <button id="settings-button" class="icon-button header-icon-button reader-only" aria-label="阅读设置" aria-controls="settings-panel" :aria-expanded="activePanel === 'settings'" title="阅读设置" @click="togglePanel('settings')">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10" /><circle cx="16" cy="7" r="2" /><circle cx="8" cy="17" r="2" /></svg>
       </button>
     </div>
