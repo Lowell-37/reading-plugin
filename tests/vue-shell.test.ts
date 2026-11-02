@@ -1200,6 +1200,12 @@ describe('Vue reader shell', () => {
     expect((wrapper.find('#font-size').element as HTMLInputElement).value).toBe('24')
     expect(wrapper.find('#line-height-value').text()).toBe('1.90')
     expect(wrapper.find('#page-width-value').text()).toBe('880')
+    expect(wrapper.find('#font-size').attributes('aria-valuetext')).toBe('24 像素')
+    expect(wrapper.find('#line-height').attributes('aria-valuetext')).toBe('1.90 倍')
+    expect(wrapper.find('#page-width').attributes('aria-valuetext')).toBe('880 像素')
+    for (const id of ['#font-size-value', '#line-height-value', '#page-width-value']) {
+      expect(wrapper.find(id).attributes('aria-hidden')).toBe('true')
+    }
 
     await wrapper.find('[data-theme="dark"]').trigger('click')
     await wrapper.find('[data-flow="paginated"]').trigger('click')
