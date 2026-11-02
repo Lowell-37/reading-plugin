@@ -289,6 +289,22 @@ describe('Vue reader shell', () => {
     wrapper.unmount()
   })
 
+  test('exposes book search controls, status and results to assistive technologies', () => {
+    const pinia = createPinia()
+    const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
+
+    expect(wrapper.find('#search-form').attributes()).toMatchObject({ role: 'search', 'aria-label': '书内搜索' })
+    expect(wrapper.find('#search-input').attributes()).toMatchObject({
+      'aria-label': '搜索书中内容',
+      'aria-describedby': 'search-status',
+      'aria-controls': 'search-results',
+    })
+    expect(wrapper.find('#search-status').attributes('role')).toBe('status')
+    expect(wrapper.find('#search-results').attributes()).toMatchObject({ role: 'region', 'aria-label': '搜索结果' })
+
+    wrapper.unmount()
+  })
+
   test('Vue handles ebook search and navigates to the selected result', async () => {
     const pinia = createPinia()
     const ebook = useEbookSessionStore(pinia)
