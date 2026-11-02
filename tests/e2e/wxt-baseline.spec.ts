@@ -155,6 +155,7 @@ test('WXT switches and restores real EPUB flow, theme and progress', async () =>
     await expect(page.locator('#scrim')).not.toHaveClass(/show/)
     await page.locator('#home-button').click()
     await expect(page.locator('#welcome-view')).toBeVisible()
+    await expect(page.locator('#progress-slider')).not.toHaveAttribute('aria-valuetext', /.+/)
     await expect.poll(() => storedEbookProgress(page)).not.toBeCloseTo(storedBeforeNavigation, 3)
     await expect.poll(() => storedEbookProgress(page)).toBeCloseTo(expectedProgress, 1)
     const savedProgress = await storedEbookProgress(page)
@@ -168,6 +169,7 @@ test('WXT switches and restores real EPUB flow, theme and progress', async () =>
     await expect(page.locator('[data-flow="scrolled"]')).toHaveAttribute('aria-pressed', 'true')
     await expect(page.getByRole('button', { name: '深色主题' })).toHaveAttribute('aria-pressed', 'true')
     await expect.poll(() => progress(page)).toBeGreaterThan(0)
+    await expect(page.locator('#progress-slider')).toHaveAttribute('aria-valuetext', /\d+%，.+/)
     expect(await progress(page)).toBeCloseTo(savedProgress, 1)
   } finally {
     await context.close()

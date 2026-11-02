@@ -113,6 +113,7 @@ test.describe('@wxt-pdf-session', () => {
       })
       await expectPdfPage(page, 14)
       await expect(page.locator('#progress-label')).toHaveText('100%')
+      await expect(page.locator('#progress-slider')).toHaveAttribute('aria-valuetext', '100%，第 14 页，共 14 页')
       await jump(page, 1)
       for (let step = 0; step < 3; step++) await click(page, '#pdf-zoom-in')
       await expectZoom(page, '130%', 1, baseWidth * 1.3)

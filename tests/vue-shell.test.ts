@@ -210,6 +210,7 @@ describe('Vue reader shell', () => {
     expect((wrapper.find('#pdf-page-input').element as HTMLInputElement).value).toBe('3')
     expect(wrapper.find('#pdf-page-total').text()).toBe('/ 9')
     expect(wrapper.find('#pdf-zoom-label').text()).toBe('120%')
+    expect(wrapper.find('#progress-slider').attributes('aria-valuetext')).toBe('25%，第 3 页，共 9 页')
     expect(wrapper.findAll('#toc button').map(button => button.text())).toEqual(['Part one', 'Chapter two', 'Section four'])
     expect(wrapper.find('#toc-count').text()).toBe('3 项')
 
@@ -706,6 +707,7 @@ describe('Vue reader shell', () => {
     expect(wrapper.find('#chapter-label').text()).toBe('Chapter five')
     expect((wrapper.find('#progress-slider').element as HTMLInputElement).value).toBe('0.375')
     expect(wrapper.find('#progress-label').text()).toBe('38%')
+    expect(wrapper.find('#progress-slider').attributes('aria-valuetext')).toBe('38%，Chapter five')
 
     ebook.record = null
     await wrapper.vm.$nextTick()
@@ -717,6 +719,7 @@ describe('Vue reader shell', () => {
     label.textContent = '70%'
     reader.applyReaderState({ chapter: 'reader store update', progress: 0.2 })
     await wrapper.vm.$nextTick()
+    expect(wrapper.find('#progress-slider').attributes('aria-valuetext')).toBeUndefined()
     expect(chapter.textContent).toBe('第 7 页')
     expect(slider.value).toBe('0.7')
     expect(label.textContent).toBe('70%')

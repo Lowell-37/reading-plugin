@@ -73,22 +73,32 @@ function syncLoadingView(
 }
 
 function syncEbookFooter(active: boolean) {
-  if (!active) return
+  const progressSlider = document.getElementById('progress-slider') as HTMLInputElement | null
+  if (!active) {
+    if (!pdfSessionActive.value) progressSlider?.removeAttribute('aria-valuetext')
+    return
+  }
   const normalizedProgress = Math.max(0, Math.min(1, Number(progress.value) || 0))
   const progressText = `${Math.round(normalizedProgress * 100)}%`
-  const progressSlider = document.getElementById('progress-slider') as HTMLInputElement | null
   const progressLabel = document.getElementById('progress-label')
   document.getElementById('chapter-label')?.replaceChildren(chapter.value)
-  if (progressSlider) progressSlider.value = String(normalizedProgress)
+  if (progressSlider) {
+    progressSlider.value = String(normalizedProgress)
+    progressSlider.setAttribute('aria-valuetext', `${progressText}，${chapter.value}`)
+  }
   progressLabel?.replaceChildren(progressText)
 }
 
 function syncPdfControls(active: boolean) {
   const pageJump = document.getElementById('pdf-page-jump') as HTMLElement | null
   const toolbar = document.getElementById('pdf-toolbar') as HTMLElement | null
+  const slider = document.getElementById('progress-slider') as HTMLInputElement | null
   pageJump?.toggleAttribute('hidden', !active)
   toolbar?.toggleAttribute('hidden', !active)
-  if (!active) return
+  if (!active) {
+    if (!ebookSessionActive.value) slider?.removeAttribute('aria-valuetext')
+    return
+  }
   const page = Math.max(1, Math.round(Number(pdfPage.value) || 1))
   const pageCount = Math.max(1, Math.round(Number(pdfPageCount.value) || 1))
   const normalizedProgress = Math.max(0, Math.min(1, Number(pdfProgress.value) || 0))
@@ -99,8 +109,10 @@ function syncPdfControls(active: boolean) {
   }
   document.getElementById('pdf-page-total')?.replaceChildren(`/ ${pageCount}`)
   document.getElementById('chapter-label')?.replaceChildren(`第 ${page} 页 / 共 ${pageCount} 页`)
-  const slider = document.getElementById('progress-slider') as HTMLInputElement | null
-  if (slider) slider.value = String(normalizedProgress)
+  if (slider) {
+    slider.value = String(normalizedProgress)
+    slider.setAttribute('aria-valuetext', `${Math.round(normalizedProgress * 100)}%，第 ${page} 页，共 ${pageCount} 页`)
+  }
   document.getElementById('progress-label')?.replaceChildren(`${Math.round(normalizedProgress * 100)}%`)
   document.getElementById('pdf-zoom-label')?.replaceChildren(`${Math.round((Number(pdfZoom.value) || 1) * 100)}%`)
 }
