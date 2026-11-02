@@ -1137,6 +1137,31 @@ describe('Vue reader shell', () => {
     wrapper.unmount()
   })
 
+  test('reports the selected reading flow and theme to assistive technologies', async () => {
+    localStorage.setItem('quiet-reader-settings', JSON.stringify({ theme: 'sepia', flow: 'scrolled' }))
+    const pinia = createPinia()
+    const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
+
+    expect(wrapper.find('.segmented').attributes()).toMatchObject({ role: 'group', 'aria-label': '阅读方式' })
+    expect(wrapper.find('.theme-options').attributes()).toMatchObject({ role: 'group', 'aria-label': '页面主题' })
+    expect(wrapper.find('[data-flow="paginated"]').attributes('aria-pressed')).toBe('false')
+    expect(wrapper.find('[data-flow="scrolled"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.find('[data-theme="paper"]').attributes()).toMatchObject({ 'aria-label': '纸张主题', 'aria-pressed': 'false' })
+    expect(wrapper.find('[data-theme="light"]').attributes()).toMatchObject({ 'aria-label': '明亮主题', 'aria-pressed': 'false' })
+    expect(wrapper.find('[data-theme="sepia"]').attributes()).toMatchObject({ 'aria-label': '暖黄主题', 'aria-pressed': 'true' })
+    expect(wrapper.find('[data-theme="dark"]').attributes()).toMatchObject({ 'aria-label': '深色主题', 'aria-pressed': 'false' })
+
+    await wrapper.find('[data-flow="paginated"]').trigger('click')
+    await wrapper.find('[data-theme="dark"]').trigger('click')
+
+    expect(wrapper.find('[data-flow="paginated"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.find('[data-flow="scrolled"]').attributes('aria-pressed')).toBe('false')
+    expect(wrapper.find('[data-theme="sepia"]').attributes('aria-pressed')).toBe('false')
+    expect(wrapper.find('[data-theme="dark"]').attributes('aria-pressed')).toBe('true')
+
+    wrapper.unmount()
+  })
+
   test('binds settings controls to Pinia state and Vue events', async () => {
     localStorage.setItem('quiet-reader-settings', JSON.stringify({
       theme: 'sepia',

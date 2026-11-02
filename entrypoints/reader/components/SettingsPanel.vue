@@ -26,7 +26,7 @@ function updateNumber(event: Event, update: (value: number) => Promise<boolean>)
     </div>
     <div class="setting-group ebook-setting">
       <label>阅读方式</label>
-      <div class="segmented"><button data-flow="paginated" :class="{ active: flow === 'paginated' }" @click="settings.updateFlow('paginated')">分页</button><button data-flow="scrolled" :class="{ active: flow === 'scrolled' }" @click="settings.updateFlow('scrolled')">滚动</button></div>
+      <div class="segmented" role="group" aria-label="阅读方式"><button type="button" data-flow="paginated" :class="{ active: flow === 'paginated' }" :aria-pressed="flow === 'paginated'" @click="settings.updateFlow('paginated')">分页</button><button type="button" data-flow="scrolled" :class="{ active: flow === 'scrolled' }" :aria-pressed="flow === 'scrolled'" @click="settings.updateFlow('scrolled')">滚动</button></div>
     </div>
     <div class="setting-group ebook-setting"><label for="font-select">正文字体</label><select id="font-select" :value="font" @change="updateFont"><option value="serif">宋体 / 衬线</option><option value="sans">黑体 / 无衬线</option><option value="system">系统字体</option></select></div>
     <div class="setting-group ebook-setting"><label for="font-size">字号 <output id="font-size-value">{{ fontSize }}</output></label><input id="font-size" type="range" min="14" max="32" :value="fontSize" @input="updateNumber($event, settings.updateFontSize)"></div>
@@ -34,7 +34,7 @@ function updateNumber(event: Event, update: (value: number) => Promise<boolean>)
     <div class="setting-group ebook-setting"><label for="page-width">栏宽 <output id="page-width-value">{{ pageWidth }}</output></label><input id="page-width" type="range" min="520" max="1000" step="20" :value="pageWidth" @input="updateNumber($event, settings.updatePageWidth)"></div>
     <div class="setting-group">
       <label>页面主题</label>
-      <div class="theme-options"><button data-theme="paper" title="纸张" class="paper" :class="{ active: theme === 'paper' }" @click="settings.updateTheme('paper')" /><button data-theme="light" title="明亮" class="light" :class="{ active: theme === 'light' }" @click="settings.updateTheme('light')" /><button data-theme="sepia" title="暖黄" class="sepia" :class="{ active: theme === 'sepia' }" @click="settings.updateTheme('sepia')" /><button data-theme="dark" title="深色" class="dark" :class="{ active: theme === 'dark' }" @click="settings.updateTheme('dark')" /></div>
+      <div class="theme-options" role="group" aria-label="页面主题"><button type="button" data-theme="paper" title="纸张" aria-label="纸张主题" class="paper" :class="{ active: theme === 'paper' }" :aria-pressed="theme === 'paper'" @click="settings.updateTheme('paper')" /><button type="button" data-theme="light" title="明亮" aria-label="明亮主题" class="light" :class="{ active: theme === 'light' }" :aria-pressed="theme === 'light'" @click="settings.updateTheme('light')" /><button type="button" data-theme="sepia" title="暖黄" aria-label="暖黄主题" class="sepia" :class="{ active: theme === 'sepia' }" :aria-pressed="theme === 'sepia'" @click="settings.updateTheme('sepia')" /><button type="button" data-theme="dark" title="深色" aria-label="深色主题" class="dark" :class="{ active: theme === 'dark' }" :aria-pressed="theme === 'dark'" @click="settings.updateTheme('dark')" /></div>
     </div>
     <p id="panel-tip" class="panel-tip">方向键翻页，Esc 收起面板</p>
   </aside>
