@@ -29,6 +29,40 @@ describe('Vue PDF annotation tools', () => {
     expect(remove).toHaveBeenCalledWith('annotation-1')
   })
 
+  test('gives each annotation action a concise and distinguishable accessible name', () => {
+    const pdf = usePdfSessionStore()
+    const annotations = usePdfAnnotationStore()
+    const book = record()
+    const first = book.annotations![0]!
+    first.text = '  12345678901234567890123👨‍👩‍👧‍👦   first extra context  '
+    book.annotations!.push({
+      ...first,
+      id: 'annotation-2',
+      locator: 'page:2',
+      page: 1,
+      text: '12345678901234567890123👨‍👩‍👧‍👦 second extra context',
+    })
+    pdf.record = { id: book.id, name: book.name, format: 'pdf' }
+    pdf.status = 'ready'
+    pdf.generation = 1
+    annotations.synchronizeSession({ record: book, generation: 1, zoom: 1, root: document.body })
+    const wrapper = mount(ToolsPanel, { attachTo: document.body })
+    const items = wrapper.findAll('.annotation-item')
+
+    expect(items.map(item => item.find('.annotation-select').attributes('aria-label'))).toEqual([
+      '选择批注 1：12345678901234567890123👨‍👩‍👧‍👦…（第 1 页）',
+      '选择批注 2：12345678901234567890123👨‍👩‍👧‍👦…（第 1 页）',
+    ])
+    expect(items.map(item => item.find('.text-button:not(.danger)').attributes('aria-label'))).toEqual([
+      '编辑批注 1：12345678901234567890123👨‍👩‍👧‍👦…（第 1 页）',
+      '编辑批注 2：12345678901234567890123👨‍👩‍👧‍👦…（第 1 页）',
+    ])
+    expect(items.map(item => item.find('.text-button.danger').attributes('aria-label'))).toEqual([
+      '删除批注 1：12345678901234567890123👨‍👩‍👧‍👦…（第 1 页）',
+      '删除批注 2：12345678901234567890123👨‍👩‍👧‍👦…（第 1 页）',
+    ])
+  })
+
   test('does not intercept an ebook highlighter click when no PDF is ready', async () => {
     const wrapper = mount(ToolsPanel, { attachTo: document.body })
     const listener = vi.fn()

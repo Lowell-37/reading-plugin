@@ -54,6 +54,9 @@ const annotationSort = computed({
   set: value => { annotationStore.value.sort = value },
 })
 const annotationError = computed(() => ebookAnnotationsActive.value ? ebookAnnotationRefs.error.value : pdfAnnotationRefs.error.value)
+const graphemeSegmenter = typeof Intl.Segmenter === 'function'
+  ? new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+  : null
 const searchStatus = computed(() => {
   if (ebookSessionActive.value) {
     if (ebookSearchStatus.value === 'searching') return ebookTotal.value ? `正在搜索，已找到 ${ebookTotal.value} 处…` : '正在搜索…'
@@ -210,6 +213,23 @@ function deleteAnnotation(annotation: typeof annotations.value[number]) {
   if (window.confirm('确定删除这条高亮或批注吗？')) void annotationStore.value.remove(annotation.id)
 }
 
+function annotationTextPreview(text: string) {
+  const normalized = text.replace(/\s+/g, ' ').trim()
+  const characters = graphemeSegmenter
+    ? Array.from(graphemeSegmenter.segment(normalized), part => part.segment)
+    : Array.from(normalized)
+  return characters.length > 24 ? `${characters.slice(0, 24).join('')}…` : normalized
+}
+
+function annotationActionLabel(action: '选择' | '编辑' | '删除', annotation: typeof annotations.value[number], ordinal: number) {
+  const location = annotation.kind === 'pdf' && annotation.page != null
+    ? `第 ${annotation.page} 页`
+    : annotation.kind === 'ebook' && annotation.section != null
+      ? `第 ${annotation.section + 1} 章`
+      : '位置未知'
+  return `${action}批注 ${ordinal}：${annotationTextPreview(annotation.text)}（${location}）`
+}
+
 function jumpToAnnotation(annotation: typeof annotations.value[number]) {
   if (annotation.kind === 'ebook' && annotation.locator) void ebook.goTo(annotation.locator)
   else if (annotation.page != null) void pdf.goTo(annotation.page)
@@ -312,11 +332,11 @@ onUnmounted(() => {
     <p v-if="annotationActive && annotationError" class="selection-hint" role="alert">{{ annotationError }} <button type="button" class="text-button" @click="annotationStore.retrySave()">重试保存</button></p>
     <div id="annotation-list" class="annotation-list">
       <template v-if="annotationActive">
-        <article v-for="annotation in visibleAnnotations" :key="annotation.id" class="annotation-item">
-          <input class="annotation-select" type="checkbox" :checked="selectedAnnotations.includes(annotation.id)" :aria-label="`选择${annotation.text}`" @change="toggleAnnotation(annotation.id, ($event.target as HTMLInputElement).checked)">
+        <article v-for="(annotation, annotationIndex) in visibleAnnotations" :key="annotation.id" class="annotation-item">
+          <input class="annotation-select" type="checkbox" :checked="selectedAnnotations.includes(annotation.id)" :aria-label="annotationActionLabel('选择', annotation, annotationIndex + 1)" @change="toggleAnnotation(annotation.id, ($event.target as HTMLInputElement).checked)">
           <button class="annotation-jump" type="button" @click="jumpToAnnotation(annotation)"><small>{{ annotation.kind === 'pdf' ? `第 ${annotation.page} 页` : `第 ${(annotation.section ?? 0) + 1} 章` }}</small><q>{{ annotation.text }}</q><p v-if="annotation.note">{{ annotation.note }}</p><small v-if="annotation.anchorStatus === 'unresolved'" class="annotation-anchor-status">定位待恢复</small><small v-if="annotation.tags?.length" class="annotation-tags">{{ annotation.tags.join('、') }}</small></button>
-          <button class="text-button" type="button" @click="editAnnotation(annotation)">编辑</button>
-          <button class="text-button danger" type="button" @click="deleteAnnotation(annotation)">删除</button>
+          <button class="text-button" type="button" :aria-label="annotationActionLabel('编辑', annotation, annotationIndex + 1)" @click="editAnnotation(annotation)">编辑</button>
+          <button class="text-button danger" type="button" :aria-label="annotationActionLabel('删除', annotation, annotationIndex + 1)" @click="deleteAnnotation(annotation)">删除</button>
         </article>
       </template>
     </div>
