@@ -21,6 +21,11 @@ test('root extension backs up and restores a real EPUB with reading progress', a
 
     await page.locator('#home-button').evaluate((element: HTMLElement) => element.click())
     await expect(page.locator('.library-card')).toHaveCount(1)
+    await expect.poll(() => rootLibraryCardLayout(page)).toEqual({
+      display: 'grid',
+      padding: '16px',
+      coverAndInfoAreSideBySide: true,
+    })
     const downloadPromise = page.waitForEvent('download')
     await page.locator('#backup-library').click()
     const download = await downloadPromise
@@ -100,4 +105,19 @@ async function launchRootExtension(profilePath = ''): Promise<{ context: Browser
 
 async function progress(page: Page) {
   return Number(await page.locator('#progress-slider').inputValue())
+}
+
+async function rootLibraryCardLayout(page: Page) {
+  return page.locator('.library-card').evaluate(card => {
+    const cover = card.querySelector<HTMLElement>('.mini-cover')!
+    const info = card.querySelector<HTMLElement>('.card-info')!
+    const cardStyle = getComputedStyle(card)
+    const coverRect = cover.getBoundingClientRect()
+    const infoRect = info.getBoundingClientRect()
+    return {
+      display: cardStyle.display,
+      padding: cardStyle.padding,
+      coverAndInfoAreSideBySide: coverRect.right <= infoRect.left && Math.abs(coverRect.top - infoRect.top) < 1,
+    }
+  })
 }

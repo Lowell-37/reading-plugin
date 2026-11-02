@@ -144,7 +144,21 @@ test('@wxt-vue Vue library imports, reopens, deletes and restores a real annotat
 
     await page.reload()
     await expect(page.locator('.library-card')).toHaveCount(1)
-    await page.locator('.library-card').click()
+    const openBook = page.getByRole('button', { name: /^继续阅读《.+》，进度 \d+%$/ })
+    await expect(openBook).toHaveCount(1)
+    await expect(page.getByRole('button', { name: /^从书架移除《.+》$/ })).toHaveCount(1)
+    await expect.poll(() => page.locator('.card-title').evaluate(title => {
+      title.textContent = 'A deliberately long library title that must wrap beyond two visible lines '.repeat(4)
+      const style = getComputedStyle(title)
+      const lineHeight = Number.parseFloat(style.lineHeight)
+      return {
+        lineClamp: style.webkitLineClamp,
+        limitedToTwoLines: title.clientHeight <= lineHeight * 2.05,
+        clipsOverflowingText: title.scrollHeight > title.clientHeight,
+      }
+    })).toEqual({ lineClamp: '2', limitedToTwoLines: true, clipsOverflowingText: true })
+    await openBook.focus()
+    await page.keyboard.press('Enter')
     await expect(page.locator('#loading-view')).toBeHidden({ timeout: 45_000 })
     await expect.poll(() => progress(page)).toBeGreaterThanOrEqual(saved.progress * 0.8)
     await page.locator('#tools-button').click()
@@ -166,7 +180,7 @@ test('@wxt-vue Vue library imports, reopens, deletes and restores a real annotat
     await expect(page.locator('#backup-status')).toHaveAttribute('data-state', 'restored')
     await expect(page.locator('.library-card')).toHaveCount(1)
 
-    await page.locator('.library-card').click()
+    await page.locator('.library-card-open').click()
     await expect(page.locator('#loading-view')).toBeHidden({ timeout: 45_000 })
     await expect.poll(() => progress(page)).toBeGreaterThanOrEqual(saved.progress * 0.8)
     await page.locator('#tools-button').click()

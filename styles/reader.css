@@ -90,15 +90,19 @@ body.header-collapsed .settings-panel,body.header-collapsed .tools-panel { top:1
 .book-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:16px; }
 .library-card { display:grid; grid-template-columns:64px minmax(0,1fr); gap:15px; min-height:112px; padding:16px; border-radius:18px; border:1px solid var(--line); background:var(--surface); cursor:pointer; text-align:left; position:relative; transition:transform .18s,box-shadow .18s,border-color .18s; }
 .library-card:hover { transform:translateY(-3px); box-shadow:0 14px 30px rgba(45,35,25,.09); border-color:color-mix(in srgb,var(--accent) 30%,transparent); }
+.library-card-vue { display:block; padding:0; overflow:hidden; cursor:default; }
+.library-card-open { display:grid; grid-template-columns:64px minmax(0,1fr); gap:15px; width:100%; min-height:110px; padding:16px; border:0; border-radius:inherit; background:transparent; color:inherit; cursor:pointer; font:inherit; text-align:left; }
+.library-card-open:focus-visible { outline-offset:-4px; }
 .mini-cover { width:64px; height:82px; border-radius:4px 8px 8px 4px; background:linear-gradient(145deg,var(--accent),var(--accent-dark)); color:#fff; display:grid; place-items:center; font:650 25px ui-serif,serif; box-shadow:0 8px 18px color-mix(in srgb,var(--accent) 20%,transparent); overflow:hidden; }
 .mini-cover img { width:100%; height:100%; object-fit:cover; }
-.card-info { min-width:0; padding-top:3px; }
+.card-info { display:block; min-width:0; padding-top:3px; }
+.card-author,.card-meta,.card-progress { display:block; }
 .card-title { font:650 14px/1.45 ui-serif,"Noto Serif SC",serif; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
 .card-meta { margin-top:7px; color:var(--muted); font-size:10px; text-transform:uppercase; letter-spacing:.06em; }
 .card-progress { height:2px; background:var(--line); border-radius:2px; margin-top:13px; overflow:hidden; }
 .card-progress span { display:block; height:100%; background:var(--accent); }
 .delete-book { position:absolute; right:8px; top:7px; width:26px; height:26px; border:0; border-radius:8px; background:transparent; color:var(--faint); opacity:0; cursor:pointer; }
-.library-card:hover .delete-book { opacity:1; }
+.library-card:hover .delete-book,.library-card:focus-within .delete-book { opacity:1; }
 .delete-book:hover { color:var(--accent); background:var(--accent-soft); }
 
 .reader-view { height:calc(100% - var(--header-height)); position:relative; }

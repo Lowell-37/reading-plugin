@@ -99,23 +99,21 @@ async function restoreBackup(event: Event) {
         <article
           v-for="record in books"
           :key="record.id"
-          class="library-card"
-          tabindex="0"
-          @click="library.openRecord(record).catch(console.error)"
-          @keydown.enter.prevent="library.openRecord(record).catch(console.error)"
-          @keydown.space.prevent="library.openRecord(record).catch(console.error)"
+          class="library-card library-card-vue"
         >
-          <div class="mini-cover">
-            <img v-if="coverUrls[record.id]" :src="coverUrls[record.id]" :alt="`${title(record)}封面`">
-            <template v-else>{{ title(record).slice(0, 1) || '书' }}</template>
-          </div>
-          <div class="card-info">
-            <div class="card-title">{{ title(record) }}</div>
-            <div class="card-author">{{ author(record) }}</div>
-            <div class="card-meta">{{ record.format.toUpperCase() }} · {{ formatBytes(record.size) }}</div>
-            <div class="card-progress" :aria-label="`阅读进度 ${progress(record)}%`"><span :style="{ width: `${progress(record)}%` }" /></div>
-          </div>
-          <button class="delete-book" type="button" aria-label="从书架移除" @click.stop="library.remove(record.id).catch(console.error)">×</button>
+          <button class="library-card-open" type="button" :aria-label="`继续阅读《${title(record)}》，进度 ${progress(record)}%`" @click="library.openRecord(record).catch(console.error)">
+            <span class="mini-cover">
+              <img v-if="coverUrls[record.id]" :src="coverUrls[record.id]" :alt="`${title(record)}封面`">
+              <template v-else>{{ title(record).slice(0, 1) || '书' }}</template>
+            </span>
+            <span class="card-info">
+              <span class="card-title">{{ title(record) }}</span>
+              <span class="card-author">{{ author(record) }}</span>
+              <span class="card-meta">{{ record.format.toUpperCase() }} · {{ formatBytes(record.size) }}</span>
+              <span class="card-progress" :aria-label="`阅读进度 ${progress(record)}%`"><span :style="{ width: `${progress(record)}%` }" /></span>
+            </span>
+          </button>
+          <button class="delete-book" type="button" :aria-label="`从书架移除《${title(record)}》`" @click.stop="library.remove(record.id).catch(console.error)">×</button>
         </article>
       </div>
     </section>

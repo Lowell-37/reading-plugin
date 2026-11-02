@@ -918,6 +918,34 @@ describe('Vue reader shell', () => {
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:cover-2')
   })
 
+  test('exposes distinct book actions without opening a book when it is removed', async () => {
+    const pinia = createPinia()
+    const library = useLibraryStore(pinia)
+    const record = libraryRecord('first.epub', 0.42)
+    library.books = [record]
+    const openRecord = vi.spyOn(library, 'openRecord').mockResolvedValue(undefined)
+    const remove = vi.spyOn(library, 'remove').mockResolvedValue(undefined)
+    const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
+
+    const openAction = wrapper.find<HTMLButtonElement>('.library-card-open')
+    expect(openAction.element.tagName).toBe('BUTTON')
+    expect(openAction.attributes('type')).toBe('button')
+    expect(openAction.attributes('aria-label')).toBe('继续阅读《First title》，进度 42%')
+    expect(wrapper.find('.delete-book').attributes('aria-label')).toBe('从书架移除《First title》')
+
+    await openAction.trigger('click')
+    expect(openRecord).toHaveBeenCalledOnce()
+    expect(openRecord).toHaveBeenCalledWith(record)
+
+    openRecord.mockClear()
+    await wrapper.find('.delete-book').trigger('click')
+    expect(remove).toHaveBeenCalledOnce()
+    expect(remove).toHaveBeenCalledWith(record.id)
+    expect(openRecord).not.toHaveBeenCalled()
+
+    wrapper.unmount()
+  })
+
   test('routes hidden file input and drop events through the library store once', async () => {
     const pinia = createPinia()
     const library = useLibraryStore(pinia)
@@ -1182,7 +1210,7 @@ describe('Vue reader shell', () => {
   })
 })
 
-function libraryRecord(name: string, fraction: number, cover: Blob): BookRecord {
+function libraryRecord(name: string, fraction: number, cover?: Blob): BookRecord {
   const format = name.endsWith('.pdf') ? 'pdf' : 'epub'
   const first = name.startsWith('first')
   return {

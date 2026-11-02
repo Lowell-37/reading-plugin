@@ -33,7 +33,7 @@ test.describe('@wxt-annotations', () => {
         await expect(page.locator('#annotation-list .annotation-item')).toContainText('Important passage')
         await page.locator('#home-button').evaluate((button: HTMLElement) => button.click())
         await page.reload()
-        await page.locator('.library-card').first().evaluate((card: HTMLElement) => card.click())
+        await page.locator('.library-card-open').first().evaluate((button: HTMLElement) => button.click())
         await expect(page.locator('#loading-view')).toBeHidden({ timeout: 45_000 })
         await page.locator('#tools-button').evaluate((button: HTMLElement) => button.click())
         await expect(page.locator('#annotation-count')).toHaveText('1 条')

@@ -74,7 +74,7 @@ test('@wxt-data root → WXT → root preserves and extends the same local libra
         aiApiKey: 'local-secret-must-stay-local',
       })
 
-      await wxt.page.locator('.library-card').first().evaluate((card: HTMLElement) => card.click())
+      await wxt.page.locator('.library-card-open').first().evaluate((button: HTMLElement) => button.click())
       await expect(wxt.page.locator('#loading-view')).toBeHidden({ timeout: 30_000 })
       await expect.poll(async () => Number(await wxt.page.locator('#progress-slider').inputValue()))
         .toBeCloseTo(rootState.books[0].progress.fraction, 3)
