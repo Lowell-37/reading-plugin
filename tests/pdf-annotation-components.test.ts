@@ -24,6 +24,12 @@ describe('Vue PDF annotation tools', () => {
     const wrapper = mount(ToolsPanel, { attachTo: document.body })
 
     expect(wrapper.findAll('.annotation-item')).toHaveLength(1)
+    expect(wrapper.find('#annotation-count').attributes()).toMatchObject({
+      role: 'status',
+      'aria-live': 'polite',
+      'aria-atomic': 'true',
+      'aria-label': '批注总数',
+    })
     await wrapper.find('.annotation-item .danger').trigger('click')
 
     expect(remove).toHaveBeenCalledWith('annotation-1')

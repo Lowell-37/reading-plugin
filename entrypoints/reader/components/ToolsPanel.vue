@@ -308,7 +308,7 @@ onUnmounted(() => {
       </div>
     </section>
     <div class="tool-divider" />
-    <div class="annotation-heading"><strong>高亮与批注</strong><span id="annotation-count">{{ annotationActive ? `${annotations.length} 条` : '0 条' }}</span></div>
+    <div class="annotation-heading"><strong>高亮与批注</strong><span id="annotation-count" role="status" aria-live="polite" aria-atomic="true" aria-label="批注总数">{{ annotationActive ? `${annotations.length} 条` : '0 条' }}</span></div>
     <p class="selection-hint">在正文中选中文字，然后高亮或添加批注。</p>
     <div class="selection-actions"><button id="highlight-selection" type="button" @click.capture="captureAnnotation($event, false)">高亮选中</button><button id="note-selection" type="button" @click.capture="captureAnnotation($event, true)">添加批注</button></div>
     <div class="annotation-filters">
