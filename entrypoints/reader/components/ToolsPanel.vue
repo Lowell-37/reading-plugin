@@ -330,9 +330,9 @@ onUnmounted(() => {
     </div>
     <p v-if="annotationActive && annotationMessage" class="selection-hint" role="status">{{ annotationMessage }}</p>
     <p v-if="annotationActive && annotationError" class="selection-hint" role="alert">{{ annotationError }} <button type="button" class="text-button" @click="annotationStore.retrySave()">重试保存</button></p>
-    <div id="annotation-list" class="annotation-list">
+    <div id="annotation-list" class="annotation-list" role="list" aria-label="批注列表">
       <template v-if="annotationActive">
-        <article v-for="(annotation, annotationIndex) in visibleAnnotations" :key="annotation.id" class="annotation-item">
+        <article v-for="(annotation, annotationIndex) in visibleAnnotations" :key="annotation.id" class="annotation-item" role="listitem">
           <input class="annotation-select" type="checkbox" :checked="selectedAnnotations.includes(annotation.id)" :aria-label="annotationActionLabel('选择', annotation, annotationIndex + 1)" @change="toggleAnnotation(annotation.id, ($event.target as HTMLInputElement).checked)">
           <button class="annotation-jump" type="button" @click="jumpToAnnotation(annotation)"><small>{{ annotation.kind === 'pdf' ? `第 ${annotation.page} 页` : `第 ${(annotation.section ?? 0) + 1} 章` }}</small><q>{{ annotation.text }}</q><p v-if="annotation.note">{{ annotation.note }}</p><small v-if="annotation.anchorStatus === 'unresolved'" class="annotation-anchor-status">定位待恢复</small><small v-if="annotation.tags?.length" class="annotation-tags">{{ annotation.tags.join('、') }}</small></button>
           <button class="text-button" type="button" :aria-label="annotationActionLabel('编辑', annotation, annotationIndex + 1)" @click="editAnnotation(annotation)">编辑</button>

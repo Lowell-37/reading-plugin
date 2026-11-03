@@ -55,6 +55,8 @@ describe('Vue PDF annotation tools', () => {
     const wrapper = mount(ToolsPanel, { attachTo: document.body })
     const items = wrapper.findAll('.annotation-item')
 
+    expect(wrapper.find('#annotation-list').attributes()).toMatchObject({ role: 'list', 'aria-label': '批注列表' })
+    expect(items.every(item => item.attributes('role') === 'listitem')).toBe(true)
     expect(items.map(item => item.find('.annotation-select').attributes('aria-label'))).toEqual([
       '选择批注 1：12345678901234567890123👨‍👩‍👧‍👦…（第 1 页）',
       '选择批注 2：12345678901234567890123👨‍👩‍👧‍👦…（第 1 页）',

@@ -22,6 +22,7 @@ test.describe('@wxt-annotations', () => {
         await page.locator('#highlight-selection').click()
         await expect(page.locator('#annotation-count')).toHaveText('1 条')
         await expect(page.getByRole('status', { name: '批注总数' })).toHaveText('1 条')
+        await expect(page.getByRole('list', { name: '批注列表' }).getByRole('listitem')).toHaveCount(1)
         await expect(page.locator('#annotation-list .annotation-item')).toHaveCount(1)
         const editAnnotation = page.getByRole('button', { name: /^编辑批注 \d+：/ })
         await expect(editAnnotation).toHaveCount(1)
