@@ -18,6 +18,8 @@ test.describe('@wxt-annotations', () => {
         await page.locator('#toc button').nth(5).click()
         await page.locator('#sidebar-button').evaluate((button: HTMLElement) => button.click())
         await page.locator('#tools-button').evaluate((button: HTMLElement) => button.click())
+        await expect(page.getByRole('group', { name: '批注筛选与批量操作' })).toBeVisible()
+        await expect(page.locator('#annotation-filter-query')).toHaveAttribute('aria-controls', 'annotation-list')
         await selectVisibleText(page)
         await page.locator('#highlight-selection').click()
         await expect(page.locator('#annotation-count')).toHaveText('1 条')

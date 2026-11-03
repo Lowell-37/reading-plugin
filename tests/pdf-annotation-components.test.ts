@@ -89,6 +89,10 @@ describe('Vue PDF annotation tools', () => {
     pdf.status = 'ready'
     annotations.synchronizeSession({ record: book, generation: 1, zoom: 1, root: document.body })
     const wrapper = mount(ToolsPanel, { attachTo: document.body })
+    expect(wrapper.find('.annotation-filters').attributes()).toMatchObject({ role: 'group', 'aria-label': '批注筛选与批量操作' })
+    for (const selector of ['#annotation-filter-query', '#annotation-filter-type', '#annotation-sort', '#annotation-select-all', '#annotation-delete-selected']) {
+      expect(wrapper.find(selector).attributes('aria-controls')).toBe('annotation-list')
+    }
     const legacyFilter = vi.fn(() => wrapper.find('#annotation-list').element.replaceChildren())
     wrapper.find('#annotation-filter-query').element.addEventListener('input', legacyFilter)
     const input = wrapper.find('#annotation-filter-query')
@@ -96,6 +100,8 @@ describe('Vue PDF annotation tools', () => {
     expect(annotations.query).toBe('Selected')
     expect(legacyFilter).not.toHaveBeenCalled()
     expect(wrapper.findAll('.annotation-item')).toHaveLength(1)
+    await wrapper.find('.annotation-select').setValue(true)
+    expect(wrapper.find('#annotation-delete-selected').attributes('aria-label')).toBe('删除所选（已选择 1 条）')
   })
 
   test('routes PDF annotation JSON import through the store, not the legacy listener', async () => {

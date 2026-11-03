@@ -220,6 +220,7 @@ test.describe('@wxt-pdf-session', () => {
       expect(archive.annotations[0].note).toBe('Updated note')
       expect(archive.annotations[0].tags).toContain('test-tag')
       await click(page, '#annotation-select-all')
+      await expect(page.locator('#annotation-delete-selected')).toHaveAttribute('aria-label', '删除所选（已选择 1 条）')
       page.once('dialog', dialog => dialog.accept())
       await click(page, '#annotation-delete-selected')
       await expect(page.locator('#annotation-list .annotation-item')).toHaveCount(0)

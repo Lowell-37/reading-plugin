@@ -311,16 +311,16 @@ onUnmounted(() => {
     <div class="annotation-heading"><strong>高亮与批注</strong><span id="annotation-count" role="status" aria-live="polite" aria-atomic="true" aria-label="批注总数">{{ annotationActive ? `${annotations.length} 条` : '0 条' }}</span></div>
     <p class="selection-hint">在正文中选中文字，然后高亮或添加批注。</p>
     <div class="selection-actions"><button id="highlight-selection" type="button" @click.capture="captureAnnotation($event, false)">高亮选中</button><button id="note-selection" type="button" @click.capture="captureAnnotation($event, true)">添加批注</button></div>
-    <div class="annotation-filters">
-      <input id="annotation-filter-query" v-model="annotationQuery" type="search" placeholder="筛选原文、批注或标签" aria-label="筛选批注" @input.capture="filterAnnotationsInput">
-      <select id="annotation-filter-type" v-model="annotationType" aria-label="批注类型" @change.capture="filterAnnotationsType">
+    <div class="annotation-filters" role="group" aria-label="批注筛选与批量操作">
+      <input id="annotation-filter-query" v-model="annotationQuery" type="search" placeholder="筛选原文、批注或标签" aria-label="筛选批注" aria-controls="annotation-list" @input.capture="filterAnnotationsInput">
+      <select id="annotation-filter-type" v-model="annotationType" aria-label="批注类型" aria-controls="annotation-list" @change.capture="filterAnnotationsType">
         <option value="all">全部</option><option value="notes">有批注</option><option value="highlights">仅高亮</option><option value="pdf">PDF</option><option value="ebook">电子书</option>
       </select>
-      <select id="annotation-sort" v-model="annotationSort" aria-label="批注排序" @change.capture="sortAnnotationsInput">
+      <select id="annotation-sort" v-model="annotationSort" aria-label="批注排序" aria-controls="annotation-list" @change.capture="sortAnnotationsInput">
         <option value="newest">最近修改</option><option value="oldest">最早创建</option><option value="location">阅读位置</option>
       </select>
-      <button id="annotation-select-all" class="text-button" type="button" @click.capture="selectAllAnnotations">全选当前</button>
-      <button id="annotation-delete-selected" class="text-button danger" type="button" :disabled="!annotationActive || !selectedAnnotations.length" @click.capture="deleteSelectedAnnotations">删除所选</button>
+      <button id="annotation-select-all" class="text-button" type="button" aria-controls="annotation-list" @click.capture="selectAllAnnotations">全选当前</button>
+      <button id="annotation-delete-selected" class="text-button danger" type="button" aria-controls="annotation-list" :aria-label="selectedAnnotations.length ? `删除所选（已选择 ${selectedAnnotations.length} 条）` : '删除所选'" :disabled="!annotationActive || !selectedAnnotations.length" @click.capture="deleteSelectedAnnotations">删除所选</button>
     </div>
     <div class="annotation-export-actions">
       <button id="import-annotations-json" class="text-button" type="button" @click.capture="openAnnotationImport">导入 JSON</button>
