@@ -90,9 +90,11 @@ test.describe('@wxt-pdf-session', () => {
   test('real PDF text, page outline, navigation, zoom bounds and durable reopening', async () => {
     const { context, page, pageErrors } = await launchExtension(extension)
     try {
+      await expect(page.getByRole('button', { name: '静读书架' })).toBeVisible()
       await page.locator('#file-input').setInputFiles(realPdf)
       await expect(page.locator('#loading-view')).toBeHidden()
       await expect(page.locator('#reader-view')).toHaveClass(/pdf-session-active/)
+      await expect(page.getByRole('button', { name: '返回书架' })).toBeVisible()
       await expect(page.locator('#pdf-page-total')).toHaveText('/ 14')
       await expect(page.getByRole('region', { name: '阅读内容' })).toHaveAttribute('aria-keyshortcuts', 'ArrowLeft ArrowRight PageUp PageDown')
       await expect(page.locator('#prev-button')).toHaveCSS('display', 'none')

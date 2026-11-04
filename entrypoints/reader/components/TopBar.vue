@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick } from 'vue'
+import { computed, nextTick } from 'vue'
 import { storeToRefs } from 'pinia'
 import type { ReaderPanel } from '../reader-types'
 import { focusReaderPanel } from '../panel-focus'
@@ -16,6 +16,7 @@ const ebook = useEbookSessionStore()
 const pdf = usePdfSessionStore()
 const { title, activePanel } = storeToRefs(reader)
 const { headerCollapsed } = storeToRefs(settings)
+const homeLabel = computed(() => ebook.record || pdf.record ? '返回书架' : '静读书架')
 
 function openFilePicker() {
   document.getElementById('file-input')?.click()
@@ -51,7 +52,7 @@ async function closeReader() {
       <button id="sidebar-button" class="icon-button reader-only" aria-label="打开目录" aria-controls="sidebar" :aria-expanded="activePanel === 'toc'" title="目录" @click="togglePanel('toc')">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
       </button>
-      <button id="home-button" class="brand" title="返回书架" @click="closeReader().catch(console.error)">
+      <button id="home-button" class="brand" :aria-label="homeLabel" :title="homeLabel" @click="closeReader().catch(console.error)">
         <span class="brand-mark">静</span><span class="brand-name">静读</span>
       </button>
       <div class="book-heading reader-only">

@@ -126,6 +126,29 @@ describe('Vue reader shell', () => {
     })
   })
 
+  test('names the brand button for the library and every active reader session', async () => {
+    const pinia = createPinia()
+    const ebook = useEbookSessionStore(pinia)
+    const pdf = usePdfSessionStore(pinia)
+    const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
+
+    expect(wrapper.find('#home-button').attributes('aria-label')).toBe('静读书架')
+    ebook.record = { id: 'book', name: 'book.epub', format: 'epub' }
+    await nextTick()
+    expect(wrapper.find('#home-button').attributes('aria-label')).toBe('返回书架')
+
+    ebook.record = null
+    pdf.record = { id: 'bad-pdf', name: 'bad.pdf', format: 'pdf' }
+    pdf.status = 'error'
+    await nextTick()
+    expect(wrapper.find('#home-button').attributes('aria-label')).toBe('返回书架')
+
+    pdf.record = null
+    await nextTick()
+    expect(wrapper.find('#home-button').attributes('aria-label')).toBe('静读书架')
+    wrapper.unmount()
+  })
+
   test('routes ebook TOC, navigation, close, and flow controls through the ebook session store', async () => {
     const pinia = createPinia()
     const reader = useReaderStore(pinia)

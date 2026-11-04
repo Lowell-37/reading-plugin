@@ -10,9 +10,11 @@ test.describe('@wxt-session', () => {
     test(`WXT Vue session reads real ${format.toUpperCase()} content and restores it`, async () => {
       const { context, page, pageErrors } = await launchExtension(wxtExtension)
       try {
+        await expect(page.getByRole('button', { name: '静读书架' })).toBeVisible()
         await openBook(page, `alice.${format}`)
         await expect(page.locator('#reader-view')).toHaveClass(/ebook-session-active/)
         await expect(page.locator('#header-title')).toContainText(/Alice/i)
+        await expect(page.getByRole('button', { name: '返回书架' })).toBeVisible()
         await expect(page.getByRole('button', { name: '上一页' })).toHaveAttribute('aria-controls', 'ebook-host')
         await expect(page.getByRole('button', { name: '下一页' })).toHaveAttribute('aria-keyshortcuts', 'ArrowRight PageDown')
         await expect.poll(() => foliateContentDocumentCount(page)).toBeGreaterThan(0)
