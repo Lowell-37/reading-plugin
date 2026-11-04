@@ -84,10 +84,10 @@ async function restoreBackup(event: Event) {
       </label>
       <p class="drop-hint">也可以直接拖到这里</p>
       <div class="format-row"><span>PDF</span><span>EPUB</span><span>MOBI</span><span>AZW3</span></div>
-      <div class="library-backup-actions" aria-label="书库备份与恢复">
+      <div class="library-backup-actions" role="group" aria-label="书库备份与恢复">
         <button id="backup-library" class="soft-button" type="button" :disabled="backupState === 'working'" @click="library.backup().catch(console.error)">备份书库</button>
         <button id="restore-library" class="soft-button" type="button" :disabled="backupState === 'working'" @click="openBackupPicker">恢复备份</button>
-        <span id="backup-status" aria-live="polite" :data-state="backupState">{{ backupStatus }}</span>
+        <span id="backup-status" role="status" aria-live="polite" aria-atomic="true" aria-label="备份状态" :data-state="backupState">{{ backupStatus }}</span>
       </div>
       <input ref="backupInput" id="backup-file-input" type="file" accept=".quietreader,application/vnd.quiet-reader.backup" hidden @change="restoreBackup">
     </section>
@@ -95,11 +95,12 @@ async function restoreBackup(event: Event) {
       <div class="section-heading">
         <div><p class="eyebrow">YOUR LIBRARY</p><h2>最近阅读</h2></div><p>点击书籍，继续上次的位置</p>
       </div>
-      <div id="book-grid" class="book-grid">
+      <div id="book-grid" class="book-grid" role="list" aria-label="书架">
         <article
           v-for="record in books"
           :key="record.id"
           class="library-card library-card-vue"
+          role="listitem"
         >
           <button class="library-card-open" type="button" :aria-label="`继续阅读《${title(record)}》，进度 ${progress(record)}%`" @click="library.openRecord(record).catch(console.error)">
             <span class="mini-cover">

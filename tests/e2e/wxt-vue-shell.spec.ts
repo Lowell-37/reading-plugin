@@ -138,6 +138,9 @@ test('@wxt-vue Vue library imports, reopens, deletes and restores a real annotat
     await page.locator('#home-button').click()
     await expect(page.locator('#welcome-view')).toBeVisible()
     await expect(page.locator('.library-card')).toHaveCount(1)
+    await expect(page.getByRole('group', { name: '书库备份与恢复' })).toBeVisible()
+    await expect(page.getByRole('list', { name: '书架' }).getByRole('listitem')).toHaveCount(1)
+    await expect(page.getByRole('status', { name: '备份状态' })).toBeAttached()
     const saved = await storedBookState(page)
     expect(saved.progress).toBeGreaterThan(0)
     expect(saved.notes).toContain('Vue library annotation')
@@ -173,6 +176,7 @@ test('@wxt-vue Vue library imports, reopens, deletes and restores a real annotat
     const backupPath = await download.path()
     expect(backupPath).toBeTruthy()
     await expect(page.locator('#backup-status')).toHaveAttribute('data-state', 'exported')
+    await expect(page.getByRole('status', { name: '备份状态' })).not.toBeEmpty()
 
     await page.locator('.delete-book').click()
     await expect(page.locator('.library-card')).toHaveCount(0)

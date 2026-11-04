@@ -942,7 +942,13 @@ describe('Vue reader shell', () => {
     const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
 
     expect(wrapper.find('#library-section').attributes('hidden')).toBeUndefined()
+    expect(wrapper.find('.library-backup-actions').attributes()).toMatchObject({ role: 'group', 'aria-label': '书库备份与恢复' })
+    expect(wrapper.find('#backup-status').attributes()).toMatchObject({
+      role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true', 'aria-label': '备份状态',
+    })
+    expect(wrapper.find('#book-grid').attributes()).toMatchObject({ role: 'list', 'aria-label': '书架' })
     expect(wrapper.findAll('.library-card')).toHaveLength(1)
+    expect(wrapper.find('.library-card').attributes('role')).toBe('listitem')
     expect(wrapper.find('.card-title').text()).toBe('First title')
     expect(wrapper.find('.card-author').text()).toBe('First author')
     expect(wrapper.find('.card-meta').text()).toMatch(/EPUB.*4 B/)
