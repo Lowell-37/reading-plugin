@@ -146,6 +146,19 @@ describe('Foliate ebook session', () => {
     expect(harness.view.targets).toContain('cfi:needle')
   })
 
+  test('seeks fractional targets in paginated and scrolled flow', async () => {
+    const harness = createHarness()
+    const session = createFoliateEbookSession(harness.dependencies)
+    await session.open(record('seek.epub'), readerSettings())
+
+    await session.goTo({ fraction: 0.6 })
+    await session.setFlow('scrolled')
+    await session.goTo({ fraction: 0.8 })
+
+    expect(harness.view.fractionTargets).toEqual([0.6])
+    expect(harness.scroller.fractionTargets).toEqual([0.8])
+  })
+
   test('invalidates an in-flight ebook search when the session closes', async () => {
     const harness = createHarness()
     const session = createFoliateEbookSession(harness.dependencies)
@@ -853,6 +866,7 @@ class FakeScroller extends EventTarget {
   mountTargets: unknown[] = []
   pageDirections: Array<-1 | 1> = []
   annotationLists: Annotation[][] = []
+  fractionTargets: number[] = []
 
   constructor(
     private readonly events: string[],
@@ -874,7 +888,7 @@ class FakeScroller extends EventTarget {
 
   currentLocation() { return this.location }
   async goTo() {}
-  async goToFraction() {}
+  async goToFraction(fraction: number) { this.fractionTargets.push(fraction) }
   async scrollByPage(direction: -1 | 1) { this.pageDirections.push(direction) }
   setStyles() {}
   setAnnotations(annotations: Annotation[]) { this.annotationLists.push([...annotations]) }

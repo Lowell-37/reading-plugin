@@ -42,8 +42,13 @@ test.describe('@wxt-session', () => {
         await page.locator('#settings-button').evaluate((button: HTMLElement) => button.click())
         await page.locator('[data-flow="scrolled"]').evaluate((button: HTMLElement) => button.click())
         await expect(page.locator('.continuous-ebook')).toBeVisible()
+        await seekProgress(page, 0.7)
+        await expect.poll(() => progress(page)).toBeGreaterThan(0.55)
         await page.locator('[data-flow="paginated"]').evaluate((button: HTMLElement) => button.click())
         await expect(page.locator('.continuous-ebook')).toHaveCount(0)
+        await seekProgress(page, 0.35)
+        await expect.poll(() => progress(page)).toBeGreaterThan(0.2)
+        await expect.poll(() => progress(page)).toBeLessThan(0.5)
         await page.locator('#close-settings').evaluate((button: HTMLElement) => button.click())
         await expect.poll(() => storedProgress(page)).toBeGreaterThan(0)
         const savedProgress = await storedProgress(page)
@@ -203,6 +208,13 @@ async function openBook(page: Page, name: string) {
 
 async function progress(page: Page) {
   return Number(await page.locator('#progress-slider').inputValue())
+}
+
+async function seekProgress(page: Page, fraction: number) {
+  await page.locator('#progress-slider').evaluate((input: HTMLInputElement, value) => {
+    input.value = String(value)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  }, fraction)
 }
 
 async function continuousChapterText(page: Page, sectionIndex: number) {

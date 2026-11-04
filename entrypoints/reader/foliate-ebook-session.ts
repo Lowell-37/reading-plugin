@@ -142,6 +142,12 @@ export function createFoliateEbookSession(
   }
 
   async function goTo(target: unknown): Promise<void> {
+    const fraction = fractionFromTarget(target)
+    if (fraction !== null) {
+      if (currentScroller) await currentScroller.goToFraction(fraction)
+      else if (currentView) await currentView.goToFraction(fraction)
+      return
+    }
     if (currentScroller) await currentScroller.goTo(target)
     else if (currentView) await currentView.goTo(target)
   }
@@ -670,6 +676,12 @@ function settingFlow(settings: ReaderSettings): EbookSessionFlow {
 
 function normalizeFraction(value: unknown): number {
   return Math.max(0, Math.min(1, Number(value) || 0))
+}
+
+function fractionFromTarget(target: unknown): number | null {
+  if (!target || typeof target !== 'object' || Array.isArray(target) || !('fraction' in target)) return null
+  const fraction = (target as { fraction?: unknown }).fraction
+  return typeof fraction === 'number' && Number.isFinite(fraction) ? normalizeFraction(fraction) : null
 }
 
 function finiteNumber(value: unknown, fallback: number): number {

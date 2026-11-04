@@ -726,6 +726,27 @@ describe('Vue reader shell', () => {
     wrapper.unmount()
   })
 
+  test('routes ebook progress input to a fractional session target', async () => {
+    const pinia = createPinia()
+    const reader = useReaderStore(pinia)
+    const ebook = useEbookSessionStore(pinia)
+    ebook.record = { id: 'book', name: 'book.epub', format: 'epub' }
+    ebook.status = 'ready'
+    reader.applyEbookSessionSnapshot(ebookSnapshot({ status: 'ready', progress: 0.2 }))
+    const goTo = vi.spyOn(ebook, 'goTo').mockResolvedValue(undefined)
+    const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
+    const legacyInput = vi.fn()
+    const slider = wrapper.find<HTMLInputElement>('#progress-slider')
+    slider.element.addEventListener('input', legacyInput)
+    slider.element.value = '0.8'
+
+    await slider.trigger('input')
+
+    expect(goTo).toHaveBeenCalledExactlyOnceWith({ fraction: 0.8 })
+    expect(legacyInput).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   test('closes an active ebook panel and scrim before returning to the library', async () => {
     const pinia = createPinia()
     const reader = useReaderStore(pinia)

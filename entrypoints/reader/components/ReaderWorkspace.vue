@@ -182,10 +182,14 @@ function jumpToPdfPageOnEnter(event: KeyboardEvent) {
   jumpToPdfPage(event)
 }
 
-function seekPdfProgress(event: Event) {
-  if (!pdfSessionActive.value) return
+function seekProgress(event: Event) {
+  if (!pdfSessionActive.value && !ebookSessionActive.value) return
   event.stopImmediatePropagation()
   const fraction = Math.max(0, Math.min(1, Number((event.currentTarget as HTMLInputElement).value) || 0))
+  if (ebookSessionActive.value) {
+    void ebook.goTo({ fraction })
+    return
+  }
   const pageCount = Math.max(1, Math.round(Number(pdfPageCount.value) || 1))
   void pdf.goTo(Math.round(fraction * (pageCount - 1)) + 1)
 }
@@ -257,7 +261,7 @@ async function recoverSessionError(event: MouseEvent, retry: boolean) {
     </div>
     <footer class="reader-footer">
       <span id="chapter-label">开始</span>
-      <input id="progress-slider" type="range" min="0" max="1" step="any" value="0" aria-label="阅读进度" @input="seekPdfProgress">
+      <input id="progress-slider" type="range" min="0" max="1" step="any" value="0" aria-label="阅读进度" @input="seekProgress">
       <div class="footer-status">
         <div id="pdf-page-jump" class="pdf-page-jump" hidden>
           <input id="pdf-page-input" type="number" min="1" value="1" aria-label="跳转页码" @change="jumpToPdfPage" @keydown="jumpToPdfPageOnEnter"><span id="pdf-page-total">/ 1</span>
