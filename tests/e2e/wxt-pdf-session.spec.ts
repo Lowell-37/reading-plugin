@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type BrowserContext, type Page } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { launchExtension } from './helpers/extension-launch'
@@ -94,6 +94,9 @@ test.describe('@wxt-pdf-session', () => {
       await expect(page.locator('#loading-view')).toBeHidden()
       await expect(page.locator('#reader-view')).toHaveClass(/pdf-session-active/)
       await expect(page.locator('#pdf-page-total')).toHaveText('/ 14')
+      await expect(page.getByRole('group', { name: 'PDF 页码跳转' })).toBeVisible()
+      await expect(page.locator('#pdf-page-input')).toHaveAttribute('aria-valuetext', '第 1 页，共 14 页')
+      expect(await accessibleDescription(context, page, '#pdf-page-input')).toBe('共 14 页')
       await expect(page.locator('.pdf-page[data-page="1"] .textLayer')).toContainText('Trace-based Just-in-Time')
       await expect(page.locator('#pdf-zoom-label')).toHaveText('100%')
       await expect(page.getByRole('group', { name: 'PDF 缩放' })).toBeVisible()
@@ -110,6 +113,7 @@ test.describe('@wxt-pdf-session', () => {
       await expectPdfPage(page, 3)
       await jump(page, 6)
       await expectPdfPage(page, 6)
+      await expect(page.locator('#pdf-page-input')).toHaveAttribute('aria-valuetext', '第 6 页，共 14 页')
       await page.locator('#progress-slider').evaluate((input: HTMLInputElement) => {
         input.value = '1'
         input.dispatchEvent(new Event('input', { bubbles: true }))
@@ -338,6 +342,18 @@ async function expectZoom(page: Page, label: string, number: number, expectedWid
 
 async function canvasWidth(page: Page, number: number) {
   return page.locator(`.pdf-page[data-page="${number}"] canvas`).evaluate(canvas => (canvas as HTMLCanvasElement).width)
+}
+
+async function accessibleDescription(context: BrowserContext, page: Page, selector: string) {
+  const cdp = await context.newCDPSession(page)
+  try {
+    const { root } = await cdp.send('DOM.getDocument')
+    const { nodeId } = await cdp.send('DOM.querySelector', { nodeId: root.nodeId, selector })
+    const { nodes } = await cdp.send('Accessibility.getPartialAXTree', { nodeId })
+    return nodes[0]?.description?.value ?? null
+  } finally {
+    await cdp.detach()
+  }
 }
 
 async function pdfRecords(page: Page): Promise<Array<{ name: string, progress?: { page: number, fraction: number } }>> {

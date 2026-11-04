@@ -208,6 +208,11 @@ describe('Vue reader shell', () => {
     expect(wrapper.find('#pdf-viewport').attributes('hidden')).toBeUndefined()
     expect(wrapper.find('#pdf-page-jump').attributes('hidden')).toBeUndefined()
     expect((wrapper.find('#pdf-page-input').element as HTMLInputElement).value).toBe('3')
+    expect(wrapper.find('#pdf-page-jump').attributes()).toMatchObject({ role: 'group', 'aria-label': 'PDF 页码跳转' })
+    expect(wrapper.find('#pdf-page-input').attributes()).toMatchObject({
+      'aria-controls': 'pdf-viewport', 'aria-describedby': 'pdf-page-total', 'aria-valuetext': '第 3 页，共 9 页',
+    })
+    expect(wrapper.find('#pdf-page-total').attributes()).toMatchObject({ role: 'status', 'aria-label': '共 9 页' })
     expect(wrapper.find('#pdf-page-total').text()).toBe('/ 9')
     expect(wrapper.find('#pdf-zoom-label').text()).toBe('120%')
     expect(wrapper.find('#pdf-toolbar').attributes()).toMatchObject({ role: 'group', 'aria-label': 'PDF 缩放' })
@@ -257,6 +262,33 @@ describe('Vue reader shell', () => {
     expect(legacyKeyboard).not.toHaveBeenCalled()
     expect(consoleError).not.toHaveBeenCalled()
     window.removeEventListener('keydown', legacyKeyboard)
+    wrapper.unmount()
+  })
+
+  test('does not reannounce an unchanged PDF page total during page and zoom updates', async () => {
+    const pinia = createPinia()
+    const reader = useReaderStore(pinia)
+    const pdf = usePdfSessionStore(pinia)
+    pdf.record = { id: 'pdf', name: 'manual.pdf', format: 'pdf' }
+    pdf.status = 'ready'
+    pdf.page = 3
+    pdf.pageCount = 9
+    pdf.progress = 0.25
+    pdf.zoom = 1.2
+    reader.applyPdfSessionSnapshot(pdfSnapshot({ status: 'ready', page: 3, pageCount: 9, progress: 0.25, zoom: 1.2 }))
+    const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
+    const mutations: MutationRecord[] = []
+    const observer = new MutationObserver(records => mutations.push(...records))
+    observer.observe(wrapper.find('#pdf-page-total').element, { childList: true, characterData: true, subtree: true })
+
+    pdf.page = 4
+    pdf.progress = 0.375
+    pdf.zoom = 1.3
+    await nextTick()
+    await Promise.resolve()
+
+    observer.disconnect()
+    expect(mutations).toHaveLength(0)
     wrapper.unmount()
   })
 

@@ -110,8 +110,13 @@ function syncPdfControls(active: boolean) {
   if (input) {
     input.value = String(page)
     input.max = String(pageCount)
+    input.setAttribute('aria-valuetext', `第 ${page} 页，共 ${pageCount} 页`)
   }
-  document.getElementById('pdf-page-total')?.replaceChildren(`/ ${pageCount}`)
+  const pageTotal = document.getElementById('pdf-page-total')
+  const pageTotalText = `/ ${pageCount}`
+  const pageTotalLabel = `共 ${pageCount} 页`
+  if (pageTotal?.textContent !== pageTotalText) pageTotal?.replaceChildren(pageTotalText)
+  if (pageTotal?.getAttribute('aria-label') !== pageTotalLabel) pageTotal?.setAttribute('aria-label', pageTotalLabel)
   document.getElementById('chapter-label')?.replaceChildren(`第 ${page} 页 / 共 ${pageCount} 页`)
   if (slider) {
     slider.value = String(normalizedProgress)
@@ -267,8 +272,8 @@ async function recoverSessionError(event: MouseEvent, retry: boolean) {
       <span id="chapter-label">开始</span>
       <input id="progress-slider" type="range" min="0" max="1" step="any" value="0" aria-label="阅读进度" @input="seekProgress">
       <div class="footer-status">
-        <div id="pdf-page-jump" class="pdf-page-jump" hidden>
-          <input id="pdf-page-input" type="number" min="1" value="1" aria-label="跳转页码" @change="jumpToPdfPage" @keydown="jumpToPdfPageOnEnter"><span id="pdf-page-total">/ 1</span>
+        <div id="pdf-page-jump" class="pdf-page-jump" role="group" aria-label="PDF 页码跳转" hidden>
+          <input id="pdf-page-input" type="number" min="1" value="1" aria-label="跳转页码" aria-controls="pdf-viewport" aria-describedby="pdf-page-total" @change="jumpToPdfPage" @keydown="jumpToPdfPageOnEnter"><span id="pdf-page-total" role="status" aria-live="polite" aria-atomic="true" aria-label="共 1 页">/ 1</span>
         </div>
         <span id="progress-label">0%</span>
       </div>
