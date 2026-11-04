@@ -13,6 +13,8 @@ test.describe('@wxt-session', () => {
         await openBook(page, `alice.${format}`)
         await expect(page.locator('#reader-view')).toHaveClass(/ebook-session-active/)
         await expect(page.locator('#header-title')).toContainText(/Alice/i)
+        await expect(page.getByRole('button', { name: '上一页' })).toHaveAttribute('aria-controls', 'ebook-host')
+        await expect(page.getByRole('button', { name: '下一页' })).toHaveAttribute('aria-keyshortcuts', 'ArrowRight PageDown')
         await expect.poll(() => foliateContentDocumentCount(page)).toBeGreaterThan(0)
 
         await expect.poll(async () => page.locator('#toc button').count()).toBeGreaterThan(5)

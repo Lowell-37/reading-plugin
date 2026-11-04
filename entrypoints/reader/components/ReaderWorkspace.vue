@@ -29,6 +29,7 @@ const pdfSessionActive = computed(() => pdfRecord.value !== null)
 const ebookErrorActive = computed(() => ebookSessionActive.value && status.value === 'error')
 const pdfErrorActive = computed(() => pdfSessionActive.value && pdfStatus.value === 'error')
 const workspaceVisible = computed(() => isReading.value || ebookErrorActive.value || pdfErrorActive.value)
+const activeViewportId = computed(() => pdfSessionActive.value ? 'pdf-viewport' : 'ebook-host')
 const pdfToolbarListeners: Array<{ element: HTMLElement, handler: EventListener }> = []
 
 watch(workspaceVisible, visible => {
@@ -255,7 +256,7 @@ async function recoverSessionError(event: MouseEvent, retry: boolean) {
 <template>
   <main id="reader-view" class="reader-view" :class="{ 'ebook-session-active': ebookSessionActive, 'pdf-session-active': pdfSessionActive }" :hidden="!workspaceVisible">
     <TocSidebar />
-    <div id="reader-stage" class="reader-stage" role="region" aria-label="阅读内容" tabindex="-1">
+    <div id="reader-stage" class="reader-stage" role="region" aria-label="阅读内容" aria-keyshortcuts="ArrowLeft ArrowRight PageUp PageDown" tabindex="-1">
       <div id="loading-view" class="loading-view" role="status" aria-live="polite" aria-atomic="true" aria-labelledby="loading-title" aria-describedby="loading-detail">
         <div id="loading-spinner" class="spinner" /><strong id="loading-title">正在打开书籍</strong><span id="loading-detail">解析内容与目录…</span>
         <div id="loading-actions" class="loading-actions" hidden>
@@ -265,8 +266,8 @@ async function recoverSessionError(event: MouseEvent, retry: boolean) {
       </div>
       <div id="ebook-host" class="ebook-host" />
       <div id="pdf-viewport" class="pdf-viewport"><div id="pdf-pages" class="pdf-pages" /></div>
-      <button id="prev-button" class="page-zone page-zone-left" aria-label="上一页" @click="navigate($event, -1)"><span>‹</span></button>
-      <button id="next-button" class="page-zone page-zone-right" aria-label="下一页" @click="navigate($event, 1)"><span>›</span></button>
+      <button id="prev-button" class="page-zone page-zone-left" aria-label="上一页" :aria-controls="activeViewportId" aria-keyshortcuts="ArrowLeft PageUp" @click="navigate($event, -1)"><span>‹</span></button>
+      <button id="next-button" class="page-zone page-zone-right" aria-label="下一页" :aria-controls="activeViewportId" aria-keyshortcuts="ArrowRight PageDown" @click="navigate($event, 1)"><span>›</span></button>
     </div>
     <footer class="reader-footer">
       <span id="chapter-label">开始</span>

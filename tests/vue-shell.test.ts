@@ -146,11 +146,18 @@ describe('Vue reader shell', () => {
 
     expect(wrapper.find('#reader-view').classes()).toContain('ebook-session-active')
     expect(wrapper.find('#reader-view').attributes('hidden')).toBeUndefined()
+    expect(wrapper.find('#reader-stage').attributes('aria-keyshortcuts')).toBe('ArrowLeft ArrowRight PageUp PageDown')
     expect(wrapper.find('#welcome-view').attributes('hidden')).toBeDefined()
     expect(document.body.classList).toContain('is-reading')
     expect(wrapper.find('#ebook-host').attributes('hidden')).toBeUndefined()
     expect(wrapper.find('#pdf-viewport').attributes('hidden')).toBeDefined()
     expect(wrapper.findAll('#toc button')).toHaveLength(1)
+    expect(wrapper.find('#prev-button').attributes()).toMatchObject({
+      'aria-controls': 'ebook-host', 'aria-keyshortcuts': 'ArrowLeft PageUp',
+    })
+    expect(wrapper.find('#next-button').attributes()).toMatchObject({
+      'aria-controls': 'ebook-host', 'aria-keyshortcuts': 'ArrowRight PageDown',
+    })
 
     await wrapper.find('#sidebar-button').trigger('click')
     await wrapper.find('#toc button').trigger('click')
@@ -204,6 +211,7 @@ describe('Vue reader shell', () => {
     const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
 
     expect(wrapper.find('#reader-view').classes()).toContain('pdf-session-active')
+    expect(wrapper.find('#reader-stage').attributes('aria-keyshortcuts')).toBe('ArrowLeft ArrowRight PageUp PageDown')
     expect(wrapper.find('#ebook-host').attributes('hidden')).toBeDefined()
     expect(wrapper.find('#pdf-viewport').attributes('hidden')).toBeUndefined()
     expect(wrapper.find('#pdf-page-jump').attributes('hidden')).toBeUndefined()
@@ -222,6 +230,12 @@ describe('Vue reader shell', () => {
     for (const selector of ['#pdf-zoom-out', '#pdf-zoom-in', '#pdf-fit-width']) {
       expect(wrapper.find(selector).attributes('aria-controls')).toBe('pdf-viewport')
     }
+    expect(wrapper.find('#prev-button').attributes()).toMatchObject({
+      'aria-controls': 'pdf-viewport', 'aria-keyshortcuts': 'ArrowLeft PageUp',
+    })
+    expect(wrapper.find('#next-button').attributes()).toMatchObject({
+      'aria-controls': 'pdf-viewport', 'aria-keyshortcuts': 'ArrowRight PageDown',
+    })
     expect(wrapper.find('#progress-slider').attributes('aria-valuetext')).toBe('25%，第 3 页，共 9 页')
     expect(wrapper.findAll('#toc button').map(button => button.text())).toEqual(['Part one', 'Chapter two', 'Section four'])
     expect(wrapper.find('#toc-count').text()).toBe('3 项')

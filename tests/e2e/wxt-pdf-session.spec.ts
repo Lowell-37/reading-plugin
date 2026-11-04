@@ -94,6 +94,8 @@ test.describe('@wxt-pdf-session', () => {
       await expect(page.locator('#loading-view')).toBeHidden()
       await expect(page.locator('#reader-view')).toHaveClass(/pdf-session-active/)
       await expect(page.locator('#pdf-page-total')).toHaveText('/ 14')
+      await expect(page.getByRole('region', { name: '阅读内容' })).toHaveAttribute('aria-keyshortcuts', 'ArrowLeft ArrowRight PageUp PageDown')
+      await expect(page.locator('#prev-button')).toHaveCSS('display', 'none')
       await expect(page.getByRole('group', { name: 'PDF 页码跳转' })).toBeVisible()
       await expect(page.locator('#pdf-page-input')).toHaveAttribute('aria-valuetext', '第 1 页，共 14 页')
       expect(await accessibleDescription(context, page, '#pdf-page-input')).toBe('共 14 页')
