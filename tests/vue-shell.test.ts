@@ -210,6 +210,13 @@ describe('Vue reader shell', () => {
     expect((wrapper.find('#pdf-page-input').element as HTMLInputElement).value).toBe('3')
     expect(wrapper.find('#pdf-page-total').text()).toBe('/ 9')
     expect(wrapper.find('#pdf-zoom-label').text()).toBe('120%')
+    expect(wrapper.find('#pdf-toolbar').attributes()).toMatchObject({ role: 'group', 'aria-label': 'PDF 缩放' })
+    expect(wrapper.find('#pdf-zoom-label').attributes()).toMatchObject({
+      role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true', 'aria-label': 'PDF 缩放比例',
+    })
+    for (const selector of ['#pdf-zoom-out', '#pdf-zoom-in', '#pdf-fit-width']) {
+      expect(wrapper.find(selector).attributes('aria-controls')).toBe('pdf-viewport')
+    }
     expect(wrapper.find('#progress-slider').attributes('aria-valuetext')).toBe('25%，第 3 页，共 9 页')
     expect(wrapper.findAll('#toc button').map(button => button.text())).toEqual(['Part one', 'Chapter two', 'Section four'])
     expect(wrapper.find('#toc-count').text()).toBe('3 项')

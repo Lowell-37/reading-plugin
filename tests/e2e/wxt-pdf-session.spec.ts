@@ -96,6 +96,9 @@ test.describe('@wxt-pdf-session', () => {
       await expect(page.locator('#pdf-page-total')).toHaveText('/ 14')
       await expect(page.locator('.pdf-page[data-page="1"] .textLayer')).toContainText('Trace-based Just-in-Time')
       await expect(page.locator('#pdf-zoom-label')).toHaveText('100%')
+      await expect(page.getByRole('group', { name: 'PDF 缩放' })).toBeVisible()
+      await expect(page.getByRole('status', { name: 'PDF 缩放比例' })).toHaveText('100%')
+      await expect(page.locator('#pdf-zoom-in')).toHaveAttribute('aria-controls', 'pdf-viewport')
       const baseWidth = await canvasWidth(page, 1)
       // This real paper has no embedded bookmarks; named-outline navigation is covered below.
       await expect(page.locator('#toc button')).toHaveCount(0)
