@@ -538,6 +538,10 @@ describe('Vue reader shell', () => {
 
     expect(wrapper.find('#reader-view').attributes('hidden')).toBeUndefined()
     expect(wrapper.find('#loading-view').attributes('data-state')).toBe('error')
+    expect(wrapper.find('#loading-view').attributes()).toMatchObject({
+      role: 'alert', 'aria-live': 'assertive', 'aria-atomic': 'true',
+      'aria-labelledby': 'loading-title', 'aria-describedby': 'loading-detail',
+    })
     expect(wrapper.find('#loading-title').text()).toBe(error.title)
     expect(wrapper.find('#loading-detail').text()).toBe(error.detail)
     expect(wrapper.text()).not.toContain(unsafe)
@@ -559,6 +563,10 @@ describe('Vue reader shell', () => {
     const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
 
     expect(wrapper.find('#loading-view').attributes('hidden')).toBeUndefined()
+    expect(wrapper.find('#loading-view').attributes()).toMatchObject({
+      role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true',
+      'aria-labelledby': 'loading-title', 'aria-describedby': 'loading-detail',
+    })
     ebook.status = 'ready'
     await wrapper.vm.$nextTick()
     expect(wrapper.find('#loading-view').attributes('hidden')).toBeDefined()

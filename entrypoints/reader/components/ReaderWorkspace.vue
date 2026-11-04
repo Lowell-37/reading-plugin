@@ -58,6 +58,8 @@ function syncLoadingView(
   loadingView?.toggleAttribute('hidden', nextStatus !== 'loading' && nextStatus !== 'error')
   if (nextStatus === 'loading') {
     loadingView?.setAttribute('data-state', 'loading')
+    loadingView?.setAttribute('role', 'status')
+    loadingView?.setAttribute('aria-live', 'polite')
     document.getElementById('loading-title')?.replaceChildren('正在打开书籍')
     document.getElementById('loading-detail')?.replaceChildren('解析内容与目录…')
     const loadingActions = document.getElementById('loading-actions') as HTMLElement | null
@@ -65,6 +67,8 @@ function syncLoadingView(
   }
   if (nextStatus === 'error') {
     loadingView?.setAttribute('data-state', 'error')
+    loadingView?.setAttribute('role', 'alert')
+    loadingView?.setAttribute('aria-live', 'assertive')
     document.getElementById('loading-title')?.replaceChildren(nextError?.title || '无法打开这本书')
     document.getElementById('loading-detail')?.replaceChildren(nextError?.detail || '无法打开电子书。请重新选择文件后重试。')
     const loadingActions = document.getElementById('loading-actions') as HTMLElement | null
@@ -247,7 +251,7 @@ async function recoverSessionError(event: MouseEvent, retry: boolean) {
   <main id="reader-view" class="reader-view" :class="{ 'ebook-session-active': ebookSessionActive, 'pdf-session-active': pdfSessionActive }" :hidden="!workspaceVisible">
     <TocSidebar />
     <div id="reader-stage" class="reader-stage" role="region" aria-label="阅读内容" tabindex="-1">
-      <div id="loading-view" class="loading-view">
+      <div id="loading-view" class="loading-view" role="status" aria-live="polite" aria-atomic="true" aria-labelledby="loading-title" aria-describedby="loading-detail">
         <div id="loading-spinner" class="spinner" /><strong id="loading-title">正在打开书籍</strong><span id="loading-detail">解析内容与目录…</span>
         <div id="loading-actions" class="loading-actions" hidden>
           <button id="loading-library-button" class="soft-button" type="button" @click.capture="recoverSessionError($event, false).catch(console.error)">返回书架</button>

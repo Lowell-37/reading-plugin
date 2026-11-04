@@ -252,7 +252,9 @@ test.describe('@wxt-pdf-session', () => {
           buffer: kind === 'password' ? fixturePdf(true) : Buffer.from('%PDF-1.7\nprivate-engine-diagnostic-invalid'),
         })
         await expect(page.locator('#loading-view')).toHaveAttribute('data-state', 'error')
-        await expect(page.locator('#loading-title')).toHaveText(kind === 'password' ? 'PDF 需要密码' : '无法解析 PDF')
+        const errorTitle = kind === 'password' ? 'PDF 需要密码' : '无法解析 PDF'
+        await expect(page.getByRole('alert', { name: errorTitle })).toBeVisible()
+        await expect(page.locator('#loading-title')).toHaveText(errorTitle)
         await expect(page.locator('#loading-detail')).toHaveText(kind === 'password'
           ? '请输入正确密码后重试。' : '文件内容无法解析。请确认文件完整后重试。')
         await expect(page.locator('#loading-view')).not.toContainText(/Exception|Invalid PDF|private-engine|PasswordException/)
