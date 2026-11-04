@@ -105,6 +105,10 @@ test.describe('@wxt-pdf-session', () => {
       const baseWidth = await canvasWidth(page, 1)
       // This real paper has no embedded bookmarks; named-outline navigation is covered below.
       await expect(page.locator('#toc button')).toHaveCount(0)
+      await expect(page.getByRole('status').filter({ hasText: '目录为空' })).toBeVisible()
+      await click(page, '#sidebar-button')
+      await expect(page.getByRole('navigation', { name: '章节目录' })).toHaveAccessibleDescription('目录为空')
+      await click(page, '#sidebar-button')
       await jump(page, 3)
       await expectPdfPage(page, 3)
       await click(page, '#next-button')

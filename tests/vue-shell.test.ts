@@ -225,6 +225,13 @@ describe('Vue reader shell', () => {
     expect(wrapper.find('#progress-slider').attributes('aria-valuetext')).toBe('25%，第 3 页，共 9 页')
     expect(wrapper.findAll('#toc button').map(button => button.text())).toEqual(['Part one', 'Chapter two', 'Section four'])
     expect(wrapper.find('#toc-count').text()).toBe('3 项')
+    expect(wrapper.find('#toc').attributes()).toMatchObject({ 'aria-label': '章节目录', 'aria-describedby': 'toc-count' })
+    expect(wrapper.find('#toc-count').attributes('aria-label')).toBe('目录共 3 项')
+    expect(wrapper.find('#toc-status').attributes()).toMatchObject({
+      role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true',
+    })
+    expect(wrapper.find('#toc-status').text()).toBe('目录共 3 项')
+    expect(wrapper.find('#sidebar').element.contains(wrapper.find('#toc-status').element)).toBe(false)
 
     const legacyControl = vi.fn()
     for (const selector of ['#prev-button', '#next-button', '#pdf-page-input', '#progress-slider', '#pdf-zoom-in']) {
@@ -576,6 +583,7 @@ describe('Vue reader shell', () => {
     })
     expect(wrapper.find('#loading-title').text()).toBe(error.title)
     expect(wrapper.find('#loading-detail').text()).toBe(error.detail)
+    expect(wrapper.find('#toc-status').text()).toBe('')
     expect(wrapper.text()).not.toContain(unsafe)
 
     await wrapper.find('#loading-library-button').trigger('click')
@@ -935,6 +943,13 @@ describe('Vue reader shell', () => {
     expect(tocButtons).toHaveLength(3)
     expect(tocButtons.map(button => button.text())).toEqual(['Part one', 'Chapter one', 'Section one'])
     expect(wrapper.find('#toc-count').text()).toBe('3 项')
+    expect(wrapper.find('#toc').attributes()).toMatchObject({ 'aria-label': '章节目录', 'aria-describedby': 'toc-count' })
+    expect(wrapper.find('#toc-count').attributes('aria-label')).toBe('目录共 3 项')
+    expect(wrapper.find('#toc-status').attributes()).toMatchObject({
+      role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true',
+    })
+    expect(wrapper.find('#toc-status').text()).toBe('目录共 3 项')
+    expect(wrapper.find('#sidebar').element.contains(wrapper.find('#toc-status').element)).toBe(false)
 
     const sectionButton = tocButtons[2]!.element as HTMLButtonElement
     const focusReaderStage = vi.spyOn(wrapper.find('#reader-stage').element as HTMLElement, 'focus')
@@ -949,10 +964,49 @@ describe('Vue reader shell', () => {
     ebook.toc = []
     await nextTick()
     expect(wrapper.find('#toc-count').text()).toBe('')
+    expect(wrapper.find('#toc-count').attributes('aria-label')).toBe('目录为空')
+    expect(wrapper.find('#toc-status').text()).toBe('目录为空')
     expect(wrapper.find('#toc').text()).toBe('这本书没有提供目录')
     ebook.record = null
     await nextTick()
     expect(wrapper.find('#toc').text()).toBe('')
+    wrapper.unmount()
+  })
+
+  test('waits for an ebook session to finish before announcing its TOC total', async () => {
+    const pinia = createPinia()
+    const ebook = useEbookSessionStore(pinia)
+    ebook.record = { id: 'book', name: 'book.epub', format: 'epub' }
+    ebook.status = 'loading'
+    ebook.toc = []
+    const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
+
+    expect(wrapper.find('#toc-status').text()).toBe('正在读取目录')
+    expect(wrapper.find('#toc-count').attributes('aria-label')).toBe('正在读取目录')
+    ebook.toc = [{ label: 'Chapter one', href: '/6/2' }]
+    ebook.status = 'ready'
+    await nextTick()
+
+    expect(wrapper.find('#toc-status').text()).toBe('目录共 1 项')
+    expect(wrapper.find('#toc-count').attributes('aria-label')).toBe('目录共 1 项')
+    wrapper.unmount()
+  })
+
+  test('reports an empty PDF outline only after the session is ready', async () => {
+    const pinia = createPinia()
+    const pdf = usePdfSessionStore(pinia)
+    pdf.record = { id: 'pdf', name: 'manual.pdf', format: 'pdf' }
+    pdf.status = 'loading'
+    pdf.outline = []
+    const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
+
+    expect(wrapper.find('#toc-status').text()).toBe('正在读取目录')
+    expect(wrapper.find('#toc-count').attributes('aria-label')).toBe('正在读取目录')
+    pdf.status = 'ready'
+    await nextTick()
+
+    expect(wrapper.find('#toc-status').text()).toBe('目录为空')
+    expect(wrapper.find('#toc-count').attributes('aria-label')).toBe('目录为空')
     wrapper.unmount()
   })
 

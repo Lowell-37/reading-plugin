@@ -12,8 +12,8 @@ const reader = useReaderStore()
 const { activePanel } = storeToRefs(reader)
 const ebook = useEbookSessionStore()
 const pdf = usePdfSessionStore()
-const { record, title, toc, activeTocHref } = storeToRefs(ebook)
-const { record: pdfRecord, title: pdfTitle, outline, page: pdfPage } = storeToRefs(pdf)
+const { record, status: ebookStatus, title, toc, activeTocHref } = storeToRefs(ebook)
+const { record: pdfRecord, status: pdfStatus, title: pdfTitle, outline, page: pdfPage } = storeToRefs(pdf)
 const ebookSessionActive = computed(() => record.value !== null)
 const pdfSessionActive = computed(() => pdfRecord.value !== null)
 const activePdfPath = computed(() => {
@@ -37,6 +37,13 @@ const activePdfPath = computed(() => {
 const tocCount = computed(() => pdfSessionActive.value
   ? countItems(outline.value, item => item.children)
   : ebookSessionActive.value ? countItems(toc.value, item => item.subitems) : 0)
+const tocStatusLabel = computed(() => {
+  if (!pdfSessionActive.value && !ebookSessionActive.value) return ''
+  const sessionStatus = pdfSessionActive.value ? pdfStatus.value : ebookStatus.value
+  if (sessionStatus === 'loading') return '正在读取目录'
+  if (sessionStatus !== 'ready') return ''
+  return tocCount.value ? `目录共 ${tocCount.value} 项` : '目录为空'
+})
 
 function countItems<T>(items: T[], children: (item: T) => T[] | undefined): number {
   return items.reduce((total, item) => total + 1 + countItems(children(item) ?? [], children), 0)
@@ -117,6 +124,7 @@ const PdfOutlineItems: Component = defineComponent({
 </script>
 
 <template>
+  <span id="toc-status" class="toc-status" role="status" aria-live="polite" aria-atomic="true">{{ tocStatusLabel }}</span>
   <aside id="sidebar" class="sidebar" :class="{ open: activePanel === 'toc', 'ebook-session-toc': ebookSessionActive, 'pdf-session-toc': pdfSessionActive }" :inert="activePanel !== 'toc'" aria-label="书籍目录" tabindex="-1">
     <div class="sidebar-book">
       <div id="sidebar-cover" class="cover-placeholder"><span id="cover-letter">静</span></div>
@@ -124,11 +132,25 @@ const PdfOutlineItems: Component = defineComponent({
         <strong id="sidebar-title"><template v-if="pdfSessionActive">{{ pdfTitle }}</template><template v-else-if="ebookSessionActive">{{ title }}</template><template v-else>未命名书籍</template></strong><span id="sidebar-author">未知作者</span><small id="sidebar-format">{{ pdfSessionActive ? 'PDF' : record?.format.toUpperCase() ?? 'EPUB' }}</small>
       </div>
     </div>
-    <div class="sidebar-label"><span>目录</span><span id="toc-count">{{ tocCount ? `${tocCount} 项` : '' }}</span></div>
-    <nav id="toc" class="toc">
+    <div class="sidebar-label"><span>目录</span><span id="toc-count" :aria-label="tocStatusLabel">{{ tocCount ? `${tocCount} 项` : '' }}</span></div>
+    <nav id="toc" class="toc" aria-label="章节目录" aria-describedby="toc-count">
       <p v-if="(pdfSessionActive || ebookSessionActive) && !tocCount" class="toc-empty">这本书没有提供目录</p>
       <PdfOutlineItems v-else-if="pdfSessionActive" :items="outline" @go-to="goToPdf" />
       <TocItems v-else-if="ebookSessionActive" :items="toc" @go-to="goTo" />
     </nav>
   </aside>
 </template>
+
+<style scoped>
+.toc-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+</style>
