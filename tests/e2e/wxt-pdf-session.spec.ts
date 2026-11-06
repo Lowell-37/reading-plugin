@@ -7,6 +7,22 @@ const extension = resolve('.output/chrome-mv3')
 const realPdf = resolve('tests/fixtures/books/tracemonkey.pdf')
 
 test.describe('@wxt-pdf-session', () => {
+  test('real PDF keeps a two-times canvas backing scale on a high-density display', async () => {
+    const { context, page, pageErrors } = await launchExtension(extension, { deviceScaleFactor: 2 })
+    try {
+      await page.locator('#file-input').setInputFiles(realPdf)
+      await expectPdfPage(page, 1)
+      const metrics = await page.locator('.pdf-page[data-page="1"] canvas').evaluate((canvas: HTMLCanvasElement) => ({
+        backingWidth: canvas.width,
+        cssWidth: Number.parseFloat(canvas.style.width),
+        devicePixelRatio: window.devicePixelRatio,
+      }))
+      expect(metrics.devicePixelRatio).toBe(2)
+      expect(metrics.backingWidth / metrics.cssWidth).toBeCloseTo(2, 2)
+      expect(pageErrors.map(error => error.stack || error.message)).toEqual([])
+    } finally { await context.close() }
+  })
+
   test('invalid PDF outline target stays disabled while a valid sibling navigates', async () => {
     const { context, page, pageErrors } = await launchExtension(extension)
     try {

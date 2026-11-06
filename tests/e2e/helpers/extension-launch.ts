@@ -17,11 +17,17 @@ export interface ExtensionLaunchOptions {
   userDataDir?: string
   waitForSelector?: string | null
   extensionId?: string
+  deviceScaleFactor?: number
 }
 
 export async function launchExtension(
   extensionPath: string,
-  { userDataDir = '', waitForSelector = '#welcome-view', extensionId: knownExtensionId }: ExtensionLaunchOptions = {},
+  {
+    userDataDir = '',
+    waitForSelector = '#welcome-view',
+    extensionId: knownExtensionId,
+    deviceScaleFactor,
+  }: ExtensionLaunchOptions = {},
 ): Promise<LaunchedExtension> {
   if (!existsSync(extensionPath)) throw new Error(`Extension path does not exist: ${extensionPath}`)
   const configuredEdgePath = process.env.EDGE_EXECUTABLE_PATH
@@ -32,6 +38,7 @@ export async function launchExtension(
 
   const context = await chromium.launchPersistentContext(userDataDir, {
     ...(executablePath ? { executablePath } : { channel: 'msedge' }),
+    ...(deviceScaleFactor === undefined ? {} : { deviceScaleFactor }),
     headless: true,
     args: [
       `--disable-extensions-except=${extensionPath}`,
