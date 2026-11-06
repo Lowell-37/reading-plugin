@@ -29,6 +29,8 @@ const pdfSessionActive = computed(() => pdfRecord.value !== null)
 const ebookErrorActive = computed(() => ebookSessionActive.value && status.value === 'error')
 const pdfErrorActive = computed(() => pdfSessionActive.value && pdfStatus.value === 'error')
 const workspaceVisible = computed(() => isReading.value || ebookErrorActive.value || pdfErrorActive.value)
+const workspaceLoading = computed(() => (ebookSessionActive.value && status.value === 'loading')
+  || (pdfSessionActive.value && pdfStatus.value === 'loading'))
 const activeViewportId = computed(() => pdfSessionActive.value ? 'pdf-viewport' : 'ebook-host')
 const pdfToolbarListeners: Array<{ element: HTMLElement, handler: EventListener }> = []
 
@@ -256,7 +258,7 @@ async function recoverSessionError(event: MouseEvent, retry: boolean) {
 <template>
   <main id="reader-view" class="reader-view" :class="{ 'ebook-session-active': ebookSessionActive, 'pdf-session-active': pdfSessionActive }" :hidden="!workspaceVisible">
     <TocSidebar />
-    <div id="reader-stage" class="reader-stage" role="region" aria-label="阅读内容" aria-keyshortcuts="ArrowLeft ArrowRight PageUp PageDown" tabindex="-1">
+    <div id="reader-stage" class="reader-stage" role="region" aria-label="阅读内容" aria-keyshortcuts="ArrowLeft ArrowRight PageUp PageDown" :aria-busy="workspaceLoading ? 'true' : undefined" tabindex="-1">
       <div id="loading-view" class="loading-view" role="status" aria-live="polite" aria-atomic="true" aria-labelledby="loading-title" aria-describedby="loading-detail">
         <div id="loading-spinner" class="spinner" /><strong id="loading-title">正在打开书籍</strong><span id="loading-detail">解析内容与目录…</span>
         <div id="loading-actions" class="loading-actions" hidden>

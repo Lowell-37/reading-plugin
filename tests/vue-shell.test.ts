@@ -620,6 +620,7 @@ describe('Vue reader shell', () => {
     })
     expect(wrapper.find('#loading-title').text()).toBe(error.title)
     expect(wrapper.find('#loading-detail').text()).toBe(error.detail)
+    expect(wrapper.find('#reader-stage').attributes('aria-busy')).toBeUndefined()
     expect(wrapper.find('#toc-status').text()).toBe('')
     expect(wrapper.text()).not.toContain(unsafe)
 
@@ -644,12 +645,15 @@ describe('Vue reader shell', () => {
       role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true',
       'aria-labelledby': 'loading-title', 'aria-describedby': 'loading-detail',
     })
+    expect(wrapper.find('#reader-stage').attributes('aria-busy')).toBe('true')
     ebook.status = 'ready'
     await wrapper.vm.$nextTick()
     expect(wrapper.find('#loading-view').attributes('hidden')).toBeDefined()
+    expect(wrapper.find('#reader-stage').attributes('aria-busy')).toBeUndefined()
 
     ebook.record = null
     await wrapper.vm.$nextTick()
+    expect(wrapper.find('#reader-stage').attributes('aria-busy')).toBeUndefined()
     const loader = wrapper.find('#loading-view').element as HTMLElement
     loader.hidden = false
     reader.applyReaderState({ isReading: true })
@@ -1039,11 +1043,13 @@ describe('Vue reader shell', () => {
 
     expect(wrapper.find('#toc-status').text()).toBe('正在读取目录')
     expect(wrapper.find('#toc-count').attributes('aria-label')).toBe('正在读取目录')
+    expect(wrapper.find('#reader-stage').attributes('aria-busy')).toBe('true')
     pdf.status = 'ready'
     await nextTick()
 
     expect(wrapper.find('#toc-status').text()).toBe('目录为空')
     expect(wrapper.find('#toc-count').attributes('aria-label')).toBe('目录为空')
+    expect(wrapper.find('#reader-stage').attributes('aria-busy')).toBeUndefined()
     wrapper.unmount()
   })
 
