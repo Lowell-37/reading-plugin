@@ -17,6 +17,7 @@ const pdf = usePdfSessionStore()
 const { title, activePanel } = storeToRefs(reader)
 const { headerCollapsed } = storeToRefs(settings)
 const homeLabel = computed(() => ebook.record || pdf.record ? '返回书架' : '静读书架')
+const headerIsCollapsed = computed(() => headerCollapsed.value && Boolean(ebook.record || pdf.record))
 
 function openFilePicker() {
   document.getElementById('file-input')?.click()
@@ -47,7 +48,7 @@ async function closeReader() {
 </script>
 
 <template>
-  <header id="app-header" class="app-header">
+  <header id="app-header" class="app-header" :inert="headerIsCollapsed || undefined" :aria-hidden="headerIsCollapsed ? 'true' : undefined">
     <div class="header-left">
       <button id="sidebar-button" class="icon-button reader-only" :aria-label="activePanel === 'toc' ? '关闭目录' : '打开目录'" aria-controls="sidebar" :aria-expanded="activePanel === 'toc'" title="目录" @click="togglePanel('toc')">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
@@ -76,9 +77,10 @@ async function closeReader() {
     id="header-toggle"
     class="header-toggle reader-only"
     type="button"
-    :aria-expanded="!headerCollapsed"
-    :aria-label="headerCollapsed ? '展开顶部栏' : '收起顶部栏'"
-    :title="headerCollapsed ? '展开顶部栏' : '收起顶部栏'"
+    aria-controls="app-header"
+    :aria-expanded="!headerIsCollapsed"
+    :aria-label="headerIsCollapsed ? '展开顶部栏' : '收起顶部栏'"
+    :title="headerIsCollapsed ? '展开顶部栏' : '收起顶部栏'"
     @click="settings.toggleHeaderCollapsed()"
   >
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 14 5-5 5 5" /></svg>

@@ -1390,13 +1390,33 @@ describe('Vue reader shell', () => {
   test('persists the collapsed header state through the settings store', async () => {
     const pinia = createPinia()
     const store = useSettingsStore(pinia)
+    const reader = useReaderStore(pinia)
+    const ebook = useEbookSessionStore(pinia)
+    ebook.record = { id: 'book', name: 'book.epub', format: 'epub' }
+    ebook.status = 'ready'
+    reader.applyEbookSessionSnapshot(ebookSnapshot({ status: 'ready' }))
     const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
 
+    expect(wrapper.find('#header-toggle').attributes()).toMatchObject({
+      'aria-controls': 'app-header', 'aria-expanded': 'true', 'aria-label': '收起顶部栏',
+    })
+    expect(wrapper.find('#app-header').attributes()).not.toHaveProperty('inert')
+    expect(wrapper.find('#app-header').attributes()).not.toHaveProperty('aria-hidden')
     await wrapper.find('#header-toggle').trigger('click')
 
     expect(store.headerCollapsed).toBe(true)
-    expect(wrapper.find('#header-toggle').attributes('aria-expanded')).toBe('false')
+    expect(wrapper.find('#header-toggle').attributes()).toMatchObject({
+      'aria-controls': 'app-header', 'aria-expanded': 'false', 'aria-label': '展开顶部栏',
+    })
+    expect(wrapper.find('#app-header').attributes('inert')).toBeDefined()
+    expect(wrapper.find('#app-header').attributes('aria-hidden')).toBe('true')
     expect(JSON.parse(localStorage.getItem('quiet-reader-settings') || '{}')).toMatchObject({ headerCollapsed: true })
+
+    ebook.record = null
+    reader.applyReaderState({ isReading: false })
+    await nextTick()
+    expect(wrapper.find('#app-header').attributes()).not.toHaveProperty('inert')
+    expect(wrapper.find('#app-header').attributes()).not.toHaveProperty('aria-hidden')
 
     wrapper.unmount()
   })
