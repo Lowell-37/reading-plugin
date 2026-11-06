@@ -269,7 +269,7 @@ onUnmounted(() => {
 
 <template>
   <aside id="tools-panel" class="tools-panel" :class="{ open: activePanel === 'tools' }" :inert="activePanel !== 'tools'" aria-label="搜索与批注">
-    <div class="panel-header"><div><p class="eyebrow">TOOLS</p><h2>搜索与批注</h2></div><button id="close-tools" class="icon-button" aria-label="关闭工具" @click="dismissReaderPanel(reader)">×</button></div>
+    <div class="panel-header"><div><p class="eyebrow">TOOLS</p><h2>搜索与批注</h2></div><button id="close-tools" class="icon-button" aria-label="关闭搜索与批注" @click="dismissReaderPanel(reader)">×</button></div>
     <form id="search-form" class="search-form" role="search" aria-label="书内搜索" @submit="handleSearchSubmit"><input id="search-input" v-model="searchQuery" type="search" placeholder="搜索书中内容" autocomplete="off" aria-label="搜索书中内容" aria-describedby="search-status" aria-controls="search-results"><button type="submit">搜索</button></form>
     <div id="search-status" class="search-status" role="status" aria-live="polite">{{ pdfSessionActive || ebookSessionActive ? searchStatus : '输入关键词搜索整本书' }}</div>
     <div id="search-results" class="search-results" role="region" aria-label="搜索结果">

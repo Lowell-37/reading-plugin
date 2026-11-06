@@ -25,6 +25,7 @@ test('@wxt-vue reader panels receive initial focus and restore it when dismissed
 
     await page.locator('#settings-button').click()
     await assertPanelTriggerState(page, 'settings-panel')
+    await expect(page.getByRole('complementary', { name: '阅读设置' }).getByRole('button', { name: '关闭阅读设置', exact: true })).toHaveId('close-settings')
     await expect(page.locator('#close-settings')).toBeFocused()
     await assertPanelFocusLoop(page, '#close-settings', '.theme-options button:last-child')
     await page.locator('#close-settings').click()
@@ -34,6 +35,7 @@ test('@wxt-vue reader panels receive initial focus and restore it when dismissed
 
     await page.locator('#tools-button').click()
     await assertPanelTriggerState(page, 'tools-panel')
+    await expect(page.getByRole('complementary', { name: '搜索与批注' }).getByRole('button', { name: '关闭搜索与批注', exact: true })).toHaveId('close-tools')
     await expect(page.locator('#search-input')).toBeFocused()
     await assertPanelFocusLoop(page, '#close-tools', '#export-annotations-json')
     await page.locator('#scrim').click()

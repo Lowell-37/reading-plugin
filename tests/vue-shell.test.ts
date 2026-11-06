@@ -1281,6 +1281,16 @@ describe('Vue reader shell', () => {
     wrapper.unmount()
   })
 
+  test('names each panel close action after the panel it dismisses', () => {
+    const pinia = createPinia()
+    const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
+
+    expect(wrapper.find('#close-tools').attributes('aria-label')).toBe('关闭搜索与批注')
+    expect(wrapper.find('#close-settings').attributes('aria-label')).toBe('关闭阅读设置')
+
+    wrapper.unmount()
+  })
+
   test('keeps Tab focus inside the active reader panel', async () => {
     const pinia = createPinia()
     const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
