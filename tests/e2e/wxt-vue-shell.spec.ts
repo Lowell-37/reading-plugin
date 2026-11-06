@@ -46,15 +46,19 @@ test('@wxt-vue reader panels receive initial focus and restore it when dismissed
 
 async function assertPanelTriggerState(page: Page, expandedPanel: string | null) {
   const triggers = [
-    { selector: '#sidebar-button', controls: 'sidebar' },
-    { selector: '#tools-button', controls: 'tools-panel' },
-    { selector: '#settings-button', controls: 'settings-panel' },
+    { selector: '#sidebar-button', controls: 'sidebar', closedLabel: '打开目录', openLabel: '关闭目录' },
+    { selector: '#tools-button', controls: 'tools-panel', closedLabel: '打开搜索与批注', openLabel: '关闭搜索与批注' },
+    { selector: '#settings-button', controls: 'settings-panel', closedLabel: '打开阅读设置', openLabel: '关闭阅读设置' },
   ]
   for (const trigger of triggers) {
     await expect(page.locator(trigger.selector)).toHaveAttribute('aria-controls', trigger.controls)
     await expect(page.locator(trigger.selector)).toHaveAttribute(
       'aria-expanded',
       trigger.controls === expandedPanel ? 'true' : 'false',
+    )
+    await expect(page.locator(trigger.selector)).toHaveAttribute(
+      'aria-label',
+      trigger.controls === expandedPanel ? trigger.openLabel : trigger.closedLabel,
     )
   }
 }

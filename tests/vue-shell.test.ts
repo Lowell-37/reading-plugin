@@ -1239,18 +1239,19 @@ describe('Vue reader shell', () => {
     wrapper.unmount()
   })
 
-  test('reports the controlled panel and expanded state from each header trigger', async () => {
+  test('reports each controlled panel, expanded state, and current toggle action from its header trigger', async () => {
     const pinia = createPinia()
     const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
     const triggers = [
-      { selector: '#sidebar-button', controls: 'sidebar' },
-      { selector: '#tools-button', controls: 'tools-panel' },
-      { selector: '#settings-button', controls: 'settings-panel' },
+      { selector: '#sidebar-button', controls: 'sidebar', closedLabel: '打开目录', openLabel: '关闭目录' },
+      { selector: '#tools-button', controls: 'tools-panel', closedLabel: '打开搜索与批注', openLabel: '关闭搜索与批注' },
+      { selector: '#settings-button', controls: 'settings-panel', closedLabel: '打开阅读设置', openLabel: '关闭阅读设置' },
     ]
 
     for (const trigger of triggers) {
       expect(wrapper.find(trigger.selector).attributes('aria-controls')).toBe(trigger.controls)
       expect(wrapper.find(trigger.selector).attributes('aria-expanded')).toBe('false')
+      expect(wrapper.find(trigger.selector).attributes('aria-label')).toBe(trigger.closedLabel)
     }
 
     for (const active of triggers) {
@@ -1259,12 +1260,16 @@ describe('Vue reader shell', () => {
         expect(wrapper.find(trigger.selector).attributes('aria-expanded')).toBe(
           trigger.selector === active.selector ? 'true' : 'false',
         )
+        expect(wrapper.find(trigger.selector).attributes('aria-label')).toBe(
+          trigger.selector === active.selector ? trigger.openLabel : trigger.closedLabel,
+        )
       }
     }
 
     await wrapper.find('#settings-button').trigger('click')
     for (const trigger of triggers) {
       expect(wrapper.find(trigger.selector).attributes('aria-expanded')).toBe('false')
+      expect(wrapper.find(trigger.selector).attributes('aria-label')).toBe(trigger.closedLabel)
     }
 
     wrapper.unmount()
