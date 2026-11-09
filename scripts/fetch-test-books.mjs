@@ -59,6 +59,17 @@ export const TEST_BOOKS = [
     sha256: '568ee9d37b2cc12dfd5e24ebf7b16ae71a805e269af159dc836647751739340a',
   },
   {
+    name: 'accessible-epub-3-idpf.epub',
+    format: 'epub',
+    title: 'Accessible EPUB 3',
+    creator: 'Matt Garrish',
+    source: 'IDPF EPUB 3 Samples release 20230704, maintained by the W3C EPUB 3 Community Group; fetched into the ignored test cache',
+    license: 'CC BY-SA 3.0 collection license; retain attribution and share adaptations under the same terms',
+    licenseUrl: 'https://github.com/IDPF/epub3-samples#licensing',
+    url: 'https://github.com/IDPF/epub3-samples/releases/download/20230704/accessible_epub_3.epub',
+    sha256: '67f75b8e3cd1abe4bb143d91d5424191d5af3115c9d26ff029a38e19f8d16feb',
+  },
+  {
     name: 'moby-dick-wikisource.epub',
     format: 'epub',
     title: 'Moby-Dick',

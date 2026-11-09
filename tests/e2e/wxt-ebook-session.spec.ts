@@ -127,6 +127,45 @@ test.describe('@wxt-session', () => {
     })
   }
 
+  test('WXT opens and restores the IDPF accessible EPUB deep footnotes section', async () => {
+    const { context, page, pageErrors } = await launchExtension(wxtExtension)
+    try {
+      await openBook(page, 'accessible-epub-3-idpf.epub')
+      await expect(page.locator('#header-title')).toContainText('Accessible EPUB 3')
+      await expect.poll(async () => page.locator('#toc button').count()).toBeGreaterThan(35)
+      await page.locator('#sidebar-button').evaluate((button: HTMLElement) => button.click())
+      const footnotes = page.locator('#toc button').filter({ hasText: /^Footnotes$/ }).first()
+      await expect(footnotes.locator('xpath=ancestor::li[2]/button[1]'))
+        .toHaveText('A Solid Foundation: Structure and Semantics')
+      await expect(footnotes.locator('xpath=ancestor::li[3]/button[1]'))
+        .toHaveText('2. Building a Better EPUB: Fundamental Accessibility')
+      await footnotes.evaluate((button: HTMLElement) => button.click())
+      await expect.poll(() => foliateContentText(page)).toContain('Footnotes present another challenge to reading enjoyment')
+      await expect(footnotes).toHaveAttribute('aria-current', 'location')
+      await expect.poll(() => progress(page)).toBeGreaterThan(0.35)
+      const savedProgress = await progress(page)
+      await expect.poll(async () => (await storedBookProgresses(page)).map(record => record.name))
+        .toContain('accessible-epub-3-idpf.epub')
+
+      await page.locator('#home-button').evaluate((button: HTMLElement) => button.click())
+      await expect(page.locator('#welcome-view')).toBeVisible()
+      await expect.poll(async () => (await storedBookProgresses(page)).map(record => record.name))
+        .toContain('accessible-epub-3-idpf.epub')
+      await expect(page.locator('.library-card')).toHaveCount(1)
+      await page.reload()
+      await page.locator('.library-card-open').first()
+        .evaluate((button: HTMLElement) => button.click())
+      await expect(page.locator('#loading-view')).toBeHidden({ timeout: 45_000 })
+      await expect(page.locator('#header-title')).toContainText('Accessible EPUB 3')
+      await expect.poll(() => progress(page)).toBeCloseTo(savedProgress, 2)
+      await expect(page.locator('#toc button.active')).toHaveText('Footnotes')
+      await expect.poll(() => foliateContentText(page)).toContain('Footnotes present another challenge to reading enjoyment')
+      expect(pageErrors.map(pageErrorDetails)).toEqual([])
+    } finally {
+      await context.close()
+    }
+  })
+
   test('WXT keeps only the newest real EPUB session after rapid sequential opening', async () => {
     const { context, page, pageErrors } = await launchExtension(wxtExtension)
     try {

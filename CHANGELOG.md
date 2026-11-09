@@ -6,6 +6,7 @@
 
 ### Added
 
+- 增加 IDPF/W3C EPUB 3 Community Group《Accessible EPUB 3》固定发布样本，真实 Edge 覆盖深层脚注目录、正文跳转和重开进度恢复。
 - 增加 WXT PDF 在真实 Edge 2× 设备像素比下的高分屏验收，校验 canvas 后备分辨率保持 CSS 显示尺寸的两倍。
 - 增加 WXT 真实《Frankenstein》MOBI 与《Dracula》AZW3 的深层目录、正文和重开进度恢复验收。
 - 增加真实长篇 EPUB 的 WXT/Vue Edge 等价验收：连续滚动跨章、远距离目录跳转与重开恢复，并验证同一扩展身份下根目录版→WXT→根目录版的深层章节进度连续性。
