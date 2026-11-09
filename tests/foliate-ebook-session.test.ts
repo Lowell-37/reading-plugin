@@ -5,9 +5,31 @@ import type { EbookSessionError, EbookSessionSnapshot } from '../entrypoints/rea
 import type { EbookViewLike } from '../entrypoints/reader/ebook-session-dependencies'
 import type { EbookScrollerOptions } from '../entrypoints/reader/ebook-session-dependencies'
 import type { Annotation } from '../src/core/types'
-import type { BookRecord } from '../src/core/types'
+import type { BookMetadata, BookRecord } from '../src/core/types'
 
 describe('Foliate ebook session', () => {
+  test('reports parsed title, author and cover before publishing the ready snapshot', async () => {
+    const harness = createHarness()
+    const cover = new Blob(['cover'], { type: 'image/jpeg' })
+    const createView = harness.dependencies.createView
+    harness.dependencies.createView = () => {
+      const view = createView()
+      view.book.metadata = { title: { en: 'Engine title' } }
+      ;(view.book.metadata as Record<string, unknown>).author = [{ name: 'First author' }, { name: 'Second author' }]
+      view.cover = cover
+      return view
+    }
+
+    await createFoliateEbookSession(harness.dependencies).open(record('fallback.epub'), readerSettings())
+
+    expect(harness.metadataUpdates).toEqual([{
+      id: 'fallback.epub',
+      metadata: { title: 'Engine title', author: 'First author、Second author' },
+      cover,
+    }])
+    expect(harness.publicationEvents).toEqual(['metadata:update', 'snapshot:ready'])
+  })
+
   test('captures iframe selection as a CFI and quote anchor for a new highlight', async () => {
     const harness = createHarness()
     const session = createFoliateEbookSession(harness.dependencies)
@@ -605,6 +627,8 @@ function createHarness() {
   const snapshots: EbookSessionSnapshot[] = []
   const errors: Array<{ error: unknown, generation: number }> = []
   const repairs: Annotation[] = []
+  const metadataUpdates: Array<{ id: string, metadata: BookMetadata, cover?: Blob | null }> = []
+  const publicationEvents: string[] = []
   const views: FakeView[] = []
   const scrollers: FakeScroller[] = []
   const progress = new FakeProgressService(events)
@@ -662,9 +686,16 @@ function createHarness() {
       return scroller
     },
     createProgressService: () => progress,
-    onSnapshot: (snapshot: EbookSessionSnapshot) => snapshots.push(snapshot),
+    onSnapshot: (snapshot: EbookSessionSnapshot) => {
+      snapshots.push(snapshot)
+      if (snapshot.status === 'ready') publicationEvents.push('snapshot:ready')
+    },
     onError: (error: unknown, nextGeneration: number) => errors.push({ error, generation: nextGeneration }),
     onAnnotationRepair: (annotation: Annotation) => repairs.push(annotation),
+    onMetadata: async (id: string, metadata: BookMetadata, cover?: Blob | null) => {
+      metadataUpdates.push({ id, metadata, cover })
+      publicationEvents.push('metadata:update')
+    },
     nextGeneration: () => ++generation,
   }
 
@@ -681,6 +712,8 @@ function createHarness() {
     events,
     progress,
     repairs,
+    metadataUpdates,
+    publicationEvents,
     snapshots,
     deferNextScrollerMount(promise: Promise<void>) {
       const started = deferred<void>()
@@ -752,8 +785,10 @@ class FakeView extends EventTarget {
     metadata: { title: 'Engine title' },
     toc: [{ label: 'Chapter one', href: '/6/2' }],
     sections: [{ linear: 'yes' }],
+    getCover: () => this.cover,
   }
   isConnected = false
+  cover: Blob | null = null
   lastLocation: FakeLocation | null = null
   getProgressOf(_index: number): { tocItem?: { label?: unknown } | null } | null { return null }
   getCFI(_index: number, range: Range): unknown { return range.toString() }

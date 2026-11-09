@@ -4,6 +4,7 @@ import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import App from '../entrypoints/reader/App.vue'
+import TocSidebar from '../entrypoints/reader/components/TocSidebar.vue'
 import { useReaderStore } from '../entrypoints/reader/stores/reader'
 import { useSettingsStore } from '../entrypoints/reader/stores/settings'
 import { useMigrationStore } from '../entrypoints/reader/stores/migration'
@@ -1012,6 +1013,33 @@ describe('Vue reader shell', () => {
     await nextTick()
     expect(wrapper.find('#toc').text()).toBe('')
     wrapper.unmount()
+  })
+
+  test('renders the active library record author and cover in the table-of-contents sidebar', () => {
+    const createObjectURL = vi.fn(() => 'blob:sidebar-cover')
+    const revokeObjectURL = vi.fn()
+    vi.stubGlobal('URL', { ...URL, createObjectURL, revokeObjectURL })
+    const pinia = createPinia()
+    const library = useLibraryStore(pinia)
+    const ebook = useEbookSessionStore(pinia)
+    const cover = new Blob(['cover'], { type: 'image/png' })
+    const active = libraryRecord('active.epub', 0.1, cover)
+    active.metadata = { title: 'Parsed title', author: 'Parsed author' }
+    library.books = [active]
+    ebook.record = { id: active.id, name: active.name, format: active.format }
+    ebook.title = 'Parsed title'
+
+    const wrapper = mount(TocSidebar, { global: { plugins: [pinia] } })
+
+    expect(wrapper.find('#sidebar-author').text()).toBe('Parsed author')
+    expect(wrapper.find('#sidebar-cover').classes()).toContain('cover-placeholder')
+    expect(wrapper.find('#sidebar-cover img').attributes()).toMatchObject({
+      src: 'blob:sidebar-cover',
+      alt: 'Parsed title封面',
+    })
+    wrapper.unmount()
+    expect(createObjectURL).toHaveBeenCalledWith(cover)
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:sidebar-cover')
   })
 
   test('waits for an ebook session to finish before announcing its TOC total', async () => {

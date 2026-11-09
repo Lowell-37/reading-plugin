@@ -55,6 +55,7 @@ async function startReader() {
     createProgressService: () => new ProgressService(bookRepository),
     nextGeneration: () => ++ebookGeneration,
     onAnnotationRepair: (annotation, generation) => { void ebookAnnotations.applyRepair(annotation, generation) },
+    onMetadata: (id, metadata, cover) => library.applyParsedMetadata(id, metadata, cover),
   })))
   let pdfGeneration = 0
   const runtime = (globalThis as typeof globalThis & { chrome?: { runtime?: ExtensionRuntime } }).chrome?.runtime
@@ -70,6 +71,7 @@ async function startReader() {
     pixelRatio: () => window.devicePixelRatio,
     createProgressService: () => new ProgressService(bookRepository),
     nextGeneration: () => ++pdfGeneration,
+    onMetadata: (id, metadata, cover) => library.applyParsedMetadata(id, metadata, cover),
   })))
   library.attachEbookPort(ebookSession)
   library.attachPdfPort(pdfSession)

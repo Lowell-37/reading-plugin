@@ -1,6 +1,6 @@
 import { shallowRef } from 'vue'
 import { defineStore } from 'pinia'
-import type { BookRecord } from '../../../src/core/types'
+import type { BookMetadata, BookRecord } from '../../../src/core/types'
 import { detectFormat } from '../../../src/core/formats'
 import type { EbookSessionPort } from '../ebook-session-port'
 import type { PdfSessionPort } from '../pdf-session-port'
@@ -113,6 +113,19 @@ export function createLibraryStore(dependencies: LibraryDependencies = defaultLi
       books.value = sorted(await dependencies.repository.list())
     }
 
+    async function applyParsedMetadata(
+      id: string,
+      metadata: BookMetadata,
+      cover?: Blob | null,
+    ) {
+      const changes: Partial<BookRecord> = {
+        metadata: { ...metadata },
+        ...(cover === undefined ? {} : { cover }),
+      }
+      await dependencies.repository.update(id, changes)
+      books.value = sorted(books.value.map(book => book.id === id ? { ...book, ...changes } : book))
+    }
+
     async function openFile(file: File) {
       const format = detectFormat(file.name, file.type)
       if (!format) throw new Error('不支持这个文件格式')
@@ -184,6 +197,7 @@ export function createLibraryStore(dependencies: LibraryDependencies = defaultLi
       attachEbookPort,
       attachPdfPort,
       load,
+      applyParsedMetadata,
       openFile,
       openRecord,
       closeSession,

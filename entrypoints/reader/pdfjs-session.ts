@@ -80,6 +80,16 @@ export function createPdfJsSession(
         document.getOutline().catch(() => null),
       ])
       if (!isActive(generation) || currentDocument !== document) return
+      const parsedMetadata = {
+        title: displayText(metadata?.info?.Title) || displayText(record.metadata?.title) || titleFromName(record.name),
+        author: displayText(metadata?.info?.Author) || displayText(record.metadata?.author) || '未知作者',
+      }
+      try {
+        await dependencies.onMetadata?.(record.id, parsedMetadata)
+      } catch (error) {
+        console.warn('Could not persist PDF metadata.', error)
+      }
+      if (!isActive(generation) || currentDocument !== document) return
       const outline = await convertOutline(document, sourceOutline ?? [])
       if (!isActive(generation) || currentDocument !== document) return
 
@@ -88,7 +98,7 @@ export function createPdfJsSession(
       connectScroll(generation)
       currentSnapshot = {
         status: 'loading',
-        title: displayText(metadata?.info?.Title) || displayText(record.metadata?.title) || titleFromName(record.name),
+        title: parsedMetadata.title,
         outline,
         page: 1,
         pageCount: document.numPages,

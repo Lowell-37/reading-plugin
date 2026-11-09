@@ -190,6 +190,13 @@
 - 在另一个全新 Edge 用户配置中，原书库为空；导入先前导出的 `.quietreader` 后，真实 EPUB 和进度恢复。
 - 更新发布说明：普通升级优先原目录替换文件后“重新加载”；不能把自动化目录移动等同于 Edge 界面的“移除扩展”，手动卸载重装仍需备份和独立人工验收。
 
+## WXT 解析元数据持久化等价（2026-11-09）
+
+- Foliate/PDF.js 会话通过显式回调上报清洗后的书名与作者；EPUB 成功提取封面时一并上报。LibraryStore 使用既有 BookRepository 局部更新记录并刷新 Pinia 投影，不增加数据库 schema 或第二份持久化状态。
+- EPUB 封面提取失败或 PDF 不提供封面时省略封面字段，保留旧记录中的封面；元数据写回失败不会阻止正文打开，过期会话也不会继续发布就绪状态。
+- 目录侧栏从当前书库记录显示作者与封面，并在换书、更新和卸载时释放对象 URL。真实 IDPF《Accessible EPUB 3》和 NASA Systems Engineering Handbook PDF 已验证返回书架、刷新后的书名/作者及 EPUB 封面持久化，同时保留目录、进度和重开恢复。
+- `npm run check` 与 `npm run build:wxt:verify` 通过；本阶段新增 Store、Foliate、PDF.js 和 Vue 组件回归后单测总数为 399 项。根目录稳定入口、schema v2、备份格式和 AI 关闭状态不变。
+
 ## 后续产品阶段
 
 - 整本书语义搜索与带出处问答

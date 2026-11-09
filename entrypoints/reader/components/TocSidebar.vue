@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { computed, defineComponent, h, type Component, type PropType } from 'vue'
+import { computed, defineComponent, h, onBeforeUnmount, ref, watch, type Component, type PropType } from 'vue'
 import { storeToRefs } from 'pinia'
+import { displayValue } from '../../../src/core/formats'
 import type { EbookSessionTocItem } from '../ebook-session-port'
 import type { PdfOutlineItem } from '../pdf-session-port'
 import { useEbookSessionStore } from '../stores/ebook-session'
+import { useLibraryStore } from '../stores/library'
 import { usePdfSessionStore } from '../stores/pdf-session'
 import { useReaderStore } from '../stores/reader'
 import { closePanelAndFocusReader } from '../panel-focus'
@@ -12,10 +14,33 @@ const reader = useReaderStore()
 const { activePanel } = storeToRefs(reader)
 const ebook = useEbookSessionStore()
 const pdf = usePdfSessionStore()
+const library = useLibraryStore()
+const { books } = storeToRefs(library)
 const { record, status: ebookStatus, title, toc, activeTocHref } = storeToRefs(ebook)
 const { record: pdfRecord, status: pdfStatus, title: pdfTitle, outline, page: pdfPage } = storeToRefs(pdf)
 const ebookSessionActive = computed(() => record.value !== null)
 const pdfSessionActive = computed(() => pdfRecord.value !== null)
+const activeRecord = computed(() => {
+  const id = pdfRecord.value?.id ?? record.value?.id
+  return books.value.find(book => book.id === id) ?? null
+})
+const sidebarTitle = computed(() => pdfSessionActive.value
+  ? pdfTitle.value
+  : ebookSessionActive.value ? title.value : '未命名书籍')
+const sidebarAuthor = computed(() => displayValue(activeRecord.value?.metadata?.author) || '未知作者')
+const coverUrl = ref('')
+
+function revokeCover() {
+  if (coverUrl.value) URL.revokeObjectURL(coverUrl.value)
+  coverUrl.value = ''
+}
+
+watch(() => activeRecord.value?.cover, cover => {
+  revokeCover()
+  if (cover) coverUrl.value = URL.createObjectURL(cover)
+}, { immediate: true })
+
+onBeforeUnmount(revokeCover)
 const activePdfPath = computed(() => {
   if (!pdfSessionActive.value) return null
   let selected: string | null = null
@@ -127,9 +152,12 @@ const PdfOutlineItems: Component = defineComponent({
   <span id="toc-status" class="toc-status" role="status" aria-live="polite" aria-atomic="true">{{ tocStatusLabel }}</span>
   <aside id="sidebar" class="sidebar" :class="{ open: activePanel === 'toc', 'ebook-session-toc': ebookSessionActive, 'pdf-session-toc': pdfSessionActive }" :inert="activePanel !== 'toc'" aria-label="书籍目录" tabindex="-1">
     <div class="sidebar-book">
-      <div id="sidebar-cover" class="cover-placeholder"><span id="cover-letter">静</span></div>
+      <div id="sidebar-cover" class="cover-placeholder">
+        <img v-if="coverUrl" :src="coverUrl" :alt="`${sidebarTitle}封面`">
+        <span v-else id="cover-letter">静</span>
+      </div>
       <div class="sidebar-meta">
-        <strong id="sidebar-title"><template v-if="pdfSessionActive">{{ pdfTitle }}</template><template v-else-if="ebookSessionActive">{{ title }}</template><template v-else>未命名书籍</template></strong><span id="sidebar-author">未知作者</span><small id="sidebar-format">{{ pdfSessionActive ? 'PDF' : record?.format.toUpperCase() ?? 'EPUB' }}</small>
+        <strong id="sidebar-title">{{ sidebarTitle }}</strong><span id="sidebar-author">{{ sidebarAuthor }}</span><small id="sidebar-format">{{ pdfSessionActive ? 'PDF' : record?.format.toUpperCase() ?? 'EPUB' }}</small>
       </div>
     </div>
     <div class="sidebar-label"><span>目录</span><span id="toc-count" :aria-label="tocStatusLabel">{{ tocCount ? `${tocCount} 项` : '' }}</span></div>

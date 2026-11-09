@@ -87,6 +87,29 @@ export function createFoliateEbookSession(
       await view.open(record.blob)
       if (generation !== activeGeneration || currentView !== view) return
 
+      const metadata = {
+        title: displayEngineValue(view.book.metadata?.title)
+          || displayEngineValue(record.metadata?.title)
+          || titleFromName(record.name),
+        author: displayEngineValue(view.book.metadata?.author)
+          || displayEngineValue(record.metadata?.author)
+          || '未知作者',
+      }
+      let cover: Blob | undefined
+      try {
+        const extractedCover = await view.book.getCover?.()
+        if (extractedCover instanceof Blob) cover = extractedCover
+      } catch (error) {
+        console.warn('Could not read ebook cover.', error)
+      }
+      if (generation !== activeGeneration || currentView !== view) return
+      try {
+        await dependencies.onMetadata?.(record.id, metadata, cover)
+      } catch (error) {
+        console.warn('Could not persist ebook metadata.', error)
+      }
+      if (generation !== activeGeneration || currentView !== view) return
+
       phase = 'render'
       applyPaginatedSettings(view, currentSettings)
 
@@ -108,9 +131,7 @@ export function createFoliateEbookSession(
       const location = activeLocation()
       currentSnapshot = {
         status: 'ready',
-        title: displayEngineValue(view.book.metadata?.title)
-          || displayEngineValue(record.metadata?.title)
-          || titleFromName(record.name),
+        title: metadata.title,
         toc: copyTocForSnapshot(view.book.toc),
         chapter: displayEngineValue(location?.tocItem?.label) || '开始',
         activeTocHref: currentTocHref(location),
@@ -738,7 +759,7 @@ function copyTocForSnapshot(
 
 function displayEngineValue(value: unknown): string {
   if (!value) return ''
-  if (typeof value === 'string') return value
+  if (typeof value === 'string') return value.trim()
   if (Array.isArray(value)) return value.map(displayEngineValue).filter(Boolean).join('、')
   if (typeof value !== 'object') return ''
   if ('name' in value) return displayEngineValue(value.name)

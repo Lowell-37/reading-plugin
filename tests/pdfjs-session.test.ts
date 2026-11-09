@@ -5,13 +5,14 @@ import { createPdfJsSession } from '../entrypoints/reader/pdfjs-session'
 import type { PdfSessionError, PdfSessionSnapshot } from '../entrypoints/reader/pdf-session-port'
 import type { PdfJsLike, PdfOutlineSource } from '../entrypoints/reader/pdf-session-dependencies'
 import type { BookRecord } from '../src/core/types'
+import type { BookMetadata } from '../src/core/types'
 
 Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', { value: () => null })
 
 describe('PDF.js session adapter', () => {
   test('projects metadata, serializable outline and page count after opening', async () => {
     const harness = createHarness()
-    harness.document.metadata = { info: { Title: 'Engine title' } }
+    harness.document.metadata = { info: { Title: 'Engine title', Author: 'Engine author' } }
     harness.document.outline = [{ title: 'First', dest: 'chapter-1', items: [{ title: 'Nested', dest: [2] }] }]
     harness.document.destinations.set('chapter-1', [{ index: 0 }])
 
@@ -31,6 +32,10 @@ describe('PDF.js session adapter', () => {
       cMapPacked: true,
       standardFontDataUrl: 'chrome-extension://reader/node_modules/pdfjs-dist/standard_fonts/',
       wasmUrl: 'chrome-extension://reader/node_modules/pdfjs-dist/wasm/',
+    }])
+    expect(harness.metadataUpdates).toEqual([{
+      id: 'fallback.pdf',
+      metadata: { title: 'Engine title', author: 'Engine author' },
     }])
   })
 
@@ -432,6 +437,7 @@ function createHarness(options: {
 } = {}) {
   const snapshots: PdfSessionSnapshot[] = []
   const errors: PdfSessionError[] = []
+  const metadataUpdates: Array<{ id: string, metadata: BookMetadata }> = []
   const scheduled: Array<{ bookId: string, progress: unknown }> = []
   const flushed: Array<{ bookId: string, progress: unknown } | undefined> = []
   const pages = document.createElement('div')
@@ -497,12 +503,14 @@ function createHarness(options: {
     }),
     onSnapshot: snapshot => { snapshots.push(snapshot) },
     onError: error => { errors.push(error) },
+    onMetadata: async (id: string, metadata: BookMetadata) => { metadataUpdates.push({ id, metadata }) },
   })
 
   return {
     session,
     snapshots,
     errors,
+    metadataUpdates,
     scheduled,
     flushed,
     pages,
@@ -593,7 +601,7 @@ class FakePdfDocument {
   destroyCalls = 0
   readonly destinations = new Map<string, unknown>()
   readonly loading: FakeLoadingTask
-  metadata: { info?: { Title?: unknown } } | null = { info: {} }
+  metadata: { info?: { Title?: unknown, Author?: unknown } } | null = { info: {} }
   outline: PdfOutlineSource[] | null = []
   readonly pages = new Map<number, FakePage>()
 
@@ -602,7 +610,7 @@ class FakePdfDocument {
     for (let page = 1; page <= numPages; page += 1) this.pages.set(page, new FakePage(page, options))
   }
 
-  async getMetadata(): Promise<{ info?: { Title?: unknown } } | null> { return this.metadata }
+  async getMetadata(): Promise<{ info?: { Title?: unknown, Author?: unknown } } | null> { return this.metadata }
   async getOutline(): Promise<PdfOutlineSource[] | null> { return this.outline }
   async getDestination(name: string) { return this.destinations.get(name) }
   async getPageIndex(reference: { index: number }) { return reference.index }

@@ -6,7 +6,7 @@ import { ContinuousEbookScroller } from '../../src/continuous-ebook.js'
 import type {
   EbookSessionCallbacks,
 } from './ebook-session-port'
-import type { Annotation } from '../../src/core/types'
+import type { Annotation, BookMetadata } from '../../src/core/types'
 
 export interface EbookLocationLike {
   index?: number
@@ -23,9 +23,10 @@ export interface EbookRendererLike {
 
 export interface EbookViewLike extends EventTarget {
   book: {
-    metadata?: { title?: unknown }
+    metadata?: { title?: unknown, author?: unknown }
     toc?: Array<{ label?: unknown, href?: unknown, subitems?: unknown[] }>
     sections?: Array<{ linear?: string, createDocument?: () => Document | Promise<Document> }>
+    getCover?(): Blob | null | Promise<Blob | null>
   }
   renderer: EbookRendererLike
   style: { display: string, removeProperty(name: string): string }
@@ -87,11 +88,12 @@ export interface FoliateEbookSessionDependencies extends EbookSessionCallbacks {
   createScroller(options: EbookScrollerOptions): EbookScrollerLike
   createProgressService(): EbookProgressServiceLike
   nextGeneration(): number
+  onMetadata?(id: string, metadata: BookMetadata, cover?: Blob | null): void | Promise<void>
 }
 
 export type FoliateEbookSessionRuntimeOptions = Pick<
   FoliateEbookSessionDependencies,
-  'host' | 'createProgressService' | 'nextGeneration' | 'onSnapshot' | 'onError' | 'onAnnotationRepair'
+  'host' | 'createProgressService' | 'nextGeneration' | 'onSnapshot' | 'onError' | 'onAnnotationRepair' | 'onMetadata'
 >
 
 /** Keeps concrete engine imports out of Pinia and Vue code. */

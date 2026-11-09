@@ -52,6 +52,53 @@ describe('reader library store', () => {
     expect(repository.calls.list).toBe(1)
   })
 
+  test('persists parsed metadata and an extracted cover without rereading the library', async () => {
+    const original = record('fallback.epub', 10)
+    const cover = new Blob(['cover'], { type: 'image/jpeg' })
+    repository.seed(original)
+    const store = useStore()
+    await store.load()
+    repository.resetCalls()
+
+    await store.applyParsedMetadata(original.id, {
+      title: 'Parsed title',
+      author: 'Parsed author',
+    }, cover)
+
+    expect(repository.updated).toEqual([{
+      id: original.id,
+      changes: {
+        metadata: { title: 'Parsed title', author: 'Parsed author' },
+        cover,
+      },
+    }])
+    expect(repository.calls.list).toBe(0)
+    expect(store.books[0]).toMatchObject({
+      id: original.id,
+      metadata: { title: 'Parsed title', author: 'Parsed author' },
+      cover,
+    })
+  })
+
+  test('preserves a stored cover when parsed metadata has no cover update', async () => {
+    const cover = new Blob(['existing'], { type: 'image/png' })
+    const original = record('fallback.pdf', 10, { cover })
+    repository.seed(original)
+    const store = useStore()
+    await store.load()
+    repository.resetCalls()
+
+    await store.applyParsedMetadata(original.id, {
+      title: 'PDF title',
+      author: 'PDF author',
+    })
+
+    expect(repository.updated[0]?.changes).toEqual({
+      metadata: { title: 'PDF title', author: 'PDF author' },
+    })
+    expect(store.books[0]?.cover).toBe(cover)
+  })
+
   test('openFile sends PDF records only to the PDF session', async () => {
     const store = useStore()
     const pdf = new RecordingPdfPort(repository.events)

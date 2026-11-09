@@ -1,6 +1,7 @@
 // @ts-expect-error PDF.js 6 does not declare its browser ESM build entrypoint.
 import * as pdfjs from 'pdfjs-dist/build/pdf.mjs'
 import type { PdfSessionCallbacks } from './pdf-session-port'
+import type { BookMetadata } from '../../src/core/types'
 
 export interface PdfLoadingTaskLike {
   promise: Promise<PdfDocumentLike>
@@ -9,7 +10,7 @@ export interface PdfLoadingTaskLike {
 
 export interface PdfDocumentLike {
   numPages: number
-  getMetadata(): Promise<{ info?: { Title?: unknown } } | null>
+  getMetadata(): Promise<{ info?: { Title?: unknown, Author?: unknown } } | null>
   getOutline(): Promise<PdfOutlineSource[] | null>
   getDestination(name: string): Promise<unknown>
   getPageIndex(reference: object): Promise<number>
@@ -71,6 +72,7 @@ export interface PdfSessionDependencies extends PdfSessionCallbacks {
   cancelFrame(handle: number): void
   pixelRatio(): number
   createProgressService(): PdfProgressServiceLike
+  onMetadata?(id: string, metadata: BookMetadata, cover?: Blob | null): void | Promise<void>
 }
 
 export type PdfSessionRuntimeOptions = Omit<
