@@ -197,6 +197,13 @@
 - 目录侧栏从当前书库记录显示作者与封面，并在换书、更新和卸载时释放对象 URL。真实 IDPF《Accessible EPUB 3》和 NASA Systems Engineering Handbook PDF 已验证返回书架、刷新后的书名/作者及 EPUB 封面持久化，同时保留目录、进度和重开恢复。
 - `npm run check` 与 `npm run build:wxt:verify` 通过；本阶段新增 Store、Foliate、PDF.js 和 Vue 组件回归后单测总数为 399 项。根目录稳定入口、schema v2、备份格式和 AI 关闭状态不变。
 
+## WXT 阅读工作区声明式投影（2026-11-11）
+
+- `ReaderWorkspace.vue` 不再通过元素 ID 手工同步加载/错误页、EPUB/PDF 宿主、页码、进度与缩放状态；这些属性和文本直接由 Vue 模板派生现有 Reader/Ebook/PDF Store。
+- PDF 缩放工具栏由拥有其模板的 `OverlayControls.vue` 直接读取 PDF Store 并调用 `setZoom`，移除跨组件原生点击监听器；卸载后的离屏控件继续由生命周期保护阻止动作。
+- 保留加载礼貌播报、错误即时警报、安全文案、页数去重播报、进度辅助文本、遗留监听隔离和键盘行为。引擎宿主查询、文件选择器及 `body` 类仍作为明确组件外边界保留。
+- 根目录稳定入口、IndexedDB schema v2、备份格式、AI 暂停状态和视觉设计未改变。
+
 ## 后续产品阶段
 
 - 整本书语义搜索与带出处问答

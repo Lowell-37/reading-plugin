@@ -1,15 +1,24 @@
 <script setup lang="ts">
 import { storeToRefs } from 'pinia'
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { BookRecord } from '../../../src/core/types'
 import { displayValue, formatBytes } from '../../../src/core/formats'
 import { useLibraryStore } from '../stores/library'
+import { useEbookSessionStore } from '../stores/ebook-session'
+import { usePdfSessionStore } from '../stores/pdf-session'
+import { useReaderStore } from '../stores/reader'
 
 const library = useLibraryStore()
+const ebook = useEbookSessionStore()
+const pdf = usePdfSessionStore()
+const reader = useReaderStore()
 const { books, backupState, backupStatus } = storeToRefs(library)
 const backupInput = ref<HTMLInputElement | null>(null)
 const coverUrls = ref<Record<string, string>>({})
 const dragging = ref(false)
+const hidden = computed(() => reader.isReading
+  || Boolean(ebook.record && ebook.status === 'error')
+  || Boolean(pdf.record && pdf.status === 'error'))
 
 function revokeCovers() {
   for (const url of Object.values(coverUrls.value)) URL.revokeObjectURL(url)
@@ -62,7 +71,7 @@ async function restoreBackup(event: Event) {
 </script>
 
 <template>
-  <main id="welcome-view" class="welcome-view">
+  <main id="welcome-view" class="welcome-view" :hidden="hidden">
     <section
       id="drop-zone"
       class="hero"

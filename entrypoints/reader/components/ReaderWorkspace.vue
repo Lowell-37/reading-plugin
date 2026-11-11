@@ -32,142 +32,48 @@ const workspaceVisible = computed(() => isReading.value || ebookErrorActive.valu
 const workspaceLoading = computed(() => (ebookSessionActive.value && status.value === 'loading')
   || (pdfSessionActive.value && pdfStatus.value === 'loading'))
 const activeViewportId = computed(() => pdfSessionActive.value ? 'pdf-viewport' : 'ebook-host')
-const pdfToolbarListeners: Array<{ element: HTMLElement, handler: EventListener }> = []
+const activeStatus = computed(() => pdfSessionActive.value
+  ? pdfStatus.value
+  : ebookSessionActive.value ? status.value : 'idle')
+const activeError = computed(() => pdfSessionActive.value ? pdfError.value : error.value)
+const loadingVisible = computed(() => activeStatus.value === 'loading' || activeStatus.value === 'error')
+const loadingIsError = computed(() => activeStatus.value === 'error')
+const loadingTitle = computed(() => loadingIsError.value
+  ? activeError.value?.title || '无法打开这本书'
+  : '正在打开书籍')
+const loadingDetail = computed(() => loadingIsError.value
+  ? activeError.value?.detail || '无法打开电子书。请重新选择文件后重试。'
+  : '解析内容与目录…')
+const pdfPageNumber = computed(() => Math.max(1, Math.round(Number(pdfPage.value) || 1)))
+const pdfPageCountNumber = computed(() => Math.max(1, Math.round(Number(pdfPageCount.value) || 1)))
+const footerProgress = computed(() => {
+  const value = pdfSessionActive.value ? pdfProgress.value : ebookSessionActive.value ? progress.value : 0
+  return Math.max(0, Math.min(1, Number(value) || 0))
+})
+const footerProgressPercent = computed(() => Math.round(footerProgress.value * 100))
+const footerChapter = computed(() => pdfSessionActive.value
+  ? `第 ${pdfPageNumber.value} 页 / 共 ${pdfPageCountNumber.value} 页`
+  : ebookSessionActive.value ? chapter.value : '开始')
+const progressValueText = computed(() => {
+  if (pdfSessionActive.value) return `${footerProgressPercent.value}%，第 ${pdfPageNumber.value} 页，共 ${pdfPageCountNumber.value} 页`
+  if (ebookSessionActive.value) return `${footerProgressPercent.value}%，${chapter.value}`
+  return undefined
+})
 
 watch(workspaceVisible, visible => {
   document.body.classList.toggle('is-reading', visible)
   document.body.classList.toggle('header-collapsed', visible && settings.headerCollapsed)
-  document.getElementById('welcome-view')?.toggleAttribute('hidden', visible)
 }, { immediate: true })
 
-function syncSessionHosts(ebookActive: boolean, pdfActive: boolean) {
-  document.getElementById('ebook-host')?.toggleAttribute('hidden', !ebookActive)
-  document.getElementById('pdf-viewport')?.toggleAttribute('hidden', !pdfActive)
-  document.body.classList.toggle('pdf-mode', pdfActive)
-}
+watch(pdfSessionActive, active => document.body.classList.toggle('pdf-mode', active), { immediate: true })
 
-function syncLoadingView(
-  ebookActive: boolean,
-  pdfActive: boolean,
-  nextEbookStatus: typeof status.value,
-  nextPdfStatus: typeof pdfStatus.value,
-  nextEbookError: typeof error.value,
-  nextPdfError: typeof pdfError.value,
-) {
-  if (!ebookActive && !pdfActive) return
-  const nextStatus = pdfActive ? nextPdfStatus : nextEbookStatus
-  const nextError = pdfActive ? nextPdfError : nextEbookError
-  const loadingView = document.getElementById('loading-view')
-  loadingView?.toggleAttribute('hidden', nextStatus !== 'loading' && nextStatus !== 'error')
-  if (nextStatus === 'loading') {
-    loadingView?.setAttribute('data-state', 'loading')
-    loadingView?.setAttribute('role', 'status')
-    loadingView?.setAttribute('aria-live', 'polite')
-    document.getElementById('loading-title')?.replaceChildren('正在打开书籍')
-    document.getElementById('loading-detail')?.replaceChildren('解析内容与目录…')
-    const loadingActions = document.getElementById('loading-actions') as HTMLElement | null
-    if (loadingActions) loadingActions.hidden = true
-  }
-  if (nextStatus === 'error') {
-    loadingView?.setAttribute('data-state', 'error')
-    loadingView?.setAttribute('role', 'alert')
-    loadingView?.setAttribute('aria-live', 'assertive')
-    document.getElementById('loading-title')?.replaceChildren(nextError?.title || '无法打开这本书')
-    document.getElementById('loading-detail')?.replaceChildren(nextError?.detail || '无法打开电子书。请重新选择文件后重试。')
-    const loadingActions = document.getElementById('loading-actions') as HTMLElement | null
-    if (loadingActions) loadingActions.hidden = false
-  }
-}
-
-function syncEbookFooter(active: boolean) {
-  const progressSlider = document.getElementById('progress-slider') as HTMLInputElement | null
-  if (!active) {
-    if (!pdfSessionActive.value) progressSlider?.removeAttribute('aria-valuetext')
-    return
-  }
-  const normalizedProgress = Math.max(0, Math.min(1, Number(progress.value) || 0))
-  const progressText = `${Math.round(normalizedProgress * 100)}%`
-  const progressLabel = document.getElementById('progress-label')
-  document.getElementById('chapter-label')?.replaceChildren(chapter.value)
-  if (progressSlider) {
-    progressSlider.value = String(normalizedProgress)
-    progressSlider.setAttribute('aria-valuetext', `${progressText}，${chapter.value}`)
-  }
-  progressLabel?.replaceChildren(progressText)
-}
-
-function syncPdfControls(active: boolean) {
-  const pageJump = document.getElementById('pdf-page-jump') as HTMLElement | null
-  const toolbar = document.getElementById('pdf-toolbar') as HTMLElement | null
-  const slider = document.getElementById('progress-slider') as HTMLInputElement | null
-  pageJump?.toggleAttribute('hidden', !active)
-  toolbar?.toggleAttribute('hidden', !active)
-  if (!active) {
-    if (!ebookSessionActive.value) slider?.removeAttribute('aria-valuetext')
-    return
-  }
-  const page = Math.max(1, Math.round(Number(pdfPage.value) || 1))
-  const pageCount = Math.max(1, Math.round(Number(pdfPageCount.value) || 1))
-  const normalizedProgress = Math.max(0, Math.min(1, Number(pdfProgress.value) || 0))
-  const input = document.getElementById('pdf-page-input') as HTMLInputElement | null
-  if (input) {
-    input.value = String(page)
-    input.max = String(pageCount)
-    input.setAttribute('aria-valuetext', `第 ${page} 页，共 ${pageCount} 页`)
-  }
-  const pageTotal = document.getElementById('pdf-page-total')
-  const pageTotalText = `/ ${pageCount}`
-  const pageTotalLabel = `共 ${pageCount} 页`
-  if (pageTotal?.textContent !== pageTotalText) pageTotal?.replaceChildren(pageTotalText)
-  if (pageTotal?.getAttribute('aria-label') !== pageTotalLabel) pageTotal?.setAttribute('aria-label', pageTotalLabel)
-  document.getElementById('chapter-label')?.replaceChildren(`第 ${page} 页 / 共 ${pageCount} 页`)
-  if (slider) {
-    slider.value = String(normalizedProgress)
-    slider.setAttribute('aria-valuetext', `${Math.round(normalizedProgress * 100)}%，第 ${page} 页，共 ${pageCount} 页`)
-  }
-  document.getElementById('progress-label')?.replaceChildren(`${Math.round(normalizedProgress * 100)}%`)
-  document.getElementById('pdf-zoom-label')?.replaceChildren(`${Math.round((Number(pdfZoom.value) || 1) * 100)}%`)
-}
-
-watch([ebookSessionActive, pdfSessionActive], ([ebookActive, pdfActive]) => syncSessionHosts(ebookActive, pdfActive), { immediate: true })
-watch(
-  [ebookSessionActive, pdfSessionActive, status, pdfStatus, error, pdfError],
-  ([ebookActive, pdfActive, nextEbookStatus, nextPdfStatus, nextEbookError, nextPdfError]) => syncLoadingView(
-    ebookActive, pdfActive, nextEbookStatus, nextPdfStatus, nextEbookError, nextPdfError,
-  ),
-  { immediate: true },
-)
-watch([ebookSessionActive, chapter, progress], ([active]) => syncEbookFooter(active), { immediate: true })
-watch([pdfSessionActive, pdfPage, pdfPageCount, pdfProgress, pdfZoom], ([active]) => syncPdfControls(active), { immediate: true })
 onMounted(() => {
-  syncSessionHosts(ebookSessionActive.value, pdfSessionActive.value)
-  syncLoadingView(ebookSessionActive.value, pdfSessionActive.value, status.value, pdfStatus.value, error.value, pdfError.value)
-  syncEbookFooter(ebookSessionActive.value)
-  syncPdfControls(pdfSessionActive.value)
-  const controls: Array<[string, EventListener]> = [
-    ['pdf-zoom-out', () => { if (pdfSessionActive.value) void pdf.setZoom(stepPdfZoom(-0.1)) }],
-    ['pdf-zoom-in', () => { if (pdfSessionActive.value) void pdf.setZoom(stepPdfZoom(0.1)) }],
-    ['pdf-fit-width', () => { if (pdfSessionActive.value) void pdf.setZoom(1) }],
-  ]
-  for (const [id, listener] of controls) {
-    const element = document.getElementById(id)
-    if (!element) continue
-    const handler: EventListener = event => {
-      if (!pdfSessionActive.value) return
-      event.stopImmediatePropagation()
-      listener(event)
-    }
-    element.addEventListener('click', handler)
-    pdfToolbarListeners.push({ element, handler })
-  }
   window.addEventListener('keydown', handleReaderKeyboard)
 })
 
 onBeforeUnmount(() => {
   document.body.classList.remove('is-reading', 'pdf-mode', 'header-collapsed')
   window.removeEventListener('keydown', handleReaderKeyboard)
-  for (const { element, handler } of pdfToolbarListeners) element.removeEventListener('click', handler)
-  pdfToolbarListeners.length = 0
 })
 
 function navigate(event: MouseEvent, direction: -1 | 1) {
@@ -204,10 +110,6 @@ function seekProgress(event: Event) {
   }
   const pageCount = Math.max(1, Math.round(Number(pdfPageCount.value) || 1))
   void pdf.goTo(Math.round(fraction * (pageCount - 1)) + 1)
-}
-
-function stepPdfZoom(delta: number) {
-  return Math.round((Number(pdfZoom.value) + delta) * 10) / 10
 }
 
 function hasEditableFocus(root: Document | ShadowRoot = document): boolean {
@@ -259,26 +161,26 @@ async function recoverSessionError(event: MouseEvent, retry: boolean) {
   <main id="reader-view" class="reader-view" :class="{ 'ebook-session-active': ebookSessionActive, 'pdf-session-active': pdfSessionActive }" :hidden="!workspaceVisible">
     <TocSidebar />
     <div id="reader-stage" class="reader-stage" role="region" aria-label="阅读内容" aria-keyshortcuts="ArrowLeft ArrowRight PageUp PageDown" :aria-busy="workspaceLoading ? 'true' : undefined" tabindex="-1">
-      <div id="loading-view" class="loading-view" role="status" aria-live="polite" aria-atomic="true" aria-labelledby="loading-title" aria-describedby="loading-detail">
-        <div id="loading-spinner" class="spinner" /><strong id="loading-title">正在打开书籍</strong><span id="loading-detail">解析内容与目录…</span>
-        <div id="loading-actions" class="loading-actions" hidden>
+      <div id="loading-view" class="loading-view" :hidden="!loadingVisible" :data-state="loadingIsError ? 'error' : activeStatus === 'loading' ? 'loading' : undefined" :role="loadingIsError ? 'alert' : 'status'" :aria-live="loadingIsError ? 'assertive' : 'polite'" aria-atomic="true" aria-labelledby="loading-title" aria-describedby="loading-detail">
+        <div id="loading-spinner" class="spinner" /><strong id="loading-title">{{ loadingTitle }}</strong><span id="loading-detail">{{ loadingDetail }}</span>
+        <div id="loading-actions" class="loading-actions" :hidden="!loadingIsError">
           <button id="loading-library-button" class="soft-button" type="button" @click.capture="recoverSessionError($event, false).catch(console.error)">返回书架</button>
           <button id="loading-retry-button" class="primary-button" type="button" @click.capture="recoverSessionError($event, true).catch(console.error)">重新选择文件</button>
         </div>
       </div>
-      <div id="ebook-host" class="ebook-host" />
-      <div id="pdf-viewport" class="pdf-viewport"><div id="pdf-pages" class="pdf-pages" /></div>
+      <div id="ebook-host" class="ebook-host" :hidden="!ebookSessionActive" />
+      <div id="pdf-viewport" class="pdf-viewport" :hidden="!pdfSessionActive"><div id="pdf-pages" class="pdf-pages" /></div>
       <button id="prev-button" class="page-zone page-zone-left" aria-label="上一页" :aria-controls="activeViewportId" aria-keyshortcuts="ArrowLeft PageUp" @click="navigate($event, -1)"><span>‹</span></button>
       <button id="next-button" class="page-zone page-zone-right" aria-label="下一页" :aria-controls="activeViewportId" aria-keyshortcuts="ArrowRight PageDown" @click="navigate($event, 1)"><span>›</span></button>
     </div>
     <footer class="reader-footer">
-      <span id="chapter-label">开始</span>
-      <input id="progress-slider" type="range" min="0" max="1" step="any" value="0" aria-label="阅读进度" @input="seekProgress">
+      <span id="chapter-label">{{ footerChapter }}</span>
+      <input id="progress-slider" type="range" min="0" max="1" step="any" :value="footerProgress" aria-label="阅读进度" :aria-valuetext="progressValueText" @input="seekProgress">
       <div class="footer-status">
-        <div id="pdf-page-jump" class="pdf-page-jump" role="group" aria-label="PDF 页码跳转" hidden>
-          <input id="pdf-page-input" type="number" min="1" value="1" aria-label="跳转页码" aria-controls="pdf-viewport" aria-describedby="pdf-page-total" @change="jumpToPdfPage" @keydown="jumpToPdfPageOnEnter"><span id="pdf-page-total" role="status" aria-live="polite" aria-atomic="true" aria-label="共 1 页">/ 1</span>
+        <div id="pdf-page-jump" class="pdf-page-jump" role="group" aria-label="PDF 页码跳转" :hidden="!pdfSessionActive">
+          <input id="pdf-page-input" type="number" min="1" :max="pdfPageCountNumber" :value="pdfPageNumber" aria-label="跳转页码" aria-controls="pdf-viewport" aria-describedby="pdf-page-total" :aria-valuetext="`第 ${pdfPageNumber} 页，共 ${pdfPageCountNumber} 页`" @change="jumpToPdfPage" @keydown="jumpToPdfPageOnEnter"><span id="pdf-page-total" role="status" aria-live="polite" aria-atomic="true" :aria-label="`共 ${pdfPageCountNumber} 页`">/ {{ pdfPageCountNumber }}</span>
         </div>
-        <span id="progress-label">0%</span>
+        <span id="progress-label">{{ footerProgressPercent }}%</span>
       </div>
     </footer>
   </main>

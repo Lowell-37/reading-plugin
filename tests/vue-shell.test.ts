@@ -310,6 +310,40 @@ describe('Vue reader shell', () => {
     wrapper.unmount()
   })
 
+  test('reader chrome is projected without querying its owned DOM nodes', () => {
+    const ownedIds = new Set([
+      'welcome-view', 'ebook-host', 'pdf-viewport',
+      'loading-view', 'loading-title', 'loading-detail', 'loading-actions',
+      'chapter-label', 'progress-slider', 'progress-label',
+      'pdf-page-jump', 'pdf-page-input', 'pdf-page-total',
+      'pdf-toolbar', 'pdf-zoom-out', 'pdf-zoom-in', 'pdf-fit-width', 'pdf-zoom-label',
+    ])
+    const nativeGetElementById = document.getElementById.bind(document)
+    vi.spyOn(document, 'getElementById').mockImplementation(id => {
+      if (ownedIds.has(id)) throw new Error(`Imperative reader chrome lookup: ${id}`)
+      return nativeGetElementById(id)
+    })
+    const pinia = createPinia()
+    const reader = useReaderStore(pinia)
+    const pdf = usePdfSessionStore(pinia)
+    pdf.record = { id: 'pdf', name: 'manual.pdf', format: 'pdf' }
+    pdf.status = 'ready'
+    pdf.page = 3
+    pdf.pageCount = 9
+    pdf.progress = 0.25
+    pdf.zoom = 1.2
+    reader.applyPdfSessionSnapshot(pdfSnapshot({
+      status: 'ready', page: 3, pageCount: 9, progress: 0.25, zoom: 1.2,
+    }))
+
+    const wrapper = mount(App, { attachTo: document.body, global: { plugins: [pinia] } })
+
+    expect(wrapper.find('#pdf-page-total').text()).toBe('/ 9')
+    expect(wrapper.find('#progress-slider').attributes('aria-valuetext')).toBe('25%，第 3 页，共 9 页')
+    expect(wrapper.find('#pdf-zoom-label').text()).toBe('120%')
+    wrapper.unmount()
+  })
+
   test('does not reannounce an unchanged PDF page total during page and zoom updates', async () => {
     const pinia = createPinia()
     const reader = useReaderStore(pinia)
